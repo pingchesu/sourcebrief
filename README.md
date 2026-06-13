@@ -26,6 +26,10 @@ Agents are only as useful as the context they can trust. ContextSmith is designe
 - **Agent-ready**: project knowledge can be consumed by HTTP APIs, MCP tools, web chat, and external agent runtimes.
 - **Minimal common infrastructure**: designed to run on PostgreSQL, pgvector, Redis, and common embedding/rerank services such as Hugging Face, vLLM, or SGLang.
 
+## Specification
+
+See [`docs/SPEC.md`](docs/SPEC.md) for the detailed product and architecture specification.
+
 ## Initial scope
 
 ContextSmith is planned as an open-source SaaS-scale platform with the following first-class capabilities:
