@@ -207,6 +207,34 @@ def main() -> None:
     if packet_item.get("vector_score", 0) == 0:
         fail(f"context packet missing vector score: {packet_item}")
 
+    usage = request(
+        "GET",
+        f"/workspaces/{ws}/projects/{proj}/resource-usage",
+        200,
+        headers=HEADERS,
+    )
+    usage_row = next((item for item in usage["resources"] if item["resource_id"] == res), None)
+    if not usage_row or usage_row["hit_count"] < 1:
+        fail(f"usage analytics missing retrieval hit: {usage}")
+    reviewed = request(
+        "POST",
+        f"/workspaces/{ws}/projects/{proj}/resources/{res}/review",
+        200,
+        json={"review_status": "approved", "review_note": "qa smoke", "stale_after_days": 30},
+        headers=HEADERS,
+    )
+    if reviewed["review_status"] != "approved" or not reviewed.get("last_reviewed_at"):
+        fail(f"resource review failed: {reviewed}")
+    review = request(
+        "GET",
+        f"/workspaces/{ws}/projects/{proj}/resource-review",
+        200,
+        headers=HEADERS,
+    )
+    review_row = next((item for item in review["resources"] if item["resource"]["id"] == res), None)
+    if not review_row or review_row["usage_count"] < 1:
+        fail(f"resource review missing usage: {review}")
+
     # Negative search returns nothing.
     empty = request(
         "POST",
@@ -302,7 +330,7 @@ def main() -> None:
 
     print(
         "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → lexical/hybrid context retrieval with citations, "
-        "query analytics, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "query/resource usage analytics, review lifecycle, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 
