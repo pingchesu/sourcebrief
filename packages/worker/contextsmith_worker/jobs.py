@@ -7,9 +7,18 @@ from sqlalchemy import select
 
 from contextsmith_shared.db import get_sessionmaker
 from contextsmith_shared.models import IndexRun, Resource
+from contextsmith_worker.ingestion import ingest_resource
 
 
-def run_placeholder_index(index_run_id: str) -> None:
+def run_index(index_run_id: str) -> None:
+    """Execute a real ingestion run for the given index_run id.
+
+    Status transitions are persisted to Postgres (the durable source of truth):
+    ``queued -> running -> succeeded`` on success, or ``-> failed`` with an
+    error message on any exception. The ingestion itself (snapshot + chunks) is
+    committed atomically; a failure rolls those inserts back before the run is
+    marked failed so no partial snapshot is left behind.
+    """
     session = get_sessionmaker()()
     try:
         run = session.scalar(select(IndexRun).where(IndexRun.id == UUID(index_run_id)))
@@ -17,18 +26,24 @@ def run_placeholder_index(index_run_id: str) -> None:
             raise RuntimeError(f"index_run not found: {index_run_id}")
         run.status = "running"
         run.started_at = datetime.now(UTC)
-        session.commit()
-
-        if run.meta.get("fail"):
-            raise RuntimeError("intentional placeholder failure")
-
         resource = session.scalar(select(Resource).where(Resource.id == run.resource_id))
         if resource is not None:
             resource.last_refresh_started_at = run.started_at
-            resource.last_refresh_finished_at = datetime.now(UTC)
+        session.commit()
+
+        # Failure hook retained for QA/failure-path testing.
+        if run.meta.get("fail"):
+            raise RuntimeError("intentional placeholder failure")
+
+        if resource is None:
+            raise RuntimeError(f"resource not found: {run.resource_id}")
+
+        ingest_resource(session, resource, run)
+
+        finished = datetime.now(UTC)
+        resource.last_refresh_finished_at = finished
         run.status = "succeeded"
-        run.finished_at = datetime.now(UTC)
-        run.documents_seen = 1
+        run.finished_at = finished
         session.commit()
     except Exception as exc:
         session.rollback()
@@ -37,7 +52,15 @@ def run_placeholder_index(index_run_id: str) -> None:
             failed.status = "failed"
             failed.error_message = str(exc)
             failed.finished_at = datetime.now(UTC)
+            resource = session.scalar(select(Resource).where(Resource.id == failed.resource_id))
+            if resource is not None:
+                resource.status = "failed"
+                resource.last_refresh_finished_at = failed.finished_at
             session.commit()
         raise
     finally:
         session.close()
+
+
+# Backwards-compatible alias for any jobs enqueued under the M1 name.
+run_placeholder_index = run_index

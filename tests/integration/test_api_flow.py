@@ -60,7 +60,12 @@ def create_flow(client: TestClient, email_prefix: str) -> tuple[dict[str, str], 
     project_id = project.json()["id"]
     resource = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/resources",
-        json={"type": "markdown", "name": f"Runbook {slug}", "uri": "file://runbook.md"},
+        json={
+            "type": "markdown",
+            "name": f"Runbook {slug}",
+            "uri": "doc://runbook",
+            "source_config": {"content": "Runbook body with an indexable marker token."},
+        },
         headers=headers,
     )
     assert resource.status_code == 201, resource.text
@@ -82,6 +87,8 @@ def test_workspace_project_resource_refresh_flow() -> None:
     completed = wait_for_run(client, workspace_id, run.json()["id"], headers)
     assert completed["status"] == "succeeded"
     assert completed["documents_seen"] == 1
+    assert completed["chunks_created"] >= 1
+    assert completed["snapshot_id"]
 
     audit = client.get(f"/workspaces/{workspace_id}/audit-events", headers=headers)
     assert audit.status_code == 200

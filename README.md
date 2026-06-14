@@ -32,6 +32,8 @@ See [`docs/SPEC.md`](docs/SPEC.md) for the detailed product and architecture spe
 
 See [`docs/MILESTONE-1.md`](docs/MILESTONE-1.md) for the foundation implementation plan, Docker runtime skeleton, and real-service QA gate.
 
+See [`docs/MILESTONE-2.md`](docs/MILESTONE-2.md) for resource ingestion: the Git and document connectors, versioned source snapshots, chunking, and basic lexical search with citations.
+
 ## Initial scope
 
 ContextSmith is planned as an open-source SaaS-scale platform with the following first-class capabilities:
