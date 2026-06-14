@@ -28,14 +28,17 @@ dev = [
 requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project.scripts]
+contextsmith = "contextsmith_cli.main:main"
+
 [tool.setuptools.packages.find]
-where = ["apps/api", "packages/shared", "packages/worker"]
-include = ["contextsmith_api*", "contextsmith_shared*", "contextsmith_worker*"]
+where = ["apps/api", "packages/shared", "packages/worker", "packages/cli"]
+include = ["contextsmith_api*", "contextsmith_shared*", "contextsmith_worker*", "contextsmith_cli*"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["apps/api", "packages/worker", "packages/shared", "scripts"]
+src = ["apps/api", "packages/worker", "packages/shared", "packages/cli", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -46,4 +49,4 @@ testpaths = ["tests"]
 markers = [
     "integration: tests that require real Postgres/Redis services",
 ]
-pythonpath = ["apps/api", "packages/shared", "packages/worker"]
+pythonpath = ["apps/api", "packages/shared", "packages/worker", "packages/cli"]

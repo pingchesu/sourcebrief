@@ -1,6 +1,6 @@
 # Guide
 
-This guide walks through the main ContextSmith workflow with the local API.
+This guide walks through the main ContextSmith workflow with the CLI and the local API.
 
 ## 1. Start the stack
 
@@ -14,7 +14,11 @@ Set shell helpers:
 ```bash
 export API=http://localhost:18000
 export AUTH='X-User-Email: demo@example.com'
+export CONTEXTSMITH_API_URL=$API
+export CONTEXTSMITH_EMAIL=demo@example.com
 ```
+
+The examples below show curl first because it exposes the API shape. The same flow can be run through the CLI; see [CLI workflow](#cli-workflow) and [Git repository resources](#git-repository-resources).
 
 ## 2. Create a workspace
 
@@ -206,17 +210,95 @@ curl -s -X DELETE "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources/
 
 ## Git repository resources
 
-Git resources use `type: "git"`. The current local smoke flow uses a mounted git bundle fixture so the worker can index it inside Docker. Public clone support should be hardened before broad production use.
+Git resources use `type: "git"`. This is the repo-as-agent path: ContextSmith clones the repository in the worker, captures the commit SHA, indexes text/source files, extracts code symbols, and returns citations with path/line/commit metadata.
+
+### Add a public repo with the CLI
+
+```bash
+contextsmith resource add-repo \
+  --workspace-id $WORKSPACE_ID \
+  --project-id $PROJECT_ID \
+  --name "ContextSmith repo" \
+  --repo-url https://github.com/pingchesu/contextsmith.git \
+  --branch main \
+  --max-files 500 \
+  --refresh \
+  --wait
+```
+
+Search the repo:
+
+```bash
+contextsmith search \
+  --workspace-id $WORKSPACE_ID \
+  --project-id $PROJECT_ID \
+  --query "agent-context API"
+```
+
+Ask for runtime-shaped context:
+
+```bash
+contextsmith agent-context \
+  --workspace-id $WORKSPACE_ID \
+  --project-id $PROJECT_ID \
+  --runtime codex \
+  --query "How does ContextSmith expose MCP context?"
+```
+
+### Add a public repo with curl
 
 Minimal shape:
 
-```json
-{
-  "type": "git",
-  "name": "Example repo",
-  "uri": "https://github.com/example/repo.git",
-  "source_config": {}
-}
+```bash
+curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources" \
+  -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{
+    "type":"git",
+    "name":"ContextSmith repo",
+    "uri":"https://github.com/pingchesu/contextsmith.git",
+    "source_config":{
+      "url":"https://github.com/pingchesu/contextsmith.git",
+      "branch":"main",
+      "max_repo_files":500
+    }
+  }'
 ```
 
-The indexer stores commit/version metadata and extracts deterministic code symbols with file and line citations.
+Refresh it the same way as a markdown resource, then use search, context packets, code search, or agent-context requests.
+
+Local filesystem repos are disabled by default in workers. They can be enabled for controlled local smoke tests with `CONTEXTSMITH_ALLOW_LOCAL_GIT=true`, but public deployments should prefer public HTTPS remotes or a hardened connector.
+
+## CLI workflow
+
+The Python package installs a `contextsmith` command:
+
+```bash
+contextsmith --help
+```
+
+Useful commands:
+
+```bash
+contextsmith health
+contextsmith workspace create --name Demo --slug demo
+contextsmith project create --workspace-id <workspace-id> --name "Demo Project"
+contextsmith resource add-doc --workspace-id <workspace-id> --project-id <project-id> --name Runbook --uri doc://runbook --content-file runbook.md --refresh --wait
+contextsmith resource add-repo --workspace-id <workspace-id> --project-id <project-id> --name Repo --repo-url https://github.com/example/repo.git --refresh --wait
+contextsmith resource list --workspace-id <workspace-id> --project-id <project-id>
+contextsmith search --workspace-id <workspace-id> --project-id <project-id> --query "payment retry"
+contextsmith agent-context --workspace-id <workspace-id> --project-id <project-id> --runtime hermes --query "payment retry runbook"
+contextsmith mcp-context --workspace-id <workspace-id> --project-id <project-id> --runtime claude --query "payment retry runbook"
+```
+
+Global options:
+
+```bash
+contextsmith --api-url http://localhost:18000 --email demo@example.com --json search ...
+```
+
+Environment variables:
+
+```bash
+export CONTEXTSMITH_API_URL=http://localhost:18000
+export CONTEXTSMITH_EMAIL=demo@example.com
+```

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -285,6 +286,39 @@ def main() -> None:
     )
     if git_search["count"] < 1 or git_search["hits"][0].get("commit") != git_commit:
         fail(f"git search/citation failed: {git_search}")
+    cli_search = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "contextsmith_cli.main",
+            "--api-url",
+            BASE,
+            "--email",
+            HEADERS["X-User-Email"],
+            "--json",
+            "search",
+            "--workspace-id",
+            ws,
+            "--project-id",
+            proj,
+            "--query",
+            "quokkasmoke",
+            "--resource-id",
+            git_res,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if cli_search.returncode != 0:
+        fail(f"CLI search failed: stdout={cli_search.stdout} stderr={cli_search.stderr}")
+    cli_payload = cli_search.stdout.strip()
+    try:
+        cli_result = json.loads(cli_payload)
+    except json.JSONDecodeError:
+        fail(f"CLI search returned non-JSON output: {cli_payload}")
+    if cli_result["count"] < 1 or cli_result["hits"][0].get("commit") != git_commit:
+        fail(f"CLI search/citation failed: {cli_result}")
     code_search = request(
         "POST",
         f"/workspaces/{ws}/projects/{proj}/code-search",
@@ -365,7 +399,7 @@ def main() -> None:
 
     print(
         "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → lexical/hybrid context retrieval with citations, "
-        "query/resource usage analytics, review lifecycle, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "CLI search, query/resource usage analytics, review lifecycle, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 

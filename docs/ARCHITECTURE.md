@@ -21,7 +21,7 @@ ContextSmith is a multi-tenant context platform. It turns project resources into
                             │
 ┌──────────────┐    ┌────────▼─────────┐      ┌────────────────┐
 │ Agent client │───▶│ FastAPI service  │─────▶│ PostgreSQL      │
-│ HTTP / MCP   │    │ API + MCP routes │      │ + pgvector      │
+│ HTTP/MCP/CLI │    │ API + MCP routes │      │ + pgvector      │
 └──────────────┘    └────────┬─────────┘      └────────────────┘
                              │
                              ▼

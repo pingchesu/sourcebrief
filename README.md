@@ -106,34 +106,44 @@ make compose-down
 
 See the full setup guide: [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
 
-## Five-minute API demo
+## Five-minute CLI demo
 
-ContextSmith uses a dev auth header locally. Pick any email:
-
-```bash
-export API=http://localhost:18000
-export AUTH='X-User-Email: demo@example.com'
-```
-
-Create a workspace:
+ContextSmith ships a CLI after local install. `make verify` installs it into `.venv/bin/contextsmith`.
 
 ```bash
-curl -s -X POST "$API/workspaces" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"name":"Demo","slug":"demo"}'
+export CONTEXTSMITH_API_URL=http://localhost:18000
+export CONTEXTSMITH_EMAIL=demo@example.com
+
+contextsmith workspace create --name Demo --slug demo
+contextsmith project create \
+  --workspace-id <workspace-id> \
+  --name "Demo Project" \
+  --description "Repo and runbook context"
 ```
 
-Copy the returned `id`, then create a project:
+Add a repository resource and wait for indexing:
 
 ```bash
-export WORKSPACE_ID=<workspace-id>
-
-curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"name":"Demo Project","description":"Repo and runbook context"}'
+contextsmith resource add-repo \
+  --workspace-id <workspace-id> \
+  --project-id <project-id> \
+  --name "ContextSmith repo" \
+  --repo-url https://github.com/pingchesu/contextsmith.git \
+  --branch main \
+  --refresh \
+  --wait
 ```
 
-Copy the returned project `id`, then add a markdown resource, refresh it, search it, and ask for an agent packet. The step-by-step version is in [`docs/GUIDE.md`](docs/GUIDE.md).
+Search it:
+
+```bash
+contextsmith search \
+  --workspace-id <workspace-id> \
+  --project-id <project-id> \
+  --query "agent-context API"
+```
+
+The API/curl walkthrough and a longer repo example live in [`docs/GUIDE.md`](docs/GUIDE.md).
 
 ## What you can build with it
 
