@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import requests
 
@@ -102,9 +103,12 @@ def build_git_fixture(ts: int) -> tuple[str, str]:
 
 def wait_for_index_run(ws: str, run_id: str) -> dict:
     deadline = time.time() + 90
-    current = {"status": "queued"}
+    current: dict[str, Any] = {"status": "queued"}
     while time.time() < deadline:
-        current = request("GET", f"/workspaces/{ws}/index-runs/{run_id}", 200, headers=HEADERS)
+        response = request("GET", f"/workspaces/{ws}/index-runs/{run_id}", 200, headers=HEADERS)
+        if response is None:
+            fail("index run lookup returned empty response")
+        current = cast(dict[str, Any], response)
         if current["status"] in {"succeeded", "failed"}:
             break
         time.sleep(2)

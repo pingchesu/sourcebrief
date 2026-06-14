@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
@@ -26,6 +28,7 @@ from contextsmith_api.auth import (
     token_allows_resource,
 )
 from contextsmith_api.retrieval import (
+    RetrievalCandidate,
     embedding_namespace_diagnostics,
     make_snippet,
     retrieve_context_candidates,
@@ -200,9 +203,11 @@ def _ensure_agent_profile(
 
 
 def _agent_profile_read(session: Session, workspace_id: UUID, project: Project, profile: AgentProfile) -> AgentProfileRead:
-    stats = session.execute(
-        text(
-            """
+    stats = cast(
+        Mapping[str, Any],
+        session.execute(
+            text(
+                """
             SELECT
               COUNT(DISTINCT r.id) AS resource_count,
               COUNT(DISTINCT r.current_snapshot_id) FILTER (WHERE r.current_snapshot_id IS NOT NULL) AS current_snapshot_count,
@@ -225,9 +230,11 @@ def _agent_profile_read(session: Session, workspace_id: UUID, project: Project, 
             WHERE p.workspace_id = :ws AND p.id = :proj
             GROUP BY p.id
             """
-        ),
-        {"ws": workspace_id, "proj": project.id},
-    ).mappings().first() or {}
+            ),
+            {"ws": workspace_id, "proj": project.id},
+        ).mappings().first()
+        or {},
+    )
     return AgentProfileRead(
         id=profile.id,
         workspace_id=profile.workspace_id,
@@ -313,7 +320,7 @@ def _validate_source_config(resource_type: str, uri: str, source_config: dict) -
     if rtype in UPLOAD_RESOURCE_TYPES:
         if any(key in config for key in ("path", "file_path", "local_path")):
             raise HTTPException(status_code=422, detail="upload connector does not accept local file paths")
-        if not any(isinstance(config.get(key), str) and config.get(key).strip() for key in ("content", "text", "base64")):
+        if not any(isinstance(value := config.get(key), str) and value.strip() for key in ("content", "text", "base64")):
             raise HTTPException(status_code=422, detail="upload connector requires content, text, or base64")
         try:
             max_document_bytes = parse_positive_int(
@@ -370,9 +377,9 @@ def _purge_resource_artifacts(session: Session, resource: Resource) -> dict[str,
     counts: dict[str, int] = {}
     for name, sql in statements:
         result = session.execute(text(sql), params)
-        counts[name] = int(result.rowcount or 0)
+        counts[name] = int(result.rowcount or 0)  # type: ignore[attr-defined]
     result = session.execute(text("DELETE FROM resources WHERE id = :resource_id"), params)
-    counts["resources"] = int(result.rowcount or 0)
+    counts["resources"] = int(result.rowcount or 0)  # type: ignore[attr-defined]
     return counts
 
 
@@ -1707,6 +1714,71 @@ _RUNTIME_INSTRUCTIONS = {
 }
 
 
+def _record_agent_context_usage(
+    session: Session,
+    *,
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: AgentContextRequest,
+    principal: Principal,
+    candidates: list[RetrievalCandidate],
+) -> None:
+    """Persist usage rows for agent-context without creating a context packet artifact."""
+    embedding_config = current_embedding_config()
+    vector_diagnostics = embedding_namespace_diagnostics(
+        session,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        resource_ids=payload.resource_ids,
+    )
+    query_run = QueryRun(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        actor_user_id=principal.user.id,
+        query=payload.query,
+        mode=f"agent-context:{payload.runtime or 'default'}",
+        top_k=payload.top_k,
+        provider=embedding_config.provider,
+        model=embedding_config.model,
+        status="succeeded",
+        hit_count=len(candidates),
+        finished_at=datetime.now(UTC),
+        meta={
+            "resource_ids": [str(rid) for rid in payload.resource_ids or []],
+            "runtime": payload.runtime,
+            "context_max_chars": payload.max_chars,
+            "include_code_symbols": payload.include_code_symbols,
+            "source": "agent-context",
+            **vector_diagnostics,
+        },
+    )
+    session.add(query_run)
+    session.flush()
+    for rank, candidate in enumerate(candidates, start=1):
+        session.add(
+            RetrievalHit(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                query_run_id=query_run.id,
+                resource_id=candidate.resource_id,
+                source_snapshot_id=candidate.snapshot_id,
+                chunk_id=candidate.chunk_id,
+                rank=rank,
+                lexical_score=candidate.lexical_score,
+                vector_score=candidate.vector_score,
+                graph_score=candidate.graph_score,
+                rerank_score=candidate.rerank_score,
+                score=candidate.score,
+                meta={
+                    "path": candidate.path,
+                    "content_hash": candidate.content_hash,
+                    "source": "agent-context",
+                },
+            )
+        )
+    session.commit()
+
+
 def _build_agent_context_response(
     session: Session,
     *,
@@ -1725,6 +1797,7 @@ def _build_agent_context_response(
     )
     citations: list[AgentContextCitation] = []
     context_parts: list[str] = []
+    used_candidates: list[RetrievalCandidate] = []
     used_chars = 0
     for rank, candidate in enumerate(candidates, start=1):
         header = (
@@ -1741,6 +1814,7 @@ def _build_agent_context_response(
         if not entry.strip():
             break
         context_parts.append(entry)
+        used_candidates.append(candidate)
         used_chars += len(entry) + (2 if len(context_parts) > 1 else 0)
         citations.append(
             AgentContextCitation(
@@ -1777,6 +1851,14 @@ def _build_agent_context_response(
     instruction_parts = [_COMMON_AGENT_INSTRUCTION, _RUNTIME_INSTRUCTIONS[actual_runtime]]
     if profile and profile.system_prompt:
         instruction_parts.append(profile.system_prompt)
+    _record_agent_context_usage(
+        session,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        payload=payload,
+        principal=principal,
+        candidates=used_candidates,
+    )
     return AgentContextResponse(
         query=payload.query,
         runtime=actual_runtime,
@@ -2053,12 +2135,12 @@ def create_context_packet(
                 )
             )
 
-        query_run = session.get(QueryRun, query_run_id)
-        if query_run is None:
+        finished_query_run = session.get(QueryRun, query_run_id)
+        if finished_query_run is None:
             raise RuntimeError("query_run disappeared during context packet build")
-        query_run.status = "succeeded"
-        query_run.hit_count = len(candidates)
-        query_run.finished_at = datetime.now(UTC)
+        finished_query_run.status = "succeeded"
+        finished_query_run.hit_count = len(candidates)
+        finished_query_run.finished_at = datetime.now(UTC)
         session.add(
             AuditEvent(
                 workspace_id=workspace_id,

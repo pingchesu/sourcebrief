@@ -1,0 +1,29 @@
+[
+  {
+    "id": "repo-agent-context",
+    "query": "Which Python function in src/context_agent.py returns the repository agent context marker, and how does the repository expose agent context?",
+    "expected_texts": ["alpha_repo_symbol", "REST and central MCP tools"],
+    "expected_resources": ["repo"],
+    "unexpected_resources": ["runbook"],
+    "top_k": 1,
+    "min_citations": 1
+  },
+  {
+    "id": "runbook-provider-escalation",
+    "query": "According to the Alpha Eval Runbook, what should operators check when agent context lacks citations?",
+    "expected_texts": ["check /provider-health", "inspect index runs", "reindex the resource"],
+    "expected_resources": ["runbook"],
+    "unexpected_resources": ["repo"],
+    "top_k": 1,
+    "min_citations": 1
+  },
+  {
+    "id": "cross-resource-agent-runbook",
+    "query": "How does the repository expose agent context, and what should operations do when citations are missing?",
+    "expected_texts": ["REST and central MCP tools", "check /provider-health"],
+    "expected_resources": ["repo", "runbook"],
+    "unexpected_resources": [],
+    "top_k": 3,
+    "min_citations": 2
+  }
+]

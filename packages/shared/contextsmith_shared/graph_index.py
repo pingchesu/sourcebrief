@@ -175,10 +175,10 @@ def build_graph_index(session: Session, resource: Resource, snapshot: SourceSnap
             edges_created += 1
     by_directory: dict[str, list[GraphNode]] = {}
     for path, file_node in file_nodes.items():
-        parent = str(PurePosixPath(path).parent)
-        if parent == ".":
-            parent = ""
-        by_directory.setdefault(parent, []).append(file_node)
+        directory_parent = str(PurePosixPath(path).parent)
+        if directory_parent == ".":
+            directory_parent = ""
+        by_directory.setdefault(directory_parent, []).append(file_node)
     for siblings in by_directory.values():
         for left, right in zip(siblings, siblings[1:], strict=False):
             _edge(

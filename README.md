@@ -84,9 +84,11 @@ Run the full stack and smoke test:
 
 ```bash
 make verify
+# or explicitly:
+make release-gate
 ```
 
-`make verify` installs local dependencies, builds the Docker services, runs migrations, runs tests, starts API/worker/frontend/Postgres/Redis, and executes a real smoke flow.
+`make verify` is an alias for `make release-gate`: it installs local dependencies, builds the Docker services, runs migrations, runs tests, starts API/worker/frontend/Postgres/Redis, executes a real smoke flow, and runs alpha evaluation against the demo dataset.
 
 When it passes, open:
 
@@ -208,6 +210,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 - [`docs/QUICKSTART.md`](docs/QUICKSTART.md) - install, run, verify, troubleshoot
 - [`docs/GUIDE.md`](docs/GUIDE.md) - create a project, ingest resources, query, review, use agent context
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) - local alpha operations, logs, queues, stuck jobs, rollback
+- [`docs/ALPHA_RELEASE_NOTES.md`](docs/ALPHA_RELEASE_NOTES.md) - shipped alpha capabilities and explicit non-goals
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - system design and runtime components
 - [`docs/SPEC.md`](docs/SPEC.md) - full product and architecture specification
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) - finite alpha milestone roadmap after M1-M10
@@ -225,6 +228,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 - [`docs/MILESTONE-15.md`](docs/MILESTONE-15.md) - SaaS alpha web console for project/resource/token/review/agent flows
 - [`docs/MILESTONE-16.md`](docs/MILESTONE-16.md) - Hermes/MCP integration pack and scoped token validation
 - [`docs/MILESTONE-17.md`](docs/MILESTONE-17.md) - open-source alpha packaging and deployment runbook
+- [`docs/MILESTONE-18.md`](docs/MILESTONE-18.md) - alpha evaluation, demo dataset, and release gate
 
 ## Tech stack
 
