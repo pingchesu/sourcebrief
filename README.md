@@ -30,6 +30,8 @@ Agents are only as useful as the context they can trust. ContextSmith is designe
 
 See [`docs/SPEC.md`](docs/SPEC.md) for the detailed product and architecture specification.
 
+See [`docs/MILESTONE-1.md`](docs/MILESTONE-1.md) for the foundation implementation plan, Docker runtime skeleton, and real-service QA gate.
+
 ## Initial scope
 
 ContextSmith is planned as an open-source SaaS-scale platform with the following first-class capabilities:

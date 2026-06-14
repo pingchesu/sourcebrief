@@ -243,7 +243,7 @@ API Server / Auth / Project Service
 | Queue / scheduler / locks | Redis |
 | Object/artifact storage | Local filesystem first, S3-compatible optional later |
 | API backend | FastAPI recommended; Django/NestJS acceptable if team preference differs |
-| Worker runtime | Celery, Dramatiq, RQ, or Arq; pick one Redis-backed worker system |
+| Worker runtime | RQ with Redis as broker; PostgreSQL `index_runs` remains durable job truth |
 | Frontend | Next.js/React |
 | Embedding provider | OpenAI-compatible endpoint, Hugging Face TEI, vLLM, SGLang, or local sentence-transformers |
 | Rerank provider | bge-reranker/Jina/cross-encoder via HTTP or local worker |
@@ -1598,13 +1598,16 @@ Add:
 - workspace/project/resource models
 - user auth placeholder
 - roles, service tokens, and audit event table
-- Docker Compose for Postgres/pgvector/Redis/API/worker/frontend
+- Docker Compose for Postgres/pgvector/Redis/API/RQ worker/frontend
+- real-service QA smoke gate
 
 Acceptance:
 
 - create workspace/project/resource via API
 - enforce workspace/project membership on reads
 - run local stack with one command
+- enqueue a no-op `index_run` through RQ and observe `queued -> running -> succeeded`
+- run lint, unit tests, integration tests, and Docker Compose QA smoke before marking the milestone complete
 
 ### Milestone 2: Resource Ingestion
 
@@ -1685,21 +1688,29 @@ Repos are resources inside projects. This supports arbitrary documents, runbooks
 
 PostgreSQL plus pgvector minimizes operational dependencies for open-source SaaS. Introduce specialized vector/graph stores only after proven need.
 
-### 26.3 Central MCP over per-repo MCP
+### 26.3 RQ as the V0 background job engine
+
+ContextSmith V0 uses RQ because the workload is mostly long-running, retryable, resource-scoped indexing/cleanup jobs rather than complex distributed workflows. RQ keeps the open-source deployment small by reusing Redis, matches the Python/FastAPI stack, and has precedent in production open-source systems such as CVAT. PostgreSQL remains the durable source of truth through `index_runs`; RQ/Redis is only the execution queue.
+
+### 26.4 Central MCP over per-repo MCP
 
 A central platform MCP server avoids server lifecycle and tool schema explosion. Repos are selected by project/resource IDs, not by separate MCP servers.
 
-### 26.4 Source truth separate from agent memory
+### 26.5 Source truth separate from agent memory
 
 Repo/document/resource snapshots are source truth. Agent memory stores learned usage, preferences, and routing hints only.
 
-### 26.5 Reviewable generated knowledge
+### 26.6 Reviewable generated knowledge
 
 LLM-generated summaries and inferred edges must be reviewable and marked by confidence/provenance. They are not equivalent to parser-extracted or human-verified facts.
 
-### 26.6 Multi-tenant from day one
+### 26.7 Multi-tenant from day one
 
 Workspace/project/resource scoping is mandatory in schema and retrieval. Full enterprise security can come later, but tenant boundaries cannot.
+
+### 26.8 Real-service QA gate
+
+A feature is not complete merely because unit tests pass. Each milestone must include lint, unit tests where useful, real-service integration tests, Docker Compose startup, and a senior-QA-style smoke flow that exercises the platform through API, database, Redis/RQ worker, and frontend/runtime services. Mocks are allowed for pure unit boundaries and unavailable third-party systems, but the core local platform path must be tested with real services.
 
 ## 27. Key Risks
 
