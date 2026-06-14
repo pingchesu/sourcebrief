@@ -39,10 +39,9 @@ from sqlalchemy.orm import Session
 
 from contextsmith_shared.code_intel import extract_code_symbols
 from contextsmith_shared.embeddings import (
-    DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_EMBEDDING_PROVIDER,
-    EMBEDDING_DIMENSIONS,
+    current_embedding_config,
     embed_text,
+    embedding_namespace,
     vector_literal,
 )
 from contextsmith_shared.graph_index import build_graph_index
@@ -877,16 +876,19 @@ def _collect_git(resource: Resource) -> tuple[list[dict], str, str, dict]:
 # --- orchestration ---------------------------------------------------------
 
 def _store_chunk_embedding(session: Session, chunk: Chunk) -> None:
+    config = current_embedding_config()
+    vector = embed_text(chunk.content, config=config)
+    namespace = embedding_namespace(config)
     session.execute(
         text(
             """
             INSERT INTO chunk_embeddings (
                 id, workspace_id, project_id, resource_id, source_snapshot_id,
-                chunk_id, provider, model, dimensions, content_hash, embedding
+                chunk_id, provider, model, dimensions, namespace, normalized, content_hash, embedding
             ) VALUES (
                 gen_random_uuid(), CAST(:workspace_id AS uuid), CAST(:project_id AS uuid),
                 CAST(:resource_id AS uuid), CAST(:snapshot_id AS uuid), CAST(:chunk_id AS uuid),
-                :provider, :model, :dimensions, :content_hash, CAST(:embedding AS vector)
+                :provider, :model, :dimensions, :namespace, :normalized, :content_hash, CAST(:embedding AS vector)
             )
             """
         ),
@@ -896,11 +898,13 @@ def _store_chunk_embedding(session: Session, chunk: Chunk) -> None:
             "resource_id": str(chunk.resource_id),
             "snapshot_id": str(chunk.source_snapshot_id),
             "chunk_id": str(chunk.id),
-            "provider": DEFAULT_EMBEDDING_PROVIDER,
-            "model": DEFAULT_EMBEDDING_MODEL,
-            "dimensions": EMBEDDING_DIMENSIONS,
+            "provider": config.provider,
+            "model": config.model,
+            "dimensions": config.dimensions,
+            "namespace": namespace,
+            "normalized": config.normalized,
             "content_hash": chunk.content_hash,
-            "embedding": vector_literal(embed_text(chunk.content)),
+            "embedding": vector_literal(vector),
         },
     )
 

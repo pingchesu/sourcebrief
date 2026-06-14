@@ -106,6 +106,12 @@ def test_context_packet_hybrid_retrieval_records_analytics() -> None:
     assert body["id"]
     assert body["provider"] == "hashing"
     assert body["model"] == "contextsmith-hashing-v1"
+    assert body["diagnostics"]["embedding_namespace"] == "hashing:contextsmith-hashing-v1:d64:l2"
+    assert body["diagnostics"]["embedding_normalized"] is True
+    assert body["diagnostics"]["rerank_score_range"] == [0.0, 1.0]
+    assert body["diagnostics"]["vector_status"] == "ok"
+    assert body["diagnostics"]["matching_embedding_count"] >= 1
+    assert body["diagnostics"]["available_embedding_namespaces"] == ["hashing:contextsmith-hashing-v1:d64:l2"]
     assert body["count"] >= 1
     item = body["items"][0]
     assert item["resource_id"] == resource_id
@@ -119,13 +125,30 @@ def test_context_packet_hybrid_retrieval_records_analytics() -> None:
         query_rows = [
             dict(row)
             for row in session.execute(
-                text("SELECT hit_count, status FROM query_runs WHERE id = CAST(:id AS uuid)"),
+                text("SELECT hit_count, status, metadata FROM query_runs WHERE id = CAST(:id AS uuid)"),
                 {"id": body["query_run_id"]},
             )
             .mappings()
             .all()
         ]
-        assert query_rows == [{"hit_count": body["count"], "status": "succeeded"}]
+        assert query_rows[0]["hit_count"] == body["count"]
+        assert query_rows[0]["status"] == "succeeded"
+        assert query_rows[0]["metadata"]["embedding_namespace"] == "hashing:contextsmith-hashing-v1:d64:l2"
+        embedding_rows = [
+            dict(row)
+            for row in session.execute(
+                text(
+                    "SELECT provider, model, dimensions, namespace, normalized FROM chunk_embeddings "
+                    "WHERE resource_id = CAST(:rid AS uuid)"
+                ),
+                {"rid": resource_id},
+            )
+            .mappings()
+            .all()
+        ]
+        assert embedding_rows
+        assert {row["namespace"] for row in embedding_rows} == {"hashing:contextsmith-hashing-v1:d64:l2"}
+        assert all(row["normalized"] is True for row in embedding_rows)
         hit_count = session.execute(
             text("SELECT count(*) FROM retrieval_hits WHERE query_run_id = CAST(:id AS uuid)"),
             {"id": body["query_run_id"]},
@@ -136,8 +159,27 @@ def test_context_packet_hybrid_retrieval_records_analytics() -> None:
         ).scalar_one()
         assert hit_count == body["count"]
         assert item_count == body["count"]
+
+        session.execute(
+            text("UPDATE chunk_embeddings SET namespace = 'other:model:d64:l2' WHERE resource_id = CAST(:rid AS uuid)"),
+            {"rid": resource_id},
+        )
+        session.commit()
     finally:
         session.close()
+
+    packet_after_drift = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packets",
+        json={"query": "hybrid vector rerank narwhalvector42", "top_k": 5},
+        headers=headers,
+    )
+    assert packet_after_drift.status_code == 201, packet_after_drift.text
+    drift_item = packet_after_drift.json()["items"][0]
+    assert drift_item["resource_id"] == resource_id
+    assert drift_item["vector_score"] == 0.0
+    assert packet_after_drift.json()["diagnostics"]["vector_status"] == "namespace_mismatch"
+    assert packet_after_drift.json()["diagnostics"]["matching_embedding_count"] == 0
+    assert packet_after_drift.json()["diagnostics"]["available_embedding_namespaces"] == ["other:model:d64:l2"]
 
 
 def test_context_packet_uses_current_snapshot_and_resource_filter() -> None:

@@ -22,6 +22,8 @@ class EmbeddingConfig:
     provider: str = DEFAULT_EMBEDDING_PROVIDER
     model: str = DEFAULT_EMBEDDING_MODEL
     dimensions: int = EMBEDDING_DIMENSIONS
+    normalized: bool = True
+    deployment_id: str | None = None
     endpoint: str | None = os.getenv("CONTEXTSMITH_EMBEDDING_ENDPOINT")
     api_key: str | None = os.getenv("CONTEXTSMITH_EMBEDDING_API_KEY")
     timeout: float = float(os.getenv("CONTEXTSMITH_EMBEDDING_TIMEOUT", "30"))
@@ -36,12 +38,30 @@ class RerankConfig:
     timeout: float = float(os.getenv("CONTEXTSMITH_RERANK_TIMEOUT", "30"))
 
 
+def _safe_deployment_id(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-._")
+    return cleaned[:64] or "unnamed"
+
+
+def _derived_deployment_id(provider: str, endpoint: str | None) -> str | None:
+    explicit = os.getenv("CONTEXTSMITH_EMBEDDING_DEPLOYMENT_ID")
+    if explicit:
+        return _safe_deployment_id(explicit)
+    if provider not in {"http", "openai", "openai-compatible", "huggingface", "vllm", "sglang"} or not endpoint:
+        return None
+    return "endpoint-" + hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:12]
+
+
 def current_embedding_config() -> EmbeddingConfig:
+    provider = os.getenv("CONTEXTSMITH_EMBEDDING_PROVIDER", DEFAULT_EMBEDDING_PROVIDER)
+    endpoint = os.getenv("CONTEXTSMITH_EMBEDDING_ENDPOINT")
     return EmbeddingConfig(
-        provider=os.getenv("CONTEXTSMITH_EMBEDDING_PROVIDER", DEFAULT_EMBEDDING_PROVIDER),
+        provider=provider,
         model=os.getenv("CONTEXTSMITH_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
         dimensions=EMBEDDING_DIMENSIONS,
-        endpoint=os.getenv("CONTEXTSMITH_EMBEDDING_ENDPOINT"),
+        normalized=os.getenv("CONTEXTSMITH_EMBEDDING_NORMALIZED", "true").lower() not in {"0", "false", "no"},
+        deployment_id=_derived_deployment_id(provider, endpoint),
+        endpoint=endpoint,
         api_key=os.getenv("CONTEXTSMITH_EMBEDDING_API_KEY"),
         timeout=float(os.getenv("CONTEXTSMITH_EMBEDDING_TIMEOUT", "30")),
     )
@@ -57,8 +77,29 @@ def current_rerank_config() -> RerankConfig:
     )
 
 
+def embedding_namespace(config: EmbeddingConfig | None = None) -> str:
+    config = config or current_embedding_config()
+    normalized = "l2" if config.normalized else "raw"
+    base = f"{config.provider}:{config.model}:d{config.dimensions}:{normalized}"
+    if config.deployment_id:
+        return f"{base}:dep-{_safe_deployment_id(config.deployment_id)}"
+    return base
+
+
+def is_dev_embedding_provider(config: EmbeddingConfig | None = None) -> bool:
+    config = config or current_embedding_config()
+    return config.provider in {"hashing", "deterministic", "dev"}
+
+
 def tokenize(text: str) -> list[str]:
     return [token.lower() for token in _TOKEN_RE.findall(text)]
+
+
+def _normalize_vector(vector: list[float]) -> list[float]:
+    norm = math.sqrt(sum(value * value for value in vector))
+    if norm == 0:
+        return vector
+    return [value / norm for value in vector]
 
 
 def _hashing_embedding(text: str, *, dimensions: int) -> list[float]:
@@ -71,10 +112,7 @@ def _hashing_embedding(text: str, *, dimensions: int) -> list[float]:
         bucket = int.from_bytes(digest[:4], "big") % dimensions
         sign = 1.0 if digest[4] & 1 else -1.0
         vector[bucket] += sign
-    norm = math.sqrt(sum(value * value for value in vector))
-    if norm == 0:
-        return vector
-    return [value / norm for value in vector]
+    return _normalize_vector(vector)
 
 
 def _post_json(endpoint: str, payload: dict, *, api_key: str | None, timeout: float) -> dict:
@@ -122,7 +160,8 @@ def embed_text(text: str, *, dimensions: int | None = None, config: EmbeddingCon
     if config.provider in {"hashing", "deterministic", "dev"}:
         return _hashing_embedding(text, dimensions=dims)
     if config.provider in {"http", "openai", "openai-compatible", "huggingface", "vllm", "sglang"}:
-        return _remote_embedding(text, config)
+        vector = _remote_embedding(text, config)
+        return _normalize_vector(vector) if config.normalized else vector
     raise RuntimeError(f"unsupported embedding provider: {config.provider}")
 
 
@@ -142,7 +181,9 @@ def term_overlap_score(query: str, content: str) -> float:
     return len(query_terms & content_terms) / len(query_terms)
 
 
-def _clamp_score(value: float) -> float:
+def normalize_rerank_score(value: float) -> float:
+    if not math.isfinite(value):
+        return 0.0
     return max(0.0, min(1.0, value))
 
 
@@ -160,12 +201,61 @@ def rerank_score(query: str, content: str, *, config: RerankConfig | None = None
             timeout=config.timeout,
         )
         if isinstance(result.get("scores"), list) and result["scores"]:
-            return _clamp_score(float(result["scores"][0]))
+            return normalize_rerank_score(float(result["scores"][0]))
         if isinstance(result.get("results"), list) and result["results"]:
             first = result["results"][0]
             if isinstance(first, dict) and "score" in first:
-                return _clamp_score(float(first["score"]))
+                return normalize_rerank_score(float(first["score"]))
         if "score" in result:
-            return _clamp_score(float(result["score"]))
+            return normalize_rerank_score(float(result["score"]))
         raise RuntimeError("rerank provider returned no score")
     raise RuntimeError(f"unsupported rerank provider: {config.provider}")
+
+
+def verify_provider_health() -> dict:
+    embedding_config = current_embedding_config()
+    rerank_config = current_rerank_config()
+    embedding_status = "ok"
+    rerank_status = "ok"
+    embedding_error: str | None = None
+    rerank_error: str | None = None
+    try:
+        vector = embed_text("contextsmith provider health probe", config=embedding_config)
+        if len(vector) != embedding_config.dimensions:
+            raise RuntimeError(f"expected {embedding_config.dimensions} dimensions, got {len(vector)}")
+        if embedding_config.normalized:
+            norm = math.sqrt(sum(value * value for value in vector))
+            if vector and norm > 0 and not 0.99 <= norm <= 1.01:
+                raise RuntimeError(f"embedding norm {norm:.4f} is not normalized")
+    except Exception as exc:  # pragma: no cover - exercised through API/integration paths
+        embedding_status = "failed"
+        embedding_error = str(exc)
+    try:
+        score = rerank_score("provider health", "provider health probe", config=rerank_config)
+        if not 0.0 <= score <= 1.0:
+            raise RuntimeError(f"rerank score out of range: {score}")
+    except Exception as exc:  # pragma: no cover
+        rerank_status = "failed"
+        rerank_error = str(exc)
+    return {
+        "status": "ok" if embedding_status == "ok" and rerank_status == "ok" else "failed",
+        "embedding": {
+            "status": embedding_status,
+            "provider": embedding_config.provider,
+            "model": embedding_config.model,
+            "dimensions": embedding_config.dimensions,
+            "normalized": embedding_config.normalized,
+            "namespace": embedding_namespace(embedding_config),
+            "deployment_id": embedding_config.deployment_id,
+            "dev_quality": is_dev_embedding_provider(embedding_config),
+            "error": embedding_error,
+        },
+        "rerank": {
+            "status": rerank_status,
+            "provider": rerank_config.provider,
+            "model": rerank_config.model,
+            "score_range": [0.0, 1.0],
+            "dev_quality": rerank_config.provider in {"term-overlap", "overlap", "dev", "deterministic"},
+            "error": rerank_error,
+        },
+    }

@@ -117,6 +117,15 @@ def wait_for_index_run(ws: str, run_id: str) -> dict:
 
 
 def main() -> None:
+    provider_health = request("GET", "/provider-health", 200)
+    if provider_health is None:
+        fail("provider health returned empty response")
+    expected_namespace = "hashing:contextsmith-hashing-v1:d64:l2"
+    if provider_health.get("status") != "ok" or provider_health["embedding"].get("namespace") != expected_namespace:
+        fail(f"provider health missing expected namespace: {provider_health}")
+    if provider_health["embedding"].get("dev_quality") is not True:
+        fail(f"hashing provider must be marked dev-quality: {provider_health}")
+
     ts = int(time.time() * 1000)
     workspace = request("POST", "/workspaces", 201, json={"name": "QA", "slug": f"qa-{ts}"}, headers=HEADERS)
     ws = workspace["id"]
@@ -202,6 +211,8 @@ def main() -> None:
         json={"query": f"lexical vector rerank {MARKER}", "resource_ids": [res], "top_k": 5},
         headers=HEADERS,
     )
+    if packet is None:
+        fail("context packet returned empty response")
     if packet["count"] < 1 or not packet.get("id") or not packet.get("query_run_id"):
         fail(f"context packet missing items or analytics ids: {packet}")
     packet_item = packet["items"][0]
@@ -209,6 +220,8 @@ def main() -> None:
         fail(f"context packet citation mismatch: {packet_item}")
     if packet_item.get("vector_score", 0) == 0:
         fail(f"context packet missing vector score: {packet_item}")
+    if packet.get("diagnostics", {}).get("embedding_namespace") != expected_namespace:
+        fail(f"context packet missing embedding namespace diagnostics: {packet}")
 
     usage = request(
         "GET",
@@ -502,7 +515,7 @@ def main() -> None:
 
     print(
         "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, "
-        "CLI search, agent profile, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "CLI search, agent profile, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 

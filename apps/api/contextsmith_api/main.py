@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from redis import Redis
 from rq import Queue
@@ -24,7 +25,11 @@ from contextsmith_api.auth import (
     token_allows_project,
     token_allows_resource,
 )
-from contextsmith_api.retrieval import make_snippet, retrieve_context_candidates
+from contextsmith_api.retrieval import (
+    embedding_namespace_diagnostics,
+    make_snippet,
+    retrieve_context_candidates,
+)
 from contextsmith_api.schemas import (
     AgentContextCitation,
     AgentContextRequest,
@@ -66,7 +71,7 @@ from contextsmith_api.schemas import (
 )
 from contextsmith_shared.config import get_settings
 from contextsmith_shared.db import get_session
-from contextsmith_shared.embeddings import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROVIDER
+from contextsmith_shared.embeddings import current_embedding_config, verify_provider_health
 from contextsmith_shared.lifecycle import compute_next_refresh_at
 from contextsmith_shared.models import (
     AgentProfile,
@@ -142,6 +147,13 @@ def readyz(session: Session = Depends(get_session)) -> dict[str, str]:
     session.execute(text("select 1"))
     Redis.from_url(get_settings().redis_url).ping()
     return {"status": "ready"}
+
+
+@app.get("/provider-health")
+def provider_health() -> JSONResponse:
+    health = verify_provider_health()
+    status_code = 200 if health.get("status") == "ok" else 503
+    return JSONResponse(status_code=status_code, content=health)
 
 
 def _resolve_project(session: Session, workspace_id: UUID, project_id: UUID) -> Project:
@@ -1918,6 +1930,13 @@ def create_context_packet(
     payload = payload.model_copy(update={"resource_ids": resource_ids})
     _require_project_access(session, workspace_id, project_id, principal)
 
+    embedding_config = current_embedding_config()
+    vector_diagnostics = embedding_namespace_diagnostics(
+        session,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        resource_ids=payload.resource_ids,
+    )
     query_run = QueryRun(
         workspace_id=workspace_id,
         project_id=project_id,
@@ -1925,10 +1944,13 @@ def create_context_packet(
         query=payload.query,
         mode=payload.mode,
         top_k=payload.top_k,
-        provider=DEFAULT_EMBEDDING_PROVIDER,
-        model=DEFAULT_EMBEDDING_MODEL,
+        provider=embedding_config.provider,
+        model=embedding_config.model,
         status="running",
-        meta={"resource_ids": [str(rid) for rid in payload.resource_ids or []]},
+        meta={
+            "resource_ids": [str(rid) for rid in payload.resource_ids or []],
+            **vector_diagnostics,
+        },
     )
     session.add(query_run)
     session.commit()
@@ -2049,9 +2071,10 @@ def create_context_packet(
             project_id=project_id,
             query=payload.query,
             mode=payload.mode,
-            provider=DEFAULT_EMBEDDING_PROVIDER,
-            model=DEFAULT_EMBEDDING_MODEL,
+            provider=embedding_config.provider,
+            model=embedding_config.model,
             count=len(items),
+            diagnostics={**vector_diagnostics, "rerank_score_range": [0.0, 1.0]},
             items=items,
         )
     except HTTPException:

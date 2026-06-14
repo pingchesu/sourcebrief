@@ -72,8 +72,22 @@ def create_flow(client: TestClient, email_prefix: str) -> tuple[dict[str, str], 
     return headers, workspace_id, project_id, resource.json()["id"]
 
 
+def test_provider_health_returns_503_on_failed_provider(monkeypatch) -> None:
+    monkeypatch.setenv("CONTEXTSMITH_EMBEDDING_PROVIDER", "vllm")
+    monkeypatch.delenv("CONTEXTSMITH_EMBEDDING_ENDPOINT", raising=False)
+    response = TestClient(app).get("/provider-health")
+    assert response.status_code == 503
+    assert response.json()["status"] == "failed"
+    assert response.json()["embedding"]["status"] == "failed"
+
+
 def test_workspace_project_resource_refresh_flow() -> None:
     require_real_services()
+    health = TestClient(app).get("/provider-health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+    assert health.json()["embedding"]["namespace"] == "hashing:contextsmith-hashing-v1:d64:l2"
+    assert health.json()["embedding"]["dev_quality"] is True
     old_dev_auth = os.environ.get("CONTEXTSMITH_DEV_AUTH")
     os.environ["CONTEXTSMITH_DEV_AUTH"] = "false"
     try:

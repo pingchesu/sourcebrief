@@ -287,6 +287,7 @@ class ContextPacketRead(BaseModel):
     provider: str
     model: str
     count: int
+    diagnostics: dict = Field(default_factory=dict)
     items: list[ContextPacketItemRead]
 
 

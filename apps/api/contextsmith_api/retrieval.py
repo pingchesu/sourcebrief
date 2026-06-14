@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from contextsmith_shared.embeddings import (
     current_embedding_config,
     embed_text,
+    embedding_namespace,
+    is_dev_embedding_provider,
     rerank_score,
     vector_literal,
 )
@@ -77,6 +79,66 @@ def _upsert_candidate(
     candidate.vector_score = max(candidate.vector_score, vector_score)
 
 
+def embedding_namespace_diagnostics(
+    session: Session,
+    *,
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_ids: list[UUID] | None = None,
+) -> dict:
+    embedding_config = current_embedding_config()
+    active_namespace = embedding_namespace(embedding_config)
+    params: dict = {
+        "ws": str(workspace_id),
+        "proj": str(project_id),
+        "namespace": active_namespace,
+    }
+    resource_clause = _resource_filter_clause(resource_ids, params)
+    rows = session.execute(
+        text(
+            f"""
+            SELECT e.namespace, count(*) AS count
+            FROM chunk_embeddings e
+            JOIN chunks c ON c.id = e.chunk_id
+            WHERE c.workspace_id = CAST(:ws AS uuid)
+              AND c.project_id = CAST(:proj AS uuid)
+              AND c.deleted_at IS NULL
+              AND c.source_snapshot_id IN (
+                  SELECT r.current_snapshot_id FROM resources r
+                  WHERE r.workspace_id = CAST(:ws AS uuid)
+                    AND r.project_id = CAST(:proj AS uuid)
+                    AND r.deleted_at IS NULL
+                    AND r.archived_at IS NULL
+                    AND r.retrieval_enabled = true
+                    AND r.current_snapshot_id IS NOT NULL
+                    {resource_clause}
+              )
+            GROUP BY e.namespace
+            """
+        ),
+        params,
+    ).mappings().all()
+    namespaces = {str(row["namespace"]): int(row["count"] or 0) for row in rows}
+    matching = namespaces.get(active_namespace, 0)
+    total = sum(namespaces.values())
+    if matching > 0:
+        vector_status = "ok"
+    elif total > 0:
+        vector_status = "namespace_mismatch"
+    else:
+        vector_status = "no_embeddings"
+    return {
+        "embedding_namespace": active_namespace,
+        "embedding_dimensions": embedding_config.dimensions,
+        "embedding_normalized": embedding_config.normalized,
+        "embedding_deployment_id": embedding_config.deployment_id,
+        "vector_status": vector_status,
+        "matching_embedding_count": matching,
+        "total_embedding_count": total,
+        "available_embedding_namespaces": sorted(namespaces),
+    }
+
+
 def retrieve_context_candidates(
     session: Session,
     *,
@@ -132,7 +194,15 @@ def retrieve_context_candidates(
     for row in session.execute(lexical_sql, base_params).mappings().all():
         _upsert_candidate(candidates, row, lexical_score=float(row["score"] or 0.0))
 
-    vector_params = {**base_params, "embedding": vector_literal(embed_text(query))}
+    embedding_config = current_embedding_config()
+    vector_params = {
+        **base_params,
+        "embedding": vector_literal(embed_text(query, config=embedding_config)),
+        "provider": embedding_config.provider,
+        "model": embedding_config.model,
+        "dimensions": embedding_config.dimensions,
+        "namespace": embedding_namespace(embedding_config),
+    }
     vector_sql = text(
         f"""
         {select_columns},
@@ -153,6 +223,10 @@ def retrieve_context_candidates(
                 AND r.current_snapshot_id IS NOT NULL
                 {resource_clause}
           )
+          AND e.provider = :provider
+          AND e.model = :model
+          AND e.dimensions = :dimensions
+          AND e.namespace = :namespace
         ORDER BY e.embedding <=> CAST(:embedding AS vector), c.resource_id, c.ordinal ASC
         LIMIT :limit
         """
@@ -200,8 +274,7 @@ def retrieve_context_candidates(
                 candidate.graph_score = max(candidate.graph_score, float(row["graph_score"] or 0.0))
 
     filtered: list[RetrievalCandidate] = []
-    embedding_provider = current_embedding_config().provider
-    require_text_overlap = embedding_provider in {"hashing", "deterministic", "dev"}
+    require_text_overlap = is_dev_embedding_provider(embedding_config)
     for candidate in candidates.values():
         candidate.rerank_score = rerank_score(query, candidate.content)
         # The offline hashing provider is not a true semantic model; avoid
