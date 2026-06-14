@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+from email.message import Message
+from types import SimpleNamespace
+from urllib.error import HTTPError
 
 import pytest
 
@@ -8,11 +11,15 @@ from contextsmith_worker.ingestion import (
     _coerce_documents,
     chunk_text,
     content_hash,
+    fetch_url_document,
+    html_to_text,
     is_text_file,
     iter_repo_files,
+    redact_secrets,
     sanitize_remote_url,
     should_index_path,
     validate_git_url,
+    validate_http_url,
 )
 
 
@@ -81,7 +88,7 @@ def test_validate_git_url_accepts_https_and_local_only_when_enabled() -> None:
     )
     with pytest.raises(ValueError):
         validate_git_url("file:///tmp/repo")
-    assert validate_git_url("file:///tmp/repo", allow_local=True) == (True, "file:///tmp/repo")
+    assert validate_git_url("file:///tmp/repo", allow_local=True) == (True, "/tmp/repo")
     assert validate_git_url("/abs/path/repo", allow_local=True) == (True, "/abs/path/repo")
     is_local, target = validate_git_url("./rel/repo", allow_local=True)
     assert is_local is True
@@ -156,3 +163,129 @@ def test_iter_repo_files_skips_escaping_symlinks(tmp_path) -> None:
         pytest.skip("symlinks not supported on this platform")
     paths = [rel for rel, _ in iter_repo_files(tmp_path)]
     assert paths == ["keep.md"]
+
+
+def test_validate_http_url_rejects_unsafe_targets() -> None:
+    assert validate_http_url("https://example.com/docs?q=1#frag") == "https://example.com/docs?q=1"
+    for bad in [
+        "file:///etc/passwd",
+        "http://localhost/admin",
+        "http://127.0.0.1/admin",
+        "https://user:pass@example.com/secret",
+        "https://example.com/a b",
+    ]:
+        with pytest.raises(ValueError):
+            validate_http_url(bad)
+
+
+def test_html_to_text_and_redaction() -> None:
+    text = html_to_text("<html><body><h1>Title</h1><script>secret</script><p>Hello</p></body></html>")
+    assert "Title" in text
+    assert "Hello" in text
+    assert "secret" not in text
+
+    redacted, counts = redact_secrets("token=ghp_abcdefghijklmnopqrstuvwxyz123456 and password=supersecretvalue")
+    assert "ghp_" not in redacted
+    assert "supersecretvalue" not in redacted
+    assert counts["github_token"] == 1
+    assert counts["generic_api_key"] == 1
+
+
+def test_fetch_url_document_bounds_and_html(monkeypatch) -> None:
+    class FakeResponse:
+        headers = {"Content-Type": "text/html; charset=utf-8", "Content-Length": "80"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def geturl(self):
+            return "https://example.com/page"
+
+        def read(self, size: int):
+            assert size == 101
+            return b"<html><body><h1>Connector</h1><p>public content</p></body></html>"
+
+    monkeypatch.setattr("contextsmith_worker.ingestion._open_url", lambda request, timeout: FakeResponse())
+    resource = SimpleNamespace(
+        type="url",
+        name="Example",
+        uri="https://example.com/page",
+        source_config={"max_url_bytes": 100},
+    )
+    docs, version, version_kind, meta = fetch_url_document(resource)
+    assert version_kind == "content_hash"
+    assert len(version) == 64
+    assert docs[0]["title"] == "page"
+    assert "Connector" in docs[0]["content"]
+    assert "<html" not in docs[0]["content"]
+    assert meta["source"] == "url"
+
+
+def test_fetch_url_document_blocks_redirect_to_private_host_before_second_request(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_open(request, timeout):
+        calls.append(request.full_url)
+        headers = Message()
+        headers["Location"] = "http://127.0.0.1/admin"
+        raise HTTPError(
+            request.full_url,
+            302,
+            "Found",
+            headers,
+            None,
+        )
+
+    monkeypatch.setattr("contextsmith_worker.ingestion._open_url", fake_open)
+    resource = SimpleNamespace(
+        type="url",
+        name="Redirect",
+        uri="https://example.com/redirect",
+        source_config={},
+    )
+    with pytest.raises(ValueError, match="public"):
+        fetch_url_document(resource)
+    assert calls == ["https://example.com/redirect"]
+
+
+def test_fetch_url_document_strips_query_from_persisted_paths(monkeypatch) -> None:
+    class FakeResponse:
+        headers = {"Content-Type": "text/plain", "Content-Length": "12"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def geturl(self):
+            return "https://example.com/doc?access_token=SECRET"
+
+        def read(self, size: int):
+            return b"hello world"
+
+    monkeypatch.setattr("contextsmith_worker.ingestion._open_url", lambda request, timeout: FakeResponse())
+    resource = SimpleNamespace(
+        type="url",
+        name="Signed",
+        uri="https://example.com/doc?access_token=SECRET",
+        source_config={"max_url_bytes": 100},
+    )
+    docs, _, _, meta = fetch_url_document(resource)
+    assert docs[0]["path"] == "https://example.com/doc"
+    assert meta["url"] == "https://example.com/doc"
+    assert "SECRET" not in str(docs) + str(meta)
+
+
+def test_fetch_url_document_rejects_invalid_bounds() -> None:
+    resource = SimpleNamespace(
+        type="url",
+        name="Bad",
+        uri="https://example.com/doc",
+        source_config={"max_url_bytes": -1},
+    )
+    with pytest.raises(ValueError, match="max_url_bytes"):
+        fetch_url_document(resource)

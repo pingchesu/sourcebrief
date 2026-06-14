@@ -247,6 +247,85 @@ def test_token_commands_and_bearer_client(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["id"] == "tok-1"
 
 
+def test_safe_connector_cli_commands(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "resource",
+                "add-url",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--name",
+                "Docs",
+                "--url",
+                "https://example.com/docs",
+                "--max-url-bytes",
+                "1234",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["resource"]["type"] == "url"
+    url_body = FakeClient.instances[-1].calls[0][2]
+    assert url_body["source_config"] == {"url": "https://example.com/docs", "max_url_bytes": 1234}
+
+    upload_path = tmp_path / "runbook.md"
+    upload_path.write_text("uploaded marker", encoding="utf-8")
+    assert (
+        cli_main(
+            [
+                "--json",
+                "resource",
+                "add-upload",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--name",
+                "Upload",
+                "--path",
+                str(upload_path),
+                "--content-type",
+                "text/markdown",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["resource"]["type"] == "upload"
+    upload_body = FakeClient.instances[-1].calls[0][2]
+    assert upload_body["uri"] == "upload://runbook.md"
+    assert upload_body["source_config"]["content"] == "uploaded marker"
+    assert upload_body["source_config"]["content_type"] == "text/markdown"
+    assert upload_body["source_config"]["max_document_bytes"] == 5_000_000
+
+    too_large = tmp_path / "too-large.md"
+    too_large.write_text("0123456789", encoding="utf-8")
+    assert (
+        cli_main(
+            [
+                "resource",
+                "add-upload",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--name",
+                "Too Large",
+                "--path",
+                str(too_large),
+                "--max-document-bytes",
+                "5",
+            ]
+        )
+        == 1
+    )
+
+
 def test_resource_lifecycle_cli_commands(monkeypatch, capsys):
     patch_client(monkeypatch)
 

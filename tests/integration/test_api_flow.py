@@ -128,7 +128,100 @@ def test_refresh_failure_path_records_failed_status() -> None:
     assert "intentional placeholder failure" in failed["error_message"]
 
 
-def test_api_token_scopes_and_resource_allowlist() -> None:
+def test_safe_connectors_upload_redaction_and_validation() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id, _ = create_flow(client, "m13")
+    secret = "plainsecretvalue1234567890"
+    upload = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={
+            "type": "upload",
+            "name": "Uploaded Runbook",
+            "uri": "upload://runbook.md",
+            "source_config": {
+                "filename": "runbook.md",
+                "content_type": "text/markdown",
+                "content": f"Upload marker safeupload and api_key={secret}",
+            },
+        },
+        headers=headers,
+    )
+    assert upload.status_code == 201, upload.text
+    resource_id = upload.json()["id"]
+    run = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh",
+        headers=headers,
+    )
+    assert run.status_code == 202, run.text
+    completed = wait_for_run(client, workspace_id, run.json()["id"], headers)
+    assert completed["status"] == "succeeded"
+
+    redacted_search = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/search",
+        json={"query": "safeupload", "resource_ids": [resource_id]},
+        headers=headers,
+    )
+    assert redacted_search.status_code == 200, redacted_search.text
+    assert redacted_search.json()["count"] >= 1
+    snippet = redacted_search.json()["hits"][0]["snippet"]
+    assert "REDACTED:generic_api_key" in snippet
+    assert secret not in snippet
+
+    secret_search = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/search",
+        json={"query": secret, "resource_ids": [resource_id]},
+        headers=headers,
+    )
+    assert secret_search.status_code == 200, secret_search.text
+    assert secret_search.json()["count"] == 0
+
+    snapshots = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/snapshots",
+        headers=headers,
+    )
+    assert snapshots.status_code == 200, snapshots.text
+    assert snapshots.json()[0]["metadata"]["redacted_secret_counts"]["generic_api_key"] == 1
+
+    unsafe_url = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={"type": "url", "name": "Local", "uri": "http://127.0.0.1/admin", "source_config": {}},
+        headers=headers,
+    )
+    assert unsafe_url.status_code == 422
+    invalid_bound = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={"type": "url", "name": "Bad Size", "uri": "https://example.com/doc", "source_config": {"max_url_bytes": -1}},
+        headers=headers,
+    )
+    assert invalid_bound.status_code == 422
+    sanitized_url = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={
+            "type": "url",
+            "name": "Signed",
+            "uri": "https://bad.example/internal?token=SECRET",
+            "source_config": {"url": "https://example.com/doc?token=SECRET"},
+        },
+        headers=headers,
+    )
+    assert sanitized_url.status_code == 201, sanitized_url.text
+    assert sanitized_url.json()["uri"] == "https://example.com/doc"
+    assert "SECRET" not in sanitized_url.json()["uri"]
+    unsafe_upload = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={
+            "type": "upload",
+            "name": "Path Leak",
+            "uri": "upload://bad",
+            "source_config": {"path": "/etc/passwd", "content": "x"},
+        },
+        headers=headers,
+    )
+    assert unsafe_upload.status_code == 422
+
+
+def test_api_tokens_enforce_scopes_and_resource_allowlists() -> None:
     require_real_services()
     client = TestClient(app)
     headers, workspace_id, project_id, resource_id = create_flow(client, "token")

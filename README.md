@@ -201,6 +201,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 - [`docs/MILESTONE-7-10.md`](docs/MILESTONE-7-10.md) - agent registry, providerized embedding/rerank, graph index, graph-aware retrieval
 - [`docs/MILESTONE-11.md`](docs/MILESTONE-11.md) - alpha auth, service tokens, and scope enforcement
 - [`docs/MILESTONE-12.md`](docs/MILESTONE-12.md) - scheduled refresh, restore, and purge lifecycle
+- [`docs/MILESTONE-13.md`](docs/MILESTONE-13.md) - safe URL/upload connectors and secret redaction
 
 ## Tech stack
 

@@ -186,13 +186,13 @@ def cmd_resource_add_repo(client: ContextSmithClient, args: argparse.Namespace) 
     source_config: dict[str, Any] = {"url": args.repo_url}
     if args.branch:
         source_config["branch"] = args.branch
-    if args.max_files is not None:
+    if args.max_files:
         source_config["max_repo_files"] = args.max_files
-    if args.max_file_bytes is not None:
+    if args.max_file_bytes:
         source_config["max_file_bytes"] = args.max_file_bytes
-    if args.max_repo_bytes is not None:
+    if args.max_repo_bytes:
         source_config["max_repo_bytes"] = args.max_repo_bytes
-    if args.clone_timeout is not None:
+    if args.clone_timeout:
         source_config["clone_timeout"] = args.clone_timeout
     resource = client.request(
         "POST",
@@ -209,7 +209,60 @@ def cmd_resource_add_repo(client: ContextSmithClient, args: argparse.Namespace) 
     return _maybe_refresh(client, args, resource)
 
 
+def cmd_resource_add_url(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    source_config: dict[str, Any] = {"url": args.url}
+    if args.title:
+        source_config["title"] = args.title
+    if args.max_url_bytes:
+        source_config["max_url_bytes"] = args.max_url_bytes
+    if args.fetch_timeout:
+        source_config["fetch_timeout"] = args.fetch_timeout
+    resource = client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources",
+        body={
+            "type": "url",
+            "name": args.name,
+            "uri": args.url,
+            "update_frequency": args.update_frequency,
+            "source_config": source_config,
+        },
+        expected={201},
+    )
+    return _maybe_refresh(client, args, resource)
+
+
+def cmd_resource_add_upload(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    upload_path = Path(args.path)
+    max_document_bytes = args.max_document_bytes or 5_000_000
+    if upload_path.stat().st_size > max_document_bytes:
+        raise ContextSmithCliError(f"upload file exceeds max_document_bytes={max_document_bytes}")
+    content = upload_path.read_text(encoding=args.encoding)
+    source_config: dict[str, Any] = {
+        "filename": args.filename or Path(args.path).name,
+        "content_type": args.content_type,
+        "content": content,
+        "max_document_bytes": max_document_bytes,
+    }
+    if args.title:
+        source_config["title"] = args.title
+    resource = client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources",
+        body={
+            "type": "upload",
+            "name": args.name,
+            "uri": f"upload://{source_config['filename']}",
+            "update_frequency": args.update_frequency,
+            "source_config": source_config,
+        },
+        expected={201},
+    )
+    return _maybe_refresh(client, args, resource)
+
+
 def cmd_resource_refresh(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+
     run = client.request(
         "POST",
         f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}/refresh",
@@ -385,6 +438,24 @@ def build_parser() -> argparse.ArgumentParser:
     add_repo.add_argument("--max-repo-bytes", type=int)
     add_repo.add_argument("--clone-timeout", type=int)
     add_repo.set_defaults(func=cmd_resource_add_repo)
+
+    add_url = resources.add_parser("add-url", help="add a public HTTP(S) URL resource")
+    _add_common_resource_args(add_url)
+    add_url.add_argument("--url", required=True)
+    add_url.add_argument("--title")
+    add_url.add_argument("--max-url-bytes", type=int)
+    add_url.add_argument("--fetch-timeout", type=int)
+    add_url.set_defaults(func=cmd_resource_add_url)
+
+    add_upload = resources.add_parser("add-upload", help="add an uploaded text/markdown resource from a local file")
+    _add_common_resource_args(add_upload)
+    add_upload.add_argument("--path", required=True)
+    add_upload.add_argument("--filename")
+    add_upload.add_argument("--title")
+    add_upload.add_argument("--content-type", default="text/plain")
+    add_upload.add_argument("--encoding", default="utf-8")
+    add_upload.add_argument("--max-document-bytes", type=int)
+    add_upload.set_defaults(func=cmd_resource_add_upload)
 
     refresh = resources.add_parser("refresh", help="refresh a resource")
     refresh.add_argument("--workspace-id", required=True)
