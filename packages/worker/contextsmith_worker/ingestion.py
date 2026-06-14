@@ -17,6 +17,7 @@ database or network state so they can be unit tested directly.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import ipaddress
 import os
@@ -27,8 +28,11 @@ import subprocess
 import tempfile
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.request import HTTPRedirectHandler, OpenerDirector, Request, build_opener
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -61,6 +65,9 @@ HARD_MAX_SYMBOLS = 20_000
 DEFAULT_MAX_CHARS = 2_000
 DEFAULT_OVERLAP = 200
 DEFAULT_CLONE_TIMEOUT = 120
+DEFAULT_FETCH_TIMEOUT = 20
+DEFAULT_MAX_URL_BYTES = 2_000_000
+HARD_MAX_URL_BYTES = 10_000_000
 
 DOCUMENT_TYPES = {
     "markdown",
@@ -73,6 +80,8 @@ DOCUMENT_TYPES = {
     "runbook",
 }
 GIT_TYPES = {"git", "git_repo", "git-repo", "repo", "repository"}
+URL_TYPES = {"url", "web", "webpage", "website", "http", "https"}
+UPLOAD_TYPES = {"upload", "uploaded_file", "file_upload"}
 
 # Directories that never contain source worth indexing.
 SKIP_DIRS = {
@@ -134,6 +143,89 @@ _SAFE_REF = re.compile(r"^[A-Za-z0-9._\-/]+$")
 def content_hash(text: str) -> str:
     """Return a stable sha256 hex digest for ``text``."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class _TextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in {"script", "style", "noscript"}:
+            self._skip_depth += 1
+        elif tag.lower() in {"p", "br", "div", "li", "tr", "h1", "h2", "h3", "h4"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"script", "style", "noscript"} and self._skip_depth:
+            self._skip_depth -= 1
+        elif tag.lower() in {"p", "div", "li", "tr", "h1", "h2", "h3", "h4"}:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip_depth:
+            self.parts.append(data)
+
+    def text(self) -> str:
+        return re.sub(r"\n{3,}", "\n\n", "".join(self.parts)).strip()
+
+
+def html_to_text(content: str) -> str:
+    parser = _TextExtractor()
+    parser.feed(content)
+    return parser.text() or content
+
+
+_SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("aws_access_key_id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("aws_secret_access_key", re.compile(r"(?i)(aws[_-]?secret[_-]?access[_-]?key\s*[=:]\s*)[A-Za-z0-9/+=]{32,}")),
+    ("github_token", re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b")),
+    ("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
+    ("openai_key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
+    ("generic_api_key", re.compile(r"(?i)\b(api[_-]?key|token|secret|password)\s*[:=]\s*['\"]?(?!\[REDACTED:)[^\s'\"]{12,}")),
+)
+
+
+def redact_secrets(text: str) -> tuple[str, dict[str, int]]:
+    counts: dict[str, int] = {}
+    redacted = text
+    for name, pattern in _SECRET_PATTERNS:
+        redacted, count = pattern.subn(lambda m, n=name: f"[REDACTED:{n}]", redacted)
+        if count:
+            counts[name] = counts.get(name, 0) + count
+    return redacted, counts
+
+
+def _merge_counts(target: dict[str, int], counts: dict[str, int]) -> None:
+    for key, count in counts.items():
+        target[key] = target.get(key, 0) + count
+
+
+def redact_documents(docs: list[dict]) -> tuple[list[dict], dict[str, int]]:
+    totals: dict[str, int] = {}
+    output: list[dict] = []
+    for doc in docs:
+        copied = dict(doc)
+        content, counts = redact_secrets(str(copied.get("content") or ""))
+        _merge_counts(totals, counts)
+        copied["content"] = content
+        for field in ("path", "title"):
+            if copied.get(field):
+                copied[field], field_counts = redact_secrets(str(copied[field]))
+                _merge_counts(totals, field_counts)
+                _merge_counts(counts, field_counts)
+        meta = dict(copied.get("meta") or {})
+        for key, value in list(meta.items()):
+            if isinstance(value, str):
+                meta[key], field_counts = redact_secrets(value)
+                _merge_counts(totals, field_counts)
+                _merge_counts(counts, field_counts)
+        if counts:
+            meta["redacted_secret_counts"] = counts
+        copied["meta"] = meta
+        output.append(copied)
+    return output, totals
 
 
 def iter_chunks(
@@ -223,7 +315,26 @@ def sanitize_remote_url(url: str) -> str:
     netloc = host
     if parsed.port is not None:
         netloc = f"{host}:{parsed.port}"
-    return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
+    return urlunparse((parsed.scheme, netloc, parsed.path or "/", "", "", ""))
+
+
+def parse_positive_int(value: object, *, default: int, hard_limit: int, name: str) -> int:
+    try:
+        parsed = int(default if value is None else str(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if parsed < 1:
+        raise ValueError(f"{name} must be >= 1")
+    if parsed > hard_limit:
+        raise ValueError(f"{name} exceeds hard limit")
+    return parsed
+
+
+def validate_base64_size(value: str, *, max_bytes: int) -> None:
+    compact = "".join(value.split())
+    estimated = (len(compact) * 3) // 4
+    if estimated > max_bytes:
+        raise ValueError("base64 upload exceeds max_document_bytes")
 
 
 def _is_public_ip(address: str) -> bool:
@@ -266,43 +377,185 @@ def validate_public_https_host(hostname: str) -> None:
 def validate_git_url(url: str, *, allow_local: bool = False) -> tuple[bool, str]:
     """Validate and classify a git source URL.
 
-    Returns ``(is_local, target)`` where ``target`` is the URL/path to hand to
+    The returned tuple is ``(is_local, target)`` where target can be passed to
     git. Only ``https`` remotes and local ``file://``/filesystem paths are
     accepted; ssh, git, and remote-helper transports (``ext::`` etc.) are
-    rejected to avoid arbitrary command execution and to keep the surface small.
+    rejected.
     """
     if not isinstance(url, str):
         raise ValueError("git url must be a string")
     candidate = url.strip()
     if not candidate:
         raise ValueError("git url is empty")
-    if any(ch.isspace() for ch in candidate) or "\x00" in candidate:
+    if any(ch.isspace() or ord(ch) < 32 for ch in candidate):
         raise ValueError("git url contains whitespace or control characters")
     if candidate.startswith("-"):
         raise ValueError("git url must not start with '-'")
     lowered = candidate.lower()
-    if "::" in candidate or lowered.startswith(("ext::", "fd::")):
+    if lowered.startswith(("ext::", "git::")):
         raise ValueError("unsupported git transport")
 
     parsed = urlparse(candidate)
     scheme = parsed.scheme.lower()
     if scheme == "https":
-        if not parsed.netloc or not parsed.hostname:
+        if not parsed.hostname:
             raise ValueError("https git url missing host")
         validate_public_https_host(parsed.hostname)
-        return (False, candidate)
+        return False, candidate
     if scheme == "file":
         if not allow_local:
             raise ValueError("local git paths are disabled")
-        path = candidate[len("file://") :]
-        if not path:
+        if parsed.netloc not in ("", "localhost"):
+            raise ValueError("file git url must be local")
+        if not parsed.path:
             raise ValueError("file git url missing path")
-        return (True, candidate)
-    if scheme == "" and candidate.startswith(("/", "./", "../", "~")):
+        return True, parsed.path
+    if scheme == "":
         if not allow_local:
             raise ValueError("local git paths are disabled")
-        return (True, os.path.expanduser(candidate))
+        return True, candidate
     raise ValueError(f"unsupported git url scheme: {scheme or 'none'}")
+
+
+def validate_http_url(url: str) -> str:
+    if not isinstance(url, str):
+        raise ValueError("url must be a string")
+    candidate = url.strip()
+    if not candidate:
+        raise ValueError("url is empty")
+    if any(ch.isspace() or ord(ch) < 32 for ch in candidate):
+        raise ValueError("url contains whitespace or control characters")
+    parsed = urlparse(candidate)
+    scheme = parsed.scheme.lower()
+    if scheme not in {"http", "https"}:
+        raise ValueError("url connector supports only http(s)")
+    if not parsed.hostname:
+        raise ValueError("url missing host")
+    if parsed.username or parsed.password:
+        raise ValueError("url must not contain credentials")
+    validate_public_https_host(parsed.hostname)
+    return urlunparse((scheme, parsed.netloc, parsed.path or "/", "", parsed.query, ""))
+
+
+_TEXT_CONTENT_TYPES = (
+    "text/",
+    "application/json",
+    "application/xml",
+    "application/xhtml+xml",
+    "application/yaml",
+    "application/x-yaml",
+    "application/javascript",
+)
+_REDIRECT_CODES = {301, 302, 303, 307, 308}
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        return None
+
+
+_URL_OPENER: OpenerDirector = build_opener(_NoRedirectHandler)
+
+
+def _open_url(request: Request, *, timeout: int):
+    return _URL_OPENER.open(request, timeout=timeout)  # noqa: S310 - callers validate target before every request.
+
+
+def _request_for_url(url: str) -> Request:
+    return Request(
+        url,
+        headers={
+            "User-Agent": "ContextSmithBot/0.1 (+https://github.com/pingchesu/contextsmith)",
+            "Accept": "text/*, application/json, application/xml, application/xhtml+xml, application/yaml;q=0.9, */*;q=0.1",
+        },
+        method="GET",
+    )
+
+
+def _is_allowed_text_content_type(content_type: str) -> bool:
+    lowered = content_type.lower().split(";", 1)[0].strip()
+    return not lowered or any(lowered.startswith(prefix) for prefix in _TEXT_CONTENT_TYPES)
+
+
+def _parse_content_length(value: str | None, *, max_bytes: int) -> None:
+    if not value:
+        return
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError("url Content-Length must be an integer") from exc
+    if parsed < 0:
+        raise ValueError("url Content-Length must be >= 0")
+    if parsed > max_bytes:
+        raise ValueError(f"url content exceeds max_url_bytes={max_bytes}")
+
+
+def fetch_url_document(resource: Resource) -> tuple[list[dict], str, str, dict]:
+    config = resource.source_config or {}
+    current_url = validate_http_url(config.get("url") or resource.uri)
+    max_bytes = parse_positive_int(
+        config.get("max_url_bytes"),
+        default=DEFAULT_MAX_URL_BYTES,
+        hard_limit=HARD_MAX_URL_BYTES,
+        name="max_url_bytes",
+    )
+    timeout = parse_positive_int(
+        config.get("fetch_timeout"),
+        default=DEFAULT_FETCH_TIMEOUT,
+        hard_limit=60,
+        name="fetch_timeout",
+    )
+    max_redirects = parse_positive_int(
+        config.get("max_redirects"), default=3, hard_limit=10, name="max_redirects"
+    )
+    raw = b""
+    content_type_header = ""
+    for _ in range(max_redirects + 1):
+        try:
+            with _open_url(_request_for_url(current_url), timeout=timeout) as response:
+                final_url = validate_http_url(response.geturl())
+                content_type = response.headers.get("Content-Type", "")
+                if not _is_allowed_text_content_type(content_type):
+                    raise ValueError(f"url content type is not text-like: {content_type or 'unknown'}")
+                _parse_content_length(response.headers.get("Content-Length"), max_bytes=max_bytes)
+                raw = response.read(max_bytes + 1)
+                content_type_header = content_type
+                current_url = final_url
+                break
+        except HTTPError as exc:
+            if exc.code in _REDIRECT_CODES:
+                location = exc.headers.get("Location")
+                if not location:
+                    raise RuntimeError(f"url redirect {exc.code} missing Location") from exc
+                current_url = validate_http_url(urljoin(current_url, location))
+                continue
+            raise RuntimeError(f"url fetch failed with HTTP {exc.code}") from exc
+        except URLError as exc:
+            raise RuntimeError(f"url fetch failed: {exc.reason}") from exc
+    else:
+        raise RuntimeError(f"url redirect limit exceeded ({max_redirects})")
+    if len(raw) > max_bytes:
+        raise ValueError(f"url content exceeds max_url_bytes={max_bytes}")
+    charset = "utf-8"
+    match = re.search(r"charset=([^;]+)", content_type_header, flags=re.I)
+    if match:
+        charset = match.group(1).strip()
+    text_content = raw.decode(charset, errors="replace")
+    if "html" in content_type_header.lower() or "<html" in text_content[:500].lower():
+        text_content = html_to_text(text_content)
+    display_url = sanitize_remote_url(current_url)
+    version = content_hash(f"{display_url}\n{text_content}")
+    title = config.get("title") or urlparse(display_url).path.rsplit("/", 1)[-1] or display_url
+    docs = [
+        {
+            "path": display_url,
+            "title": title,
+            "content": text_content,
+            "meta": {"source": "url", "url": display_url, "content_type": content_type_header, "bytes": len(raw)},
+        }
+    ]
+    meta = {"source": "url", "url": display_url, "content_type": content_type_header, "bytes": len(raw), "max_bytes": max_bytes}
+    return docs, version, "content_hash", meta
 
 
 def iter_repo_files(
@@ -393,6 +646,8 @@ def clone_repo(
         f"core.hooksPath={os.devnull}",
         "-c",
         "protocol.ext.allow=never",
+        "-c",
+        "http.followRedirects=false",
         "-c",
         "safe.directory=*",
     ]
@@ -517,17 +772,64 @@ def _collect_documents(resource: Resource) -> tuple[list[dict], str, str, dict]:
     return docs, version, "content_hash", meta
 
 
+def _collect_upload(resource: Resource) -> tuple[list[dict], str, str, dict]:
+    config = resource.source_config or {}
+    if any(key in config for key in ("path", "file_path", "local_path")):
+        raise ValueError("upload connector does not read local file paths")
+    max_document_bytes = parse_positive_int(
+        config.get("max_document_bytes"),
+        default=DEFAULT_MAX_DOCUMENT_BYTES,
+        hard_limit=HARD_MAX_DOCUMENT_BYTES,
+        name="max_document_bytes",
+    )
+    filename = config.get("filename") or config.get("name") or resource.name
+    content_type = str(config.get("content_type") or "text/plain")
+    content = config.get("content") or config.get("text")
+    if content is None and isinstance(config.get("base64"), str):
+        validate_base64_size(config["base64"], max_bytes=max_document_bytes)
+        raw = base64.b64decode(config["base64"], validate=True)
+        if len(raw) > max_document_bytes:
+            raise RuntimeError("upload exceeds max_document_bytes")
+        content = raw.decode(config.get("encoding") or "utf-8", errors="replace")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("upload content is empty")
+    if not _is_allowed_text_content_type(content_type):
+        raise ValueError(f"upload content type is not text-like: {content_type}")
+    content = _bounded_text(content, limit=max_document_bytes, label="upload")
+    docs = [
+        {
+            "path": filename,
+            "title": config.get("title") or filename,
+            "content": content,
+            "meta": {"source": "upload", "filename": filename, "content_type": content_type},
+        }
+    ]
+    version = content_hash(f"{filename}\n{content}")
+    meta = {
+        "source": "upload",
+        "filename": filename,
+        "content_type": content_type,
+        "bytes": len(content.encode("utf-8")),
+        "max_document_bytes": max_document_bytes,
+    }
+    return docs, version, "content_hash", meta
+
+
 def _collect_git(resource: Resource) -> tuple[list[dict], str, str, dict]:
     config = resource.source_config or {}
     url = config.get("url") or resource.uri
     branch = config.get("branch") or config.get("ref")
-    max_file_bytes = min(
-        int(config.get("max_file_bytes", DEFAULT_MAX_FILE_BYTES)), HARD_MAX_FILE_BYTES
+    max_file_bytes = parse_positive_int(
+        config.get("max_file_bytes"), default=DEFAULT_MAX_FILE_BYTES, hard_limit=HARD_MAX_FILE_BYTES, name="max_file_bytes"
     )
-    timeout = min(int(config.get("clone_timeout", DEFAULT_CLONE_TIMEOUT)), 600)
-    max_files = min(int(config.get("max_repo_files", DEFAULT_MAX_REPO_FILES)), HARD_MAX_REPO_FILES)
-    max_total_bytes = min(
-        int(config.get("max_repo_bytes", DEFAULT_MAX_REPO_BYTES)), HARD_MAX_REPO_BYTES
+    timeout = parse_positive_int(
+        config.get("clone_timeout"), default=DEFAULT_CLONE_TIMEOUT, hard_limit=600, name="clone_timeout"
+    )
+    max_files = parse_positive_int(
+        config.get("max_repo_files"), default=DEFAULT_MAX_REPO_FILES, hard_limit=HARD_MAX_REPO_FILES, name="max_repo_files"
+    )
+    max_total_bytes = parse_positive_int(
+        config.get("max_repo_bytes"), default=DEFAULT_MAX_REPO_BYTES, hard_limit=HARD_MAX_REPO_BYTES, name="max_repo_bytes"
     )
     allow_local = os.getenv("CONTEXTSMITH_ALLOW_LOCAL_GIT", "false").lower() == "true"
 
@@ -626,6 +928,10 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
 
     if rtype in GIT_TYPES:
         docs, version, version_kind, meta = _collect_git(resource)
+    elif rtype in URL_TYPES:
+        docs, version, version_kind, meta = fetch_url_document(resource)
+    elif rtype in UPLOAD_TYPES:
+        docs, version, version_kind, meta = _collect_upload(resource)
     elif rtype in DOCUMENT_TYPES:
         docs, version, version_kind, meta = _collect_documents(resource)
     else:
@@ -634,6 +940,18 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
         docs, version, version_kind, meta = _collect_documents(resource)
         if not docs:
             raise RuntimeError(f"unsupported resource type for ingestion: {resource.type!r}")
+
+    docs, redaction_counts = redact_documents(docs)
+    if redaction_counts:
+        meta = {**meta, "redacted_secret_counts": redaction_counts}
+        version = content_hash(version + "\nredacted:" + content_hash(str(sorted(redaction_counts.items()))))
+    sanitized_meta = {}
+    for key, value in meta.items():
+        if isinstance(value, str):
+            sanitized_meta[key] = redact_secrets(value)[0]
+        else:
+            sanitized_meta[key] = value
+    meta = sanitized_meta
 
     snapshot.version = version
     snapshot.version_kind = version_kind

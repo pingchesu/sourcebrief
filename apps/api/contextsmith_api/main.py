@@ -86,6 +86,16 @@ from contextsmith_shared.models import (
     Workspace,
     WorkspaceMembership,
 )
+from contextsmith_worker.ingestion import (
+    DEFAULT_MAX_DOCUMENT_BYTES,
+    DEFAULT_MAX_URL_BYTES,
+    HARD_MAX_DOCUMENT_BYTES,
+    HARD_MAX_URL_BYTES,
+    parse_positive_int,
+    sanitize_remote_url,
+    validate_base64_size,
+    validate_http_url,
+)
 
 app = FastAPI(title="ContextSmith API", version="0.1.0")
 
@@ -100,6 +110,8 @@ ALLOWED_TOKEN_SCOPES = {
     "token:admin",
 }
 ACTIVE_INDEX_STATUSES = {"enqueueing", "queued", "running"}
+URL_RESOURCE_TYPES = {"url", "web", "webpage", "website", "http", "https"}
+UPLOAD_RESOURCE_TYPES = {"upload", "uploaded_file", "file_upload"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -254,6 +266,49 @@ def _require_project_member(session: Session, workspace_id: UUID, project_id: UU
     if membership is None:
         raise HTTPException(status_code=404, detail="project not found")
     return project
+
+
+def _validate_source_config(resource_type: str, uri: str, source_config: dict) -> dict:
+    rtype = (resource_type or "").lower()
+    config = dict(source_config or {})
+    if rtype in URL_RESOURCE_TYPES:
+        url = config.get("url") or uri
+        try:
+            config["url"] = validate_http_url(url)
+            config["max_url_bytes"] = parse_positive_int(
+                config.get("max_url_bytes"),
+                default=DEFAULT_MAX_URL_BYTES,
+                hard_limit=HARD_MAX_URL_BYTES,
+                name="max_url_bytes",
+            )
+            if "fetch_timeout" in config:
+                config["fetch_timeout"] = parse_positive_int(
+                    config.get("fetch_timeout"), default=20, hard_limit=60, name="fetch_timeout"
+                )
+            if "max_redirects" in config:
+                config["max_redirects"] = parse_positive_int(
+                    config.get("max_redirects"), default=3, hard_limit=10, name="max_redirects"
+                )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if rtype in UPLOAD_RESOURCE_TYPES:
+        if any(key in config for key in ("path", "file_path", "local_path")):
+            raise HTTPException(status_code=422, detail="upload connector does not accept local file paths")
+        if not any(isinstance(config.get(key), str) and config.get(key).strip() for key in ("content", "text", "base64")):
+            raise HTTPException(status_code=422, detail="upload connector requires content, text, or base64")
+        try:
+            max_document_bytes = parse_positive_int(
+                config.get("max_document_bytes"),
+                default=DEFAULT_MAX_DOCUMENT_BYTES,
+                hard_limit=HARD_MAX_DOCUMENT_BYTES,
+                name="max_document_bytes",
+            )
+            config["max_document_bytes"] = max_document_bytes
+            if isinstance(config.get("base64"), str):
+                validate_base64_size(config["base64"], max_bytes=max_document_bytes)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return config
 
 
 def _resolve_resource(
@@ -640,14 +695,16 @@ def create_resource(
     if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
         raise HTTPException(status_code=403, detail="resource-scoped tokens cannot create new resources")
     _require_project_member(session, workspace_id, project_id, principal)
+    source_config = _validate_source_config(payload.type, payload.uri, payload.source_config)
+    resource_uri = sanitize_remote_url(source_config["url"]) if payload.type.lower() in URL_RESOURCE_TYPES else payload.uri
     resource = Resource(
         workspace_id=workspace_id,
         project_id=project_id,
         type=payload.type,
         name=payload.name,
-        uri=payload.uri,
+        uri=resource_uri,
         update_frequency=payload.update_frequency,
-        source_config=payload.source_config,
+        source_config=source_config,
         created_by=user.id,
     )
     session.add(resource)
@@ -857,6 +914,14 @@ def update_resource(
     for key, value in fields.items():
         if key in nullable_rejected and value is None:
             raise HTTPException(status_code=422, detail=f"{key} cannot be null")
+    if any(key in fields for key in ("type", "uri", "source_config")):
+        effective_type = fields.get("type", resource.type)
+        effective_uri = fields.get("uri", resource.uri)
+        effective_source_config = fields.get("source_config", resource.source_config or {})
+        fields["source_config"] = _validate_source_config(effective_type, effective_uri, effective_source_config)
+        if effective_type.lower() in URL_RESOURCE_TYPES:
+            fields["uri"] = sanitize_remote_url(fields["source_config"]["url"])
+    for key, value in fields.items():
         setattr(resource, key, value)
     if "update_frequency" in fields or "source_config" in fields:
         resource.next_refresh_at = compute_next_refresh_at(resource)

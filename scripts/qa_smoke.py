@@ -265,6 +265,53 @@ def main() -> None:
     if not purged["purged"] or purged["counts"].get("resources") != 1:
         fail(f"resource purge failed: {purged}")
 
+    upload_secret = "ghp_ab...3456"
+    upload_resource = request(
+        "POST",
+        f"/workspaces/{ws}/projects/{proj}/resources",
+        201,
+        json={
+            "type": "upload",
+            "name": "QA Upload",
+            "uri": "upload://qa-upload.md",
+            "source_config": {
+                "filename": "qa-upload.md",
+                "content_type": "text/markdown",
+                "content": f"# Upload\n\nThe qauploadredacted marker appears with api_key={upload_secret}.\n",
+            },
+        },
+        headers=HEADERS,
+    )
+    upload_res = upload_resource["id"]
+    upload_run = request("POST", f"/workspaces/{ws}/projects/{proj}/resources/{upload_res}/refresh", 202, headers=HEADERS)
+    wait_for_index_run(ws, upload_run["id"])
+    upload_secret_search = request(
+        "POST",
+        f"/workspaces/{ws}/projects/{proj}/search",
+        200,
+        json={"query": upload_secret, "resource_ids": [upload_res]},
+        headers=HEADERS,
+    )
+    if upload_secret_search["count"] != 0:
+        fail(f"secret should not be searchable after upload redaction: {upload_secret_search}")
+    upload_redacted_search = request(
+        "POST",
+        f"/workspaces/{ws}/projects/{proj}/search",
+        200,
+        json={"query": "qauploadredacted", "resource_ids": [upload_res]},
+        headers=HEADERS,
+    )
+    if upload_redacted_search["count"] < 1 or "REDACTED:generic_api_key" not in upload_redacted_search["hits"][0]["snippet"]:
+        fail(f"redacted upload should be searchable with redacted snippet: {upload_redacted_search}")
+    upload_snapshots = request(
+        "GET",
+        f"/workspaces/{ws}/projects/{proj}/resources/{upload_res}/snapshots",
+        200,
+        headers=HEADERS,
+    )
+    if upload_snapshots[0]["metadata"].get("redacted_secret_counts", {}).get("generic_api_key") != 1:
+        fail(f"upload redaction metadata missing: {upload_snapshots}")
+
     # Negative search returns nothing.
     empty = request(
         "POST",
@@ -455,7 +502,7 @@ def main() -> None:
 
     print(
         "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, "
-        "CLI search, agent profile, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "CLI search, agent profile, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 
