@@ -11,6 +11,7 @@ from pathlib import Path
 import requests
 
 BASE = "http://localhost:18000"
+FRONTEND = "http://localhost:13000"
 HEADERS = {"X-User-Email": f"qa-{int(time.time())}@example.com"}
 MARKER = "contextsmithqamarker"
 
@@ -117,6 +118,13 @@ def wait_for_index_run(ws: str, run_id: str) -> dict:
 
 
 def main() -> None:
+    frontend = requests.get(f"{FRONTEND}/", timeout=15)
+    if frontend.status_code != 200:
+        fail(f"frontend console returned HTTP {frontend.status_code}: {frontend.text[:300]}")
+    for marker in ("SaaS Alpha Console", "Token management", "Ask project agent"):
+        if marker not in frontend.text:
+            fail(f"frontend console missing marker {marker!r}")
+
     provider_health = request("GET", "/provider-health", 200)
     if provider_health is None:
         fail("provider health returned empty response")
@@ -137,6 +145,36 @@ def main() -> None:
         headers=HEADERS,
     )
     proj = project["id"]
+    token_created = request(
+        "POST",
+        f"/workspaces/{ws}/api-tokens",
+        201,
+        json={
+            "name": "qa-web-console-token",
+            "scopes": [
+                "project:read",
+                "project:query",
+                "resource:read",
+                "resource:write",
+                "resource:refresh",
+                "review:read",
+                "review:write",
+                "token:admin",
+            ],
+            "allowed_project_ids": [proj],
+        },
+        headers=HEADERS,
+    )
+    if token_created is None:
+        fail("token create returned empty response")
+    if not token_created.get("token") or "token" in token_created.get("api_token", {}):
+        fail(f"token create must return one-time plaintext only: {token_created}")
+    token_list = request("GET", f"/workspaces/{ws}/api-tokens", 200, headers=HEADERS)
+    if token_list is None:
+        fail("token list returned empty response")
+    listed = next((item for item in token_list if item["name"] == "qa-web-console-token"), None)
+    if not listed or "token" in listed:
+        fail(f"token list missing token metadata or leaked plaintext: {token_list}")
     content = (
         "# QA Runbook\n\n"
         "ContextSmith QA verifies resource ingestion and lexical search. "
@@ -515,7 +553,7 @@ def main() -> None:
 
     print(
         "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, "
-        "CLI search, agent profile, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "CLI search, agent profile, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 

@@ -203,6 +203,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 - [`docs/MILESTONE-12.md`](docs/MILESTONE-12.md) - scheduled refresh, restore, and purge lifecycle
 - [`docs/MILESTONE-13.md`](docs/MILESTONE-13.md) - safe URL/upload connectors and secret redaction
 - [`docs/MILESTONE-14.md`](docs/MILESTONE-14.md) - provider health, embedding namespace hardening, and query diagnostics
+- [`docs/MILESTONE-15.md`](docs/MILESTONE-15.md) - SaaS alpha web console for project/resource/token/review/agent flows
 
 ## Tech stack
 
