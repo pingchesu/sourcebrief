@@ -118,9 +118,16 @@ ACTIVE_INDEX_STATUSES = {"enqueueing", "queued", "running"}
 URL_RESOURCE_TYPES = {"url", "web", "webpage", "website", "http", "https"}
 UPLOAD_RESOURCE_TYPES = {"upload", "uploaded_file", "file_upload"}
 
+def _cors_origins() -> list[str]:
+    raw = os.getenv("CONTEXTSMITH_CORS_ORIGINS")
+    if raw:
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return ["http://localhost:13000", "http://127.0.0.1:13000"]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:13000", "http://127.0.0.1:13000"],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

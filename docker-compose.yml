@@ -2,99 +2,157 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: contextsmith
-      POSTGRES_PASSWORD: contextsmith
-      POSTGRES_DB: contextsmith
+      POSTGRES_USER: ${POSTGRES_USER:-contextsmith}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-contextsmith}
+      POSTGRES_DB: ${POSTGRES_DB:-contextsmith}
     ports:
-      - "55432:5432"
+    - ${CONTEXTSMITH_POSTGRES_PORT:-55432}:5432
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U contextsmith -d contextsmith"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U $${POSTGRES_USER:-contextsmith} -d $${POSTGRES_DB:-contextsmith}
       interval: 5s
       timeout: 5s
       retries: 20
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-
+    - postgres_data:/var/lib/postgresql/data
   redis:
     image: redis:7-alpine
     ports:
-      - "6380:6379"
+    - ${CONTEXTSMITH_REDIS_PORT:-6380}:6379
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+      - CMD
+      - redis-cli
+      - ping
       interval: 5s
       timeout: 5s
       retries: 20
-
   api:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg://contextsmith:contextsmith@postgres:5432/contextsmith
-      REDIS_URL: redis://redis:6379/0
-      CONTEXTSMITH_AUTO_MIGRATE: "true"
-      CONTEXTSMITH_DEV_AUTH: "true"
+      DATABASE_URL: ${CONTEXTSMITH_DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-contextsmith}:${POSTGRES_PASSWORD:-contextsmith}@postgres:5432/${POSTGRES_DB:-contextsmith}}
+      REDIS_URL: ${CONTEXTSMITH_REDIS_URL:-redis://redis:6379/0}
+      CONTEXTSMITH_DEV_AUTH: ${CONTEXTSMITH_DEV_AUTH:-true}
+      CONTEXTSMITH_EMBEDDING_PROVIDER: ${CONTEXTSMITH_EMBEDDING_PROVIDER:-hashing}
+      CONTEXTSMITH_EMBEDDING_MODEL: ${CONTEXTSMITH_EMBEDDING_MODEL:-contextsmith-hashing-v1}
+      CONTEXTSMITH_EMBEDDING_NORMALIZED: ${CONTEXTSMITH_EMBEDDING_NORMALIZED:-true}
+      CONTEXTSMITH_EMBEDDING_ENDPOINT: ${CONTEXTSMITH_EMBEDDING_ENDPOINT:-}
+      CONTEXTSMITH_EMBEDDING_API_KEY: ${CONTEXTSMITH_EMBEDDING_API_KEY:-}
+      CONTEXTSMITH_EMBEDDING_DEPLOYMENT_ID: ${CONTEXTSMITH_EMBEDDING_DEPLOYMENT_ID:-}
+      CONTEXTSMITH_EMBEDDING_TIMEOUT: ${CONTEXTSMITH_EMBEDDING_TIMEOUT:-30}
+      CONTEXTSMITH_RERANK_PROVIDER: ${CONTEXTSMITH_RERANK_PROVIDER:-term-overlap}
+      CONTEXTSMITH_RERANK_MODEL: ${CONTEXTSMITH_RERANK_MODEL:-contextsmith-term-overlap-v1}
+      CONTEXTSMITH_RERANK_ENDPOINT: ${CONTEXTSMITH_RERANK_ENDPOINT:-}
+      CONTEXTSMITH_RERANK_API_KEY: ${CONTEXTSMITH_RERANK_API_KEY:-}
+      CONTEXTSMITH_RERANK_TIMEOUT: ${CONTEXTSMITH_RERANK_TIMEOUT:-30}
+      CONTEXTSMITH_ALLOW_LOCAL_GIT: ${CONTEXTSMITH_ALLOW_LOCAL_GIT:-true}
+      CONTEXTSMITH_CORS_ORIGINS: ${CONTEXTSMITH_CORS_ORIGINS:-http://localhost:13000,http://127.0.0.1:13000}
     ports:
-      - "18000:8000"
+    - ${CONTEXTSMITH_API_PORT:-18000}:8000
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/readyz"]
+      test:
+      - CMD
+      - curl
+      - -fsS
+      - http://localhost:8000/readyz
       interval: 5s
       timeout: 5s
       retries: 60
-      start_period: 180s
-
+      start_period: 10s
   worker-default:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
-    command: ["python", "-m", "contextsmith_worker.worker"]
+    command:
+    - python
+    - -m
+    - contextsmith_worker.worker
     environment:
-      DATABASE_URL: postgresql+psycopg://contextsmith:contextsmith@postgres:5432/contextsmith
-      REDIS_URL: redis://redis:6379/0
-      CONTEXTSMITH_ALLOW_LOCAL_GIT: "true"
+      DATABASE_URL: ${CONTEXTSMITH_DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-contextsmith}:${POSTGRES_PASSWORD:-contextsmith}@postgres:5432/${POSTGRES_DB:-contextsmith}}
+      REDIS_URL: ${CONTEXTSMITH_REDIS_URL:-redis://redis:6379/0}
+      CONTEXTSMITH_DEV_AUTH: ${CONTEXTSMITH_DEV_AUTH:-true}
+      CONTEXTSMITH_EMBEDDING_PROVIDER: ${CONTEXTSMITH_EMBEDDING_PROVIDER:-hashing}
+      CONTEXTSMITH_EMBEDDING_MODEL: ${CONTEXTSMITH_EMBEDDING_MODEL:-contextsmith-hashing-v1}
+      CONTEXTSMITH_EMBEDDING_NORMALIZED: ${CONTEXTSMITH_EMBEDDING_NORMALIZED:-true}
+      CONTEXTSMITH_EMBEDDING_ENDPOINT: ${CONTEXTSMITH_EMBEDDING_ENDPOINT:-}
+      CONTEXTSMITH_EMBEDDING_API_KEY: ${CONTEXTSMITH_EMBEDDING_API_KEY:-}
+      CONTEXTSMITH_EMBEDDING_DEPLOYMENT_ID: ${CONTEXTSMITH_EMBEDDING_DEPLOYMENT_ID:-}
+      CONTEXTSMITH_EMBEDDING_TIMEOUT: ${CONTEXTSMITH_EMBEDDING_TIMEOUT:-30}
+      CONTEXTSMITH_RERANK_PROVIDER: ${CONTEXTSMITH_RERANK_PROVIDER:-term-overlap}
+      CONTEXTSMITH_RERANK_MODEL: ${CONTEXTSMITH_RERANK_MODEL:-contextsmith-term-overlap-v1}
+      CONTEXTSMITH_RERANK_ENDPOINT: ${CONTEXTSMITH_RERANK_ENDPOINT:-}
+      CONTEXTSMITH_RERANK_API_KEY: ${CONTEXTSMITH_RERANK_API_KEY:-}
+      CONTEXTSMITH_RERANK_TIMEOUT: ${CONTEXTSMITH_RERANK_TIMEOUT:-30}
+      CONTEXTSMITH_ALLOW_LOCAL_GIT: ${CONTEXTSMITH_ALLOW_LOCAL_GIT:-true}
+      CONTEXTSMITH_CORS_ORIGINS: ${CONTEXTSMITH_CORS_ORIGINS:-http://localhost:13000,http://127.0.0.1:13000}
     volumes:
-      - ./tmp/qa-git-fixtures:/qa-fixtures:ro
+    - ./tmp/qa-git-fixtures:/qa-fixtures:ro
     depends_on:
       api:
         condition: service_healthy
       redis:
         condition: service_healthy
-
   worker-maintenance:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
-    command: ["python", "-m", "contextsmith_worker.maintenance"]
+    command:
+    - python
+    - -m
+    - contextsmith_worker.maintenance
     environment:
-      DATABASE_URL: postgresql+psycopg://contextsmith:contextsmith@postgres:5432/contextsmith
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: ${CONTEXTSMITH_DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-contextsmith}:${POSTGRES_PASSWORD:-contextsmith}@postgres:5432/${POSTGRES_DB:-contextsmith}}
+      REDIS_URL: ${CONTEXTSMITH_REDIS_URL:-redis://redis:6379/0}
+      CONTEXTSMITH_DEV_AUTH: ${CONTEXTSMITH_DEV_AUTH:-true}
+      CONTEXTSMITH_EMBEDDING_PROVIDER: ${CONTEXTSMITH_EMBEDDING_PROVIDER:-hashing}
+      CONTEXTSMITH_EMBEDDING_MODEL: ${CONTEXTSMITH_EMBEDDING_MODEL:-contextsmith-hashing-v1}
+      CONTEXTSMITH_EMBEDDING_NORMALIZED: ${CONTEXTSMITH_EMBEDDING_NORMALIZED:-true}
+      CONTEXTSMITH_EMBEDDING_ENDPOINT: ${CONTEXTSMITH_EMBEDDING_ENDPOINT:-}
+      CONTEXTSMITH_EMBEDDING_API_KEY: ${CONTEXTSMITH_EMBEDDING_API_KEY:-}
+      CONTEXTSMITH_EMBEDDING_DEPLOYMENT_ID: ${CONTEXTSMITH_EMBEDDING_DEPLOYMENT_ID:-}
+      CONTEXTSMITH_EMBEDDING_TIMEOUT: ${CONTEXTSMITH_EMBEDDING_TIMEOUT:-30}
+      CONTEXTSMITH_RERANK_PROVIDER: ${CONTEXTSMITH_RERANK_PROVIDER:-term-overlap}
+      CONTEXTSMITH_RERANK_MODEL: ${CONTEXTSMITH_RERANK_MODEL:-contextsmith-term-overlap-v1}
+      CONTEXTSMITH_RERANK_ENDPOINT: ${CONTEXTSMITH_RERANK_ENDPOINT:-}
+      CONTEXTSMITH_RERANK_API_KEY: ${CONTEXTSMITH_RERANK_API_KEY:-}
+      CONTEXTSMITH_RERANK_TIMEOUT: ${CONTEXTSMITH_RERANK_TIMEOUT:-30}
+      CONTEXTSMITH_ALLOW_LOCAL_GIT: ${CONTEXTSMITH_ALLOW_LOCAL_GIT:-true}
+      CONTEXTSMITH_CORS_ORIGINS: ${CONTEXTSMITH_CORS_ORIGINS:-http://localhost:13000,http://127.0.0.1:13000}
     depends_on:
       api:
         condition: service_healthy
       redis:
         condition: service_healthy
-
   frontend:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:18000}
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:18000
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:18000}
     ports:
-      - "13000:3000"
+    - ${CONTEXTSMITH_WEB_PORT:-13000}:3000
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
       interval: 5s
       timeout: 5s
       retries: 30
-
+      start_period: 10s
 volumes:
-  postgres_data:
+  postgres_data: null

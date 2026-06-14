@@ -11,8 +11,8 @@ from pathlib import Path
 
 import requests
 
-BASE = "http://localhost:18000"
-FRONTEND = "http://localhost:13000"
+BASE = os.getenv("CONTEXTSMITH_API_URL") or os.getenv("API_URL") or "http://localhost:18000"
+FRONTEND = os.getenv("CONTEXTSMITH_WEB_URL") or os.getenv("WEB_URL") or "http://localhost:13000"
 HEADERS = {"X-User-Email": f"qa-{int(time.time())}@example.com"}
 MARKER = "contextsmithqamarker"
 TOKEN_PATTERN = re.compile(r"cs_[A-Za-z0-9_-]{20,}")
@@ -600,7 +600,7 @@ def main() -> None:
         fail(f"unauthorized search should 404, got {denied_search.status_code}: {denied_search.text}")
 
     # Frontend health is reachable in the composed stack.
-    web = requests.get("http://localhost:13000/api/health", timeout=15)
+    web = requests.get(f"{FRONTEND}/api/health", timeout=15)
     if web.status_code != 200:
         fail(f"frontend health failed: {web.status_code} {web.text}")
 
