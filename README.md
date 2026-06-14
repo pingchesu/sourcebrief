@@ -46,7 +46,7 @@ ContextSmith is an early MVP. The core path is working:
 - resource review, archive, delete, freshness, and usage analytics
 - agent-context API
 - central MCP context tool
-- basic Next.js web shell
+- SaaS alpha web console for workspace/project/resource/token/review/agent flows
 
 It is ready for local development and product exploration. It is not hardened for public internet deployment yet.
 
@@ -138,7 +138,7 @@ contextsmith resource add-repo \
   --wait
 ```
 
-Search it:
+Search it and request Hermes-shaped context:
 
 ```bash
 contextsmith search \
@@ -146,12 +146,30 @@ contextsmith search \
   --project-id <project-id> \
   --query "agent-context API"
 
+contextsmith agent-context \
+  --workspace-id <workspace-id> \
+  --project-id <project-id> \
+  --runtime hermes \
+  --query "how does ContextSmith expose agent context?"
+
 contextsmith agent list --workspace-id <workspace-id>
 contextsmith agent profile --workspace-id <workspace-id> --project-id <project-id>
 contextsmith --json resource graph --workspace-id <workspace-id> --project-id <project-id> --resource-id <resource-id>
 ```
 
-The API/curl walkthrough and a longer repo example live in [`docs/GUIDE.md`](docs/GUIDE.md).
+To validate a Hermes MCP integration token for that project:
+
+```bash
+python scripts/hermes_integration.py \
+  --api-url http://localhost:18000 \
+  --workspace-id <workspace-id> \
+  --project-id <project-id> \
+  --resource-id <resource-id> \
+  --query "agent-context API" \
+  --expect-text "agent-context"
+```
+
+The API/curl walkthrough and a longer repo example live in [`docs/GUIDE.md`](docs/GUIDE.md). Operator commands live in [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ## What you can build with it
 
@@ -189,6 +207,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 
 - [`docs/QUICKSTART.md`](docs/QUICKSTART.md) - install, run, verify, troubleshoot
 - [`docs/GUIDE.md`](docs/GUIDE.md) - create a project, ingest resources, query, review, use agent context
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) - local alpha operations, logs, queues, stuck jobs, rollback
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - system design and runtime components
 - [`docs/SPEC.md`](docs/SPEC.md) - full product and architecture specification
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) - finite alpha milestone roadmap after M1-M10
@@ -205,6 +224,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 - [`docs/MILESTONE-14.md`](docs/MILESTONE-14.md) - provider health, embedding namespace hardening, and query diagnostics
 - [`docs/MILESTONE-15.md`](docs/MILESTONE-15.md) - SaaS alpha web console for project/resource/token/review/agent flows
 - [`docs/MILESTONE-16.md`](docs/MILESTONE-16.md) - Hermes/MCP integration pack and scoped token validation
+- [`docs/MILESTONE-17.md`](docs/MILESTONE-17.md) - open-source alpha packaging and deployment runbook
 
 ## Tech stack
 

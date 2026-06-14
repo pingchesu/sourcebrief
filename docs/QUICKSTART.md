@@ -31,6 +31,18 @@ git clone https://github.com/pingchesu/contextsmith.git
 cd contextsmith
 ```
 
+## Configure environment
+
+The defaults work without a `.env`, but new operators should start from the documented template:
+
+```bash
+cp .env.example .env
+```
+
+The template keeps the local deterministic hashing/term-overlap providers enabled. It also documents optional HuggingFace/vLLM/SGLang/OpenAI-compatible embedding and rerank endpoints.
+
+`make` and Docker Compose both read `.env`. If you change frontend/API ports, also update `NEXT_PUBLIC_API_BASE_URL` and `CONTEXTSMITH_CORS_ORIGINS`, then rebuild with `docker compose up -d --build` because the browser API URL is compiled into the Next.js client.
+
 ## Run the full acceptance gate
 
 ```bash
@@ -53,7 +65,7 @@ This command does the full local path:
 Expected final smoke output:
 
 ```text
-QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → lexical/hybrid context retrieval with citations, query/resource usage analytics, review lifecycle, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health
+QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, CLI search, agent profile, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, Hermes integration script, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health
 ```
 
 ## Open the local services
@@ -95,6 +107,40 @@ Clean local Python/tool caches:
 
 ```bash
 make clean
+```
+
+## First indexed project and Hermes-style query
+
+After `make verify`, the stack has already exercised this path through `scripts/qa_smoke.py`. To run it yourself:
+
+```bash
+export CONTEXTSMITH_API_URL=http://localhost:18000
+export CONTEXTSMITH_EMAIL=demo@example.com
+export PATH="$PWD/.venv/bin:$PATH"
+
+WORKSPACE_ID=$(contextsmith --json workspace create --name Demo --slug "demo-$(date +%s)" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+PROJECT_ID=$(contextsmith --json project create --workspace-id "$WORKSPACE_ID" --name "Demo Project" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+RESOURCE_JSON=$(contextsmith --json resource add-repo --workspace-id "$WORKSPACE_ID" --project-id "$PROJECT_ID" --name ContextSmith --repo-url https://github.com/pingchesu/contextsmith.git --branch main --refresh --wait)
+RESOURCE_ID=$(printf '%s' "$RESOURCE_JSON" | python -c 'import json,sys; print(json.load(sys.stdin)["resource"]["id"])')
+
+contextsmith agent-context \
+  --workspace-id "$WORKSPACE_ID" \
+  --project-id "$PROJECT_ID" \
+  --resource-id "$RESOURCE_ID" \
+  --runtime hermes \
+  --query "how does ContextSmith expose agent context?"
+```
+
+For Hermes MCP config/token validation:
+
+```bash
+python scripts/hermes_integration.py \
+  --api-url http://localhost:18000 \
+  --workspace-id "$WORKSPACE_ID" \
+  --project-id "$PROJECT_ID" \
+  --resource-id "$RESOURCE_ID" \
+  --query "agent-context API" \
+  --expect-text "agent-context"
 ```
 
 ## Dev authentication
