@@ -226,6 +226,24 @@ def cmd_mcp_context(client: ContextSmithClient, args: argparse.Namespace) -> Any
     )
 
 
+def cmd_agent_list(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    return client.request("GET", f"/workspaces/{args.workspace_id}/agents")
+
+
+def cmd_agent_profile(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    return client.request(
+        "GET",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/agent-profile",
+    )
+
+
+def cmd_resource_graph(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    return client.request(
+        "GET",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}/graph?limit={args.limit}",
+    )
+
+
 def _add_common_resource_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--workspace-id", required=True)
     parser.add_argument("--project-id", required=True)
@@ -294,6 +312,23 @@ def build_parser() -> argparse.ArgumentParser:
     list_resources.add_argument("--project-id", required=True)
     list_resources.set_defaults(func=cmd_resource_list)
 
+    graph = resources.add_parser("graph", help="show a resource graph index")
+    graph.add_argument("--workspace-id", required=True)
+    graph.add_argument("--project-id", required=True)
+    graph.add_argument("--resource-id", required=True)
+    graph.add_argument("--limit", type=int, default=50)
+    graph.set_defaults(func=cmd_resource_graph)
+
+    agents = sub.add_parser("agent", help="agent registry commands").add_subparsers(dest="agent_command")
+    agent_list = agents.add_parser("list", help="list project agents in a workspace")
+    agent_list.add_argument("--workspace-id", required=True)
+    agent_list.set_defaults(func=cmd_agent_list)
+
+    agent_profile = agents.add_parser("profile", help="show one project agent profile")
+    agent_profile.add_argument("--workspace-id", required=True)
+    agent_profile.add_argument("--project-id", required=True)
+    agent_profile.set_defaults(func=cmd_agent_profile)
+
     search = sub.add_parser("search", help="search project context")
     search.add_argument("--workspace-id", required=True)
     search.add_argument("--project-id", required=True)
@@ -339,7 +374,7 @@ def _print_default(command: str | None, data: Any) -> None:
             for hit in data.get("hits", []):
                 print(f"- {hit.get('path') or hit.get('title') or hit.get('resource_id')}: {hit.get('snippet')}")
             return
-        if command in {"agent-context", "mcp-context"}:
+        if command in {"agent-context", "mcp-context", "agent"}:
             _print_json(data)
             return
     _print_json(data)

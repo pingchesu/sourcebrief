@@ -41,6 +41,7 @@ from contextsmith_shared.embeddings import (
     embed_text,
     vector_literal,
 )
+from contextsmith_shared.graph_index import build_graph_index
 from contextsmith_shared.models import Chunk, CodeSymbol, IndexRun, Resource, SourceSnapshot
 
 # --- configuration ---------------------------------------------------------
@@ -693,10 +694,13 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
 
     snapshot.status = "succeeded"
     snapshot.indexed_at = datetime.now(UTC)
+    graph_stats = build_graph_index(session, resource, snapshot, docs)
     run.documents_seen = len(docs)
     run.chunks_created = chunks_created
     run.symbols_created = symbols_created
     run.embeddings_created = chunks_created
+    run.graph_nodes_created = graph_stats.nodes_created
+    run.graph_edges_created = graph_stats.edges_created
     resource.current_snapshot_id = snapshot.id
     resource.status = "active"
     return snapshot

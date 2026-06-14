@@ -9,9 +9,9 @@ Create a project, attach resources, let ContextSmith index them, then call the p
 ```text
 repos + docs + runbooks
             ↓
-versioned snapshots + chunks + embeddings + code symbols
+versioned snapshots + chunks + embeddings + code symbols + graph index
             ↓
-hybrid retrieval + citations + review + usage analytics
+hybrid/graph-aware retrieval + citations + review + usage analytics
             ↓
 agent-ready context for Hermes, Claude, Codex, Cursor, or your own app
 ```
@@ -38,8 +38,11 @@ ContextSmith is an early MVP. The core path is working:
 - Redis/RQ background indexing
 - PostgreSQL + pgvector storage
 - lexical + vector hybrid retrieval
+- bounded graph retrieval signal from resource/file/symbol graph edges
+- providerized embedding and rerank adapters for HTTP/HuggingFace/vLLM/SGLang-style services
 - context packets with citations
 - deterministic code symbol extraction
+- central agent registry and per-project agent profiles
 - resource review, archive, delete, freshness, and usage analytics
 - agent-context API
 - central MCP context tool
@@ -51,7 +54,8 @@ It is ready for local development and product exploration. It is not hardened fo
 
 - Project agents built from repos, docs, and runbooks.
 - Versioned snapshots with commit/hash citations.
-- Hybrid retrieval over lexical search, vectors, and code symbols.
+- Hybrid retrieval over lexical search, vectors, graph index, rerank, and code symbols.
+- Agent profiles owned by the platform, not forced into source repos.
 - Review and usage analytics for stale or low-value context.
 - Runtime-shaped context packets for Hermes, Claude, Codex, Cursor, and API clients.
 - One central MCP context tool instead of one MCP server per repo.
@@ -141,6 +145,10 @@ contextsmith search \
   --workspace-id <workspace-id> \
   --project-id <project-id> \
   --query "agent-context API"
+
+contextsmith agent list --workspace-id <workspace-id>
+contextsmith agent profile --workspace-id <workspace-id> --project-id <project-id>
+contextsmith --json resource graph --workspace-id <workspace-id> --project-id <project-id> --resource-id <resource-id>
 ```
 
 The API/curl walkthrough and a longer repo example live in [`docs/GUIDE.md`](docs/GUIDE.md).
@@ -169,9 +177,9 @@ The short version:
 
 1. A user creates a workspace and project.
 2. The project gets resources: git repos, markdown docs, and runbooks.
-3. Workers create versioned snapshots and chunks.
+3. Workers create versioned snapshots, chunks, and resource/file/symbol graph indexes.
 4. Chunks get lexical indexes, embeddings, and optional code symbols.
-5. Queries run through hybrid retrieval and return cited context packets.
+5. Context packet and agent-context queries run through hybrid lexical/vector/graph/rerank retrieval and return cited context packets.
 6. Review and usage pages show what is stale, noisy, or actually useful.
 7. Agent clients request runtime-shaped context through HTTP or MCP.
 
@@ -189,6 +197,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 - [`docs/MILESTONE-4.md`](docs/MILESTONE-4.md) - code intelligence
 - [`docs/MILESTONE-5.md`](docs/MILESTONE-5.md) - review, lifecycle, freshness, usage analytics
 - [`docs/MILESTONE-6.md`](docs/MILESTONE-6.md) - agent-context API and MCP integration
+- [`docs/MILESTONE-7-10.md`](docs/MILESTONE-7-10.md) - agent registry, providerized embedding/rerank, graph index, graph-aware retrieval
 
 ## Tech stack
 

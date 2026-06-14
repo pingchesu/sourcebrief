@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from contextsmith_shared.embeddings import embed_text, term_overlap_score, vector_literal
+from contextsmith_shared.embeddings import (
+    EmbeddingConfig,
+    embed_text,
+    rerank_score,
+    term_overlap_score,
+    vector_literal,
+)
 
 
 def test_hashing_embedding_is_deterministic_and_normalized() -> None:
@@ -21,3 +27,9 @@ def test_vector_literal_matches_pgvector_format() -> None:
 def test_term_overlap_score() -> None:
     assert term_overlap_score("resource cleanup", "cleanup old resource versions") == 1.0
     assert term_overlap_score("resource cleanup", "unrelated text") == 0.0
+
+
+def test_configurable_hashing_dimensions_and_rerank() -> None:
+    vector = embed_text("graph retrieval", config=EmbeddingConfig(provider="hashing", dimensions=16))
+    assert len(vector) == 16
+    assert rerank_score("graph retrieval", "retrieval uses graph nodes") == 1.0

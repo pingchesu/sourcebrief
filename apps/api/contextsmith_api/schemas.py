@@ -28,6 +28,34 @@ class ProjectRead(BaseModel):
     visibility: str
 
 
+class AgentProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    description: str | None = None
+    default_runtime: str | None = Field(default=None, pattern=r"^(api|hermes|claude|codex|cursor)$")
+    system_prompt: str | None = None
+    tool_policy: dict | None = None
+
+
+class AgentProfileRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    name: str
+    description: str | None = None
+    default_runtime: str
+    system_prompt: str | None = None
+    tool_policy: dict = Field(default_factory=dict)
+    resource_count: int = 0
+    current_snapshot_count: int = 0
+    graph_node_count: int = 0
+    graph_edge_count: int = 0
+    last_index_finished_at: datetime | None = None
+    mcp_endpoint: str
+    agent_context_endpoint: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class ResourceCreate(BaseModel):
     type: str = Field(min_length=1)
     name: str = Field(min_length=1)
@@ -199,6 +227,7 @@ class ContextPacketItemRead(BaseModel):
     score: float
     lexical_score: float
     vector_score: float
+    graph_score: float = 0.0
     rerank_score: float
     citation: dict = Field(default_factory=dict)
 
@@ -249,7 +278,7 @@ class AgentContextRequest(BaseModel):
     query: str = Field(min_length=1)
     resource_ids: list[UUID] | None = None
     top_k: int = Field(default=8, ge=1, le=50)
-    runtime: str = Field(default="api", pattern=r"^(api|hermes|claude|codex|cursor)$")
+    runtime: str | None = Field(default=None, pattern=r"^(api|hermes|claude|codex|cursor)$")
     include_code_symbols: bool = True
     max_chars: int = Field(default=12000, ge=1000, le=50000)
 
@@ -265,6 +294,7 @@ class AgentContextCitation(BaseModel):
     version_kind: str
     commit: str | None = None
     score: float
+    graph_score: float = 0.0
 
 
 class AgentContextResponse(BaseModel):
@@ -275,3 +305,32 @@ class AgentContextResponse(BaseModel):
     citations: list[AgentContextCitation]
     symbols: list[CodeSymbolHit] = Field(default_factory=list)
     token_budget_hint: int
+
+
+class GraphNodeRead(BaseModel):
+    id: UUID
+    resource_id: UUID
+    snapshot_id: UUID
+    node_key: str
+    node_type: str
+    label: str
+    path: str | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
+class GraphEdgeRead(BaseModel):
+    id: UUID
+    resource_id: UUID
+    snapshot_id: UUID
+    source_node_id: UUID
+    target_node_id: UUID
+    edge_type: str
+    weight: float
+    metadata: dict = Field(default_factory=dict)
+
+
+class GraphRead(BaseModel):
+    node_count: int
+    edge_count: int
+    nodes: list[GraphNodeRead]
+    edges: list[GraphEdgeRead]

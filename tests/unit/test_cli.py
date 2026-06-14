@@ -41,6 +41,12 @@ class FakeClient:
             }
         if method == "POST" and path.endswith("/search"):
             return {"query": body["query"], "count": 1, "hits": [{"path": "README.md", "snippet": "demo"}]}
+        if method == "GET" and path == "/workspaces/ws-1/agents":
+            return [{"project_id": "proj-1", "name": "ContextSmith repo", "resource_count": 1}]
+        if method == "GET" and path == "/workspaces/ws-1/projects/proj-1/agent-profile":
+            return {"project_id": "proj-1", "name": "ContextSmith repo", "graph_node_count": 3}
+        if method == "GET" and path.endswith("/graph?limit=50"):
+            return {"node_count": 2, "edge_count": 1, "nodes": [], "edges": []}
         return {"status": "ok"}
 
 
@@ -150,3 +156,31 @@ def test_search_json_output(monkeypatch, capsys):
     assert data["query"] == "demo"
     client = FakeClient.instances[0]
     assert client.calls[0][2] == {"query": "demo", "top_k": 10, "resource_ids": ["res-1"]}
+
+
+def test_agent_registry_and_resource_graph_commands(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    assert cli_main(["--json", "agent", "list", "--workspace-id", "ws-1"]) == 0
+    assert json.loads(capsys.readouterr().out)[0]["project_id"] == "proj-1"
+
+    assert cli_main(["--json", "agent", "profile", "--workspace-id", "ws-1", "--project-id", "proj-1"]) == 0
+    assert json.loads(capsys.readouterr().out)["graph_node_count"] == 3
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "resource",
+                "graph",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--resource-id",
+                "res-1",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["edge_count"] == 1

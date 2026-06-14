@@ -19,6 +19,8 @@ from contextsmith_api.schemas import (
     AgentContextCitation,
     AgentContextRequest,
     AgentContextResponse,
+    AgentProfileRead,
+    AgentProfileUpdate,
     AuditEventRead,
     CodeSearchRequest,
     CodeSearchResponse,
@@ -26,6 +28,9 @@ from contextsmith_api.schemas import (
     ContextPacketItemRead,
     ContextPacketRead,
     ContextPacketRequest,
+    GraphEdgeRead,
+    GraphNodeRead,
+    GraphRead,
     IndexRunRead,
     ProjectCreate,
     ProjectRead,
@@ -48,9 +53,12 @@ from contextsmith_shared.config import get_settings
 from contextsmith_shared.db import get_session
 from contextsmith_shared.embeddings import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROVIDER
 from contextsmith_shared.models import (
+    AgentProfile,
     AuditEvent,
     ContextPacket,
     ContextPacketItem,
+    GraphEdge,
+    GraphNode,
     IndexRun,
     Project,
     ProjectMembership,
@@ -102,6 +110,83 @@ def _resolve_project(session: Session, workspace_id: UUID, project_id: UUID) -> 
     if project is None or project.deleted_at is not None:
         raise HTTPException(status_code=404, detail="project not found")
     return project
+
+
+def _ensure_agent_profile(
+    session: Session, workspace_id: UUID, project: Project, user_id: UUID
+) -> AgentProfile:
+    profile = session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.workspace_id == workspace_id,
+            AgentProfile.project_id == project.id,
+        )
+    )
+    if profile is not None:
+        return profile
+    profile = AgentProfile(
+        workspace_id=workspace_id,
+        project_id=project.id,
+        name=project.name,
+        description=project.description,
+        default_runtime="hermes",
+        system_prompt=None,
+        tool_policy={"production_mutations": "external_approval_required"},
+        created_by=user_id,
+        updated_by=user_id,
+    )
+    session.add(profile)
+    session.flush()
+    return profile
+
+
+def _agent_profile_read(session: Session, workspace_id: UUID, project: Project, profile: AgentProfile) -> AgentProfileRead:
+    stats = session.execute(
+        text(
+            """
+            SELECT
+              COUNT(DISTINCT r.id) AS resource_count,
+              COUNT(DISTINCT r.current_snapshot_id) FILTER (WHERE r.current_snapshot_id IS NOT NULL) AS current_snapshot_count,
+              COUNT(DISTINCT gn.id) AS graph_node_count,
+              COUNT(DISTINCT ge.id) AS graph_edge_count,
+              MAX(ir.finished_at) AS last_index_finished_at
+            FROM projects p
+            LEFT JOIN resources r ON r.project_id = p.id
+              AND r.workspace_id = p.workspace_id
+              AND r.deleted_at IS NULL
+            LEFT JOIN graph_nodes gn ON gn.project_id = p.id
+              AND gn.workspace_id = p.workspace_id
+              AND gn.source_snapshot_id = r.current_snapshot_id
+            LEFT JOIN graph_edges ge ON ge.project_id = p.id
+              AND ge.workspace_id = p.workspace_id
+              AND ge.source_snapshot_id = r.current_snapshot_id
+            LEFT JOIN index_runs ir ON ir.project_id = p.id
+              AND ir.workspace_id = p.workspace_id
+              AND ir.status = 'succeeded'
+            WHERE p.workspace_id = :ws AND p.id = :proj
+            GROUP BY p.id
+            """
+        ),
+        {"ws": workspace_id, "proj": project.id},
+    ).mappings().first() or {}
+    return AgentProfileRead(
+        id=profile.id,
+        workspace_id=profile.workspace_id,
+        project_id=profile.project_id,
+        name=profile.name,
+        description=profile.description,
+        default_runtime=profile.default_runtime,
+        system_prompt=profile.system_prompt,
+        tool_policy=profile.tool_policy,
+        resource_count=int(stats.get("resource_count") or 0),
+        current_snapshot_count=int(stats.get("current_snapshot_count") or 0),
+        graph_node_count=int(stats.get("graph_node_count") or 0),
+        graph_edge_count=int(stats.get("graph_edge_count") or 0),
+        last_index_finished_at=stats.get("last_index_finished_at"),
+        mcp_endpoint=f"/mcp/{workspace_id}/{project.id}",
+        agent_context_endpoint=f"/workspaces/{workspace_id}/projects/{project.id}/agent-context",
+        created_at=profile.created_at,
+        updated_at=profile.updated_at,
+    )
 
 
 def _require_project_access(session: Session, workspace_id: UUID, project_id: UUID, user) -> Project:
@@ -208,6 +293,7 @@ def create_project(
     )
     session.add(project)
     session.flush()
+    _ensure_agent_profile(session, workspace_id, project, user.id)
     session.add(
         ProjectMembership(
             workspace_id=workspace_id,
@@ -238,6 +324,81 @@ def get_project(
 ) -> Project:
     user = get_or_create_user(session, email)
     return _require_project_access(session, workspace_id, project_id, user)
+
+
+@app.get("/workspaces/{workspace_id}/agents", response_model=list[AgentProfileRead])
+def list_agents(
+    workspace_id: UUID,
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> list[AgentProfileRead]:
+    user = get_or_create_user(session, email)
+    require_workspace_member(session, workspace_id, user)
+    projects = list(
+        session.scalars(
+            select(Project)
+            .where(Project.workspace_id == workspace_id, Project.deleted_at.is_(None))
+            .order_by(Project.created_at.asc())
+        )
+    )
+    agents: list[AgentProfileRead] = []
+    for project in projects:
+        try:
+            _require_project_access(session, workspace_id, project.id, user)
+        except HTTPException:
+            continue
+        profile = _ensure_agent_profile(session, workspace_id, project, user.id)
+        agents.append(_agent_profile_read(session, workspace_id, project, profile))
+    session.commit()
+    return agents
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/agent-profile", response_model=AgentProfileRead)
+def get_agent_profile(
+    workspace_id: UUID,
+    project_id: UUID,
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> AgentProfileRead:
+    user = get_or_create_user(session, email)
+    project = _require_project_access(session, workspace_id, project_id, user)
+    profile = _ensure_agent_profile(session, workspace_id, project, user.id)
+    session.commit()
+    return _agent_profile_read(session, workspace_id, project, profile)
+
+
+@app.patch("/workspaces/{workspace_id}/projects/{project_id}/agent-profile", response_model=AgentProfileRead)
+def update_agent_profile(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: AgentProfileUpdate,
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> AgentProfileRead:
+    user = get_or_create_user(session, email)
+    project = _require_project_member(session, workspace_id, project_id, user)
+    profile = _ensure_agent_profile(session, workspace_id, project, user.id)
+    fields = payload.model_dump(exclude_unset=True)
+    nullable_forbidden = {"name", "default_runtime", "tool_policy"}
+    bad_null = sorted(key for key in nullable_forbidden if key in fields and fields[key] is None)
+    if bad_null:
+        raise HTTPException(status_code=422, detail=f"fields cannot be null: {', '.join(bad_null)}")
+    for key, value in fields.items():
+        setattr(profile, key, value)
+    profile.updated_by = user.id
+    profile.updated_at = datetime.now(UTC)
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            action="agent_profile.update",
+            target_type="agent_profile",
+            target_id=profile.id,
+            meta={"fields": sorted(fields.keys())},
+        )
+    )
+    session.commit()
+    return _agent_profile_read(session, workspace_id, project, profile)
 
 
 @app.post(
@@ -778,6 +939,81 @@ def list_snapshots(
 
 
 @app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph",
+    response_model=GraphRead,
+)
+def get_resource_graph(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    limit: int = Query(default=200, ge=1, le=1000),
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> GraphRead:
+    user = get_or_create_user(session, email)
+    _require_project_access(session, workspace_id, project_id, user)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    if resource.current_snapshot_id is None:
+        return GraphRead(node_count=0, edge_count=0, nodes=[], edges=[])
+    nodes = list(
+        session.scalars(
+            select(GraphNode)
+            .where(
+                GraphNode.workspace_id == workspace_id,
+                GraphNode.project_id == project_id,
+                GraphNode.resource_id == resource_id,
+                GraphNode.source_snapshot_id == resource.current_snapshot_id,
+            )
+            .order_by(GraphNode.node_type.asc(), GraphNode.label.asc())
+            .limit(limit)
+        )
+    )
+    edges = list(
+        session.scalars(
+            select(GraphEdge)
+            .where(
+                GraphEdge.workspace_id == workspace_id,
+                GraphEdge.project_id == project_id,
+                GraphEdge.resource_id == resource_id,
+                GraphEdge.source_snapshot_id == resource.current_snapshot_id,
+            )
+            .order_by(GraphEdge.edge_type.asc(), GraphEdge.created_at.asc())
+            .limit(limit)
+        )
+    )
+    return GraphRead(
+        node_count=len(nodes),
+        edge_count=len(edges),
+        nodes=[
+            GraphNodeRead(
+                id=node.id,
+                resource_id=node.resource_id,
+                snapshot_id=node.source_snapshot_id,
+                node_key=node.node_key,
+                node_type=node.node_type,
+                label=node.label,
+                path=node.path,
+                metadata=node.meta,
+            )
+            for node in nodes
+        ],
+        edges=[
+            GraphEdgeRead(
+                id=edge.id,
+                resource_id=edge.resource_id,
+                snapshot_id=edge.source_snapshot_id,
+                source_node_id=edge.source_node_id,
+                target_node_id=edge.target_node_id,
+                edge_type=edge.edge_type,
+                weight=edge.weight,
+                metadata=edge.meta,
+            )
+            for edge in edges
+        ],
+    )
+
+
+@app.get(
     "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/index-runs",
     response_model=list[IndexRunRead],
 )
@@ -1033,6 +1269,7 @@ def _build_agent_context_response(
                 version_kind=candidate.version_kind,
                 commit=candidate.snapshot_metadata.get("commit"),
                 score=candidate.score,
+                graph_score=candidate.graph_score,
             )
         )
     symbols: list[CodeSymbolHit] = []
@@ -1045,10 +1282,20 @@ def _build_agent_context_response(
             session=session,
         )
         symbols = symbol_response.symbols
+    profile = session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.workspace_id == workspace_id,
+            AgentProfile.project_id == project_id,
+        )
+    )
+    actual_runtime = payload.runtime or (profile.default_runtime if profile else "api")
+    instruction_parts = [_COMMON_AGENT_INSTRUCTION, _RUNTIME_INSTRUCTIONS[actual_runtime]]
+    if profile and profile.system_prompt:
+        instruction_parts.append(profile.system_prompt)
     return AgentContextResponse(
         query=payload.query,
-        runtime=payload.runtime,
-        instruction=f"{_COMMON_AGENT_INSTRUCTION} {_RUNTIME_INSTRUCTIONS[payload.runtime]}",
+        runtime=actual_runtime,
+        instruction=" ".join(instruction_parts),
         context="\n\n".join(context_parts),
         citations=citations,
         symbols=symbols,
@@ -1255,6 +1502,7 @@ def create_context_packet(
                 rank=rank,
                 lexical_score=candidate.lexical_score,
                 vector_score=candidate.vector_score,
+                graph_score=candidate.graph_score,
                 rerank_score=candidate.rerank_score,
                 score=candidate.score,
                 meta={"path": candidate.path, "content_hash": candidate.content_hash},
@@ -1294,6 +1542,7 @@ def create_context_packet(
                     score=candidate.score,
                     lexical_score=candidate.lexical_score,
                     vector_score=candidate.vector_score,
+                    graph_score=candidate.graph_score,
                     rerank_score=candidate.rerank_score,
                     citation=citation,
                 )

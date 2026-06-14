@@ -18,6 +18,7 @@ interface SearchHit {
   lexical_score?: number;
   vector_score?: number;
   rerank_score?: number;
+  graph_score?: number;
 }
 
 interface SearchResponse {
@@ -66,9 +67,13 @@ const input: React.CSSProperties = {
 
 const endpoints: Array<[string, string]> = [
   ['POST', '/workspaces/{ws}/projects/{proj}/resources'],
+  ['GET', '/workspaces/{ws}/agents'],
+  ['GET', '/workspaces/{ws}/projects/{proj}/agent-profile'],
+  ['PATCH', '/workspaces/{ws}/projects/{proj}/agent-profile'],
   ['PATCH', '/workspaces/{ws}/projects/{proj}/resources/{res}'],
   ['POST', '/workspaces/{ws}/projects/{proj}/resources/{res}/refresh'],
   ['GET', '/workspaces/{ws}/projects/{proj}/resources/{res}/snapshots'],
+  ['GET', '/workspaces/{ws}/projects/{proj}/resources/{res}/graph'],
   ['GET', '/workspaces/{ws}/projects/{proj}/resources/{res}/index-runs'],
   ['POST', '/workspaces/{ws}/projects/{proj}/search'],
   ['POST', '/workspaces/{ws}/projects/{proj}/context-packets'],
@@ -161,7 +166,7 @@ export default function Home() {
 
       <section style={{ padding: '3rem 3rem 1.5rem', maxWidth: '980px' }}>
         <p style={{ color: '#475569', textTransform: 'uppercase', letterSpacing: '0.16em' }}>
-          Milestone 3 · Hybrid Retrieval &amp; Context Packets
+          Milestones 7-10 · Agent Registry &amp; GraphRAG Retrieval
         </p>
         <h1 style={{ fontSize: 'clamp(2rem, 5vw, 3.5rem)', lineHeight: 1.05, margin: '0 0 1rem' }}>
           Build versioned resources, then retrieve cited context packets.
@@ -169,8 +174,8 @@ export default function Home() {
         <p style={{ color: '#334155', fontSize: '1.1rem', lineHeight: 1.7, maxWidth: '760px' }}>
           Add a markdown/document resource (inline content) or a public/local git repository, run a
           manual refresh, and the worker produces a versioned source snapshot, lexical chunks, and
-          deterministic dev embeddings. The context packet endpoint combines lexical/vector retrieval
-          with a small rerank signal and returns cited snippets plus analytics IDs.
+          deterministic dev embeddings, graph nodes/edges, and code symbols. The context packet endpoint
+          combines lexical/vector/graph retrieval with a rerank signal and returns cited snippets plus analytics IDs.
         </p>
       </section>
 
@@ -247,7 +252,7 @@ export default function Home() {
                   {hit.path ? `path=${hit.path} · ` : ''}ordinal={hit.ordinal} · {hit.version_kind}=
                   {(hit.commit || hit.version).slice(0, 12)}
                   {hit.vector_score !== undefined
-                    ? ` · lex=${(hit.lexical_score ?? 0).toFixed(3)} vec=${hit.vector_score.toFixed(3)} rerank=${(hit.rerank_score ?? 0).toFixed(3)}`
+                    ? ` · lex=${(hit.lexical_score ?? 0).toFixed(3)} vec=${hit.vector_score.toFixed(3)} graph=${(hit.graph_score ?? 0).toFixed(3)} rerank=${(hit.rerank_score ?? 0).toFixed(3)}`
                     : ''}
                 </div>
               </article>

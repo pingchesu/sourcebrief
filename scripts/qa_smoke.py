@@ -111,6 +111,8 @@ def wait_for_index_run(ws: str, run_id: str) -> dict:
         fail(f"index run produced no chunks: {current}")
     if current.get("embeddings_created", 0) < 1:
         fail(f"index run produced no embeddings: {current}")
+    if current.get("graph_nodes_created", 0) < 1 or current.get("graph_edges_created", 0) < 1:
+        fail(f"index run produced no graph index: {current}")
     return current
 
 
@@ -332,6 +334,33 @@ def main() -> None:
     if code_hit["name"] != "smoke_symbol" or code_hit.get("commit") != git_commit:
         fail(f"code symbol citation failed: {code_search}")
 
+    git_graph = request(
+        "GET",
+        f"/workspaces/{ws}/projects/{proj}/resources/{git_res}/graph",
+        200,
+        headers=HEADERS,
+    )
+    if git_graph["node_count"] < 2 or git_graph["edge_count"] < 1:
+        fail(f"resource graph missing nodes/edges: {git_graph}")
+
+    agent_profile = request(
+        "GET",
+        f"/workspaces/{ws}/projects/{proj}/agent-profile",
+        200,
+        headers=HEADERS,
+    )
+    if agent_profile["resource_count"] < 2 or agent_profile["graph_node_count"] < 1:
+        fail(f"agent profile missing resources/graph stats: {agent_profile}")
+    patched_profile = request(
+        "PATCH",
+        f"/workspaces/{ws}/projects/{proj}/agent-profile",
+        200,
+        json={"system_prompt": "Prefer concise QA-smoke answers."},
+        headers=HEADERS,
+    )
+    if "QA-smoke" not in (patched_profile.get("system_prompt") or ""):
+        fail(f"agent profile patch failed: {patched_profile}")
+
     agent_context = request(
         "POST",
         f"/workspaces/{ws}/projects/{proj}/agent-context",
@@ -398,8 +427,8 @@ def main() -> None:
         fail(f"frontend health failed: {web.status_code} {web.text}")
 
     print(
-        "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → lexical/hybrid context retrieval with citations, "
-        "CLI search, query/resource usage analytics, review lifecycle, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, "
+        "CLI search, agent profile, query/resource usage analytics, review lifecycle, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 

@@ -81,6 +81,22 @@ class ProjectMembership(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class AgentProfile(Base):
+    __tablename__ = "agent_profiles"
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    default_runtime: Mapped[str] = mapped_column(Text, nullable=False, default="api")
+    system_prompt: Mapped[str | None] = mapped_column(Text)
+    tool_policy: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Resource(Base):
     __tablename__ = "resources"
     __table_args__ = (UniqueConstraint("project_id", "name", name="uq_resource_name_per_project"),)
@@ -187,6 +203,46 @@ class CodeSymbol(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class GraphNode(Base):
+    __tablename__ = "graph_nodes"
+    __table_args__ = (UniqueConstraint("source_snapshot_id", "node_key", name="uq_graph_nodes_snapshot_key"),)
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    node_key: Mapped[str] = mapped_column(Text, nullable=False)
+    node_type: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    path: Mapped[str | None] = mapped_column(Text)
+    meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GraphEdge(Base):
+    __tablename__ = "graph_edges"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_snapshot_id",
+            "source_node_id",
+            "target_node_id",
+            "edge_type",
+            name="uq_graph_edges_snapshot_source_target_type",
+        ),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    source_node_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("graph_nodes.id"), nullable=False)
+    target_node_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("graph_nodes.id"), nullable=False)
+    edge_type: Mapped[str] = mapped_column(Text, nullable=False)
+    weight: Mapped[float] = mapped_column(nullable=False, default=1.0)
+    meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class QueryRun(Base):
     __tablename__ = "query_runs"
     id = uuid_pk()
@@ -217,6 +273,7 @@ class RetrievalHit(Base):
     rank: Mapped[int] = mapped_column(Integer, nullable=False)
     lexical_score: Mapped[float] = mapped_column(nullable=False, default=0.0)
     vector_score: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    graph_score: Mapped[float] = mapped_column(nullable=False, default=0.0)
     rerank_score: Mapped[float] = mapped_column(nullable=False, default=0.0)
     score: Mapped[float] = mapped_column(nullable=False)
     meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)

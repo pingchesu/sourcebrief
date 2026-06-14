@@ -9,10 +9,11 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import text
 
+from contextsmith_api.auth import get_or_create_user
 from contextsmith_api.main import app
 from contextsmith_shared.config import get_settings
 from contextsmith_shared.db import get_engine, get_sessionmaker
-from contextsmith_shared.models import IndexRun
+from contextsmith_shared.models import IndexRun, Project, WorkspaceMembership
 from contextsmith_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
@@ -95,7 +96,48 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
     assert "Hermes specialist agent" in body["instruction"]
     assert "falconagent" in body["context"]
     assert body["citations"][0]["resource_id"] == resource_id
+    assert "graph_score" in body["citations"][0]
     assert any(symbol["name"] == "runtime_symbol" for symbol in body["symbols"])
+
+    profile = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/agent-profile", headers=headers)
+    assert profile.status_code == 200, profile.text
+    profile_body = profile.json()
+    assert profile_body["project_id"] == project_id
+    assert profile_body["resource_count"] == 1
+    assert profile_body["graph_node_count"] >= 1
+    assert profile_body["mcp_endpoint"].endswith(f"/{workspace_id}/{project_id}")
+
+    updated = client.patch(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-profile",
+        json={"system_prompt": "Prefer concise repo-owner-safe answers.", "default_runtime": "codex"},
+        headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert "repo-owner-safe" in updated.json()["system_prompt"]
+
+    default_runtime = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "runtime_symbol", "resource_ids": [resource_id], "top_k": 5},
+        headers=headers,
+    )
+    assert default_runtime.status_code == 200, default_runtime.text
+    assert default_runtime.json()["runtime"] == "codex"
+    assert "repo-owner-safe" in default_runtime.json()["instruction"]
+
+    null_patch = client.patch(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-profile",
+        json={"name": None},
+        headers=headers,
+    )
+    assert null_patch.status_code == 422
+
+    graph = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph",
+        headers=headers,
+    )
+    assert graph.status_code == 200, graph.text
+    assert graph.json()["node_count"] >= 2
+    assert graph.json()["edge_count"] >= 1
 
     tools = client.post(
         f"/mcp/{workspace_id}/{project_id}",
@@ -122,6 +164,37 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
     result = call.json()["result"]
     assert result["structuredContent"]["runtime"] == "codex"
     assert "falconagent" in result["structuredContent"]["context"]
+
+
+def test_agent_registry_respects_private_project_membership() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "m7-private")
+
+    session = get_sessionmaker()()
+    project = session.get(Project, UUID(project_id))
+    assert project is not None
+    project.visibility = "private"
+    session.commit()
+    session.close()
+
+    owner_agents = client.get(f"/workspaces/{workspace_id}/agents", headers=headers)
+    assert owner_agents.status_code == 200, owner_agents.text
+    assert any(agent["project_id"] == project_id for agent in owner_agents.json())
+
+    intruder_email = "m7-private-intruder@example.com"
+    session = get_sessionmaker()()
+    intruder_user = get_or_create_user(session, intruder_email)
+    session.add(WorkspaceMembership(workspace_id=UUID(workspace_id), user_id=intruder_user.id, role="viewer"))
+    session.commit()
+    session.close()
+
+    intruder = {"X-User-Email": intruder_email}
+    workspace_read = client.get(f"/workspaces/{workspace_id}", headers=intruder)
+    assert workspace_read.status_code == 200
+    intruder_agents = client.get(f"/workspaces/{workspace_id}/agents", headers=intruder)
+    assert intruder_agents.status_code == 200, intruder_agents.text
+    assert all(agent["project_id"] != project_id for agent in intruder_agents.json())
 
 
 def test_agent_context_and_mcp_are_permission_scoped() -> None:

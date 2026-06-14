@@ -6,7 +6,12 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from contextsmith_shared.embeddings import embed_text, term_overlap_score, vector_literal
+from contextsmith_shared.embeddings import (
+    current_embedding_config,
+    embed_text,
+    rerank_score,
+    vector_literal,
+)
 
 
 @dataclass
@@ -25,6 +30,7 @@ class RetrievalCandidate:
     lexical_score: float = 0.0
     vector_score: float = 0.0
     rerank_score: float = 0.0
+    graph_score: float = 0.0
     score: float = 0.0
 
 
@@ -154,17 +160,59 @@ def retrieve_context_candidates(
     for row in session.execute(vector_sql, vector_params).mappings().all():
         _upsert_candidate(candidates, row, vector_score=float(row["score"] or 0.0))
 
+    graph_sql = text(
+        """
+        SELECT c.id AS chunk_id,
+               LEAST(1.0, COALESCE(MAX(
+                   CASE
+                     WHEN n.node_type = 'symbol' THEN 0.80
+                     WHEN n.node_type = 'file' THEN 0.55
+                     WHEN n.node_type = 'directory' THEN 0.30
+                     ELSE 0.15
+                   END * ge.weight
+               ), 0.0)) AS graph_score
+        FROM chunks c
+        JOIN graph_nodes n ON n.source_snapshot_id = c.source_snapshot_id
+          AND n.resource_id = c.resource_id
+          AND (n.path = c.path OR n.node_type = 'resource')
+        LEFT JOIN graph_edges ge ON (ge.target_node_id = n.id OR ge.source_node_id = n.id)
+          AND ge.workspace_id = c.workspace_id
+          AND ge.project_id = c.project_id
+          AND ge.resource_id = c.resource_id
+          AND ge.source_snapshot_id = c.source_snapshot_id
+        WHERE c.workspace_id = CAST(:ws AS uuid)
+          AND c.project_id = CAST(:proj AS uuid)
+          AND c.deleted_at IS NULL
+          AND c.id = ANY(CAST(:chunk_ids AS uuid[]))
+          AND to_tsvector('simple', n.label || ' ' || coalesce(n.path, ''))
+              @@ plainto_tsquery('simple', :q)
+        GROUP BY c.id
+        """
+    )
+    if candidates:
+        graph_params = {
+            **base_params,
+            "chunk_ids": [str(chunk_id) for chunk_id in candidates.keys()],
+        }
+        for row in session.execute(graph_sql, graph_params).mappings().all():
+            candidate = candidates.get(row["chunk_id"])
+            if candidate is not None:
+                candidate.graph_score = max(candidate.graph_score, float(row["graph_score"] or 0.0))
+
     filtered: list[RetrievalCandidate] = []
+    embedding_provider = current_embedding_config().provider
+    require_text_overlap = embedding_provider in {"hashing", "deterministic", "dev"}
     for candidate in candidates.values():
-        candidate.rerank_score = term_overlap_score(query, candidate.content)
+        candidate.rerank_score = rerank_score(query, candidate.content)
         # The offline hashing provider is not a true semantic model; avoid
-        # returning random vector-nearest chunks that share no query terms. A
-        # future HF/vLLM/SGLang provider can relax this with calibrated scores.
-        if candidate.lexical_score <= 0 and candidate.rerank_score <= 0:
+        # returning random vector-nearest chunks that share no query terms. Real
+        # embedding providers may legitimately return semantic-only matches.
+        if require_text_overlap and candidate.lexical_score <= 0 and candidate.rerank_score <= 0:
             continue
         candidate.score = (
-            0.45 * candidate.lexical_score
-            + 0.45 * candidate.vector_score
+            0.40 * candidate.lexical_score
+            + 0.35 * candidate.vector_score
+            + 0.15 * candidate.graph_score
             + 0.10 * candidate.rerank_score
         )
         filtered.append(candidate)

@@ -49,6 +49,9 @@ Core entities:
 - `chunks`
 - `chunk_embeddings`
 - `code_symbols`
+- `agent_profiles`
+- `graph_nodes`
+- `graph_edges`
 - `index_runs`
 - `query_runs`
 - `retrieval_hits`
@@ -57,7 +60,8 @@ Core entities:
 The important boundary is:
 
 ```text
-workspace → project → resource → snapshot → chunk / symbol / embedding
+workspace → project → agent_profile
+workspace → project → resource → snapshot → chunk / symbol / embedding / graph
 ```
 
 Queries always resolve through workspace and project scope. Resources from another workspace/project should not appear in search, context packets, MCP calls, or usage reports.
@@ -94,6 +98,8 @@ embeddings written
         ↓
 code symbols written when applicable
         ↓
+resource/file/symbol graph written
+        ↓
 resource.current_snapshot_id updated
         ↓
 index_run marked succeeded or failed
@@ -107,6 +113,8 @@ ContextSmith combines multiple retrieval signals:
 
 - lexical search over chunks
 - vector search through pgvector
+- bounded graph signal over current resource/file/symbol graph nodes
+- deterministic rerank signal by default, with HTTP provider adapters for external rerankers
 - deterministic code symbol search
 - resource filters
 - citation and usage logging
@@ -123,7 +131,7 @@ POST /workspaces/{workspace_id}/projects/{project_id}/agent-context
 
 The response includes:
 
-- runtime-specific instruction
+- runtime-specific instruction plus optional project agent profile system prompt
 - cited context text
 - structured citations
 - optional code symbols
@@ -156,6 +164,18 @@ Tool exposed:
 - `contextsmith.get_agent_context`
 
 This is intentionally not one MCP server per repo. A project is the boundary; a project can contain many repos and resources.
+
+## Agent registry
+
+Each project has one platform-owned `agent_profile`. The profile stores the project agent's name, description, default runtime, optional system prompt, and tool policy. The source repo is not required to accept `AGENTS.md` or other agent files.
+
+Useful endpoints:
+
+- `GET /workspaces/{workspace_id}/agents`
+- `GET /workspaces/{workspace_id}/projects/{project_id}/agent-profile`
+- `PATCH /workspaces/{workspace_id}/projects/{project_id}/agent-profile`
+
+The profile is intentionally metadata and policy only. Production actions still require external typed tools and approvals.
 
 ## Review and drift control
 
