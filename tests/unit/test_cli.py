@@ -11,9 +11,10 @@ cli_main = cli.main
 class FakeClient:
     instances: list[FakeClient] = []
 
-    def __init__(self, api_url: str, email: str) -> None:
+    def __init__(self, api_url: str, email: str, token: str | None = None) -> None:
         self.api_url = api_url
         self.email = email
+        self.token = token
         self.calls: list[tuple[str, str, dict[str, Any] | None, set[int] | None]] = []
         FakeClient.instances.append(self)
 
@@ -47,6 +48,13 @@ class FakeClient:
             return {"project_id": "proj-1", "name": "ContextSmith repo", "graph_node_count": 3}
         if method == "GET" and path.endswith("/graph?limit=50"):
             return {"node_count": 2, "edge_count": 1, "nodes": [], "edges": []}
+        if method == "POST" and path == "/workspaces/ws-1/api-tokens":
+            assert body is not None
+            return {"token": "cs_secret", "api_token": {"id": "tok-1", "name": body["name"], "scopes": body["scopes"]}}
+        if method == "GET" and path == "/workspaces/ws-1/api-tokens":
+            return [{"id": "tok-1", "name": "Hermes", "scopes": ["project:query"]}]
+        if method == "DELETE" and path == "/workspaces/ws-1/api-tokens/tok-1":
+            return {"id": "tok-1", "revoked_at": "2026-01-01T00:00:00Z"}
         return {"status": "ok"}
 
 
@@ -184,3 +192,50 @@ def test_agent_registry_and_resource_graph_commands(monkeypatch, capsys):
         == 0
     )
     assert json.loads(capsys.readouterr().out)["edge_count"] == 1
+
+
+def test_token_commands_and_bearer_client(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    exit_code = cli_main(
+        [
+            "--token",
+            "cs_existing",
+            "--json",
+            "token",
+            "create",
+            "--workspace-id",
+            "ws-1",
+            "--name",
+            "Hermes",
+            "--scope",
+            "project:query,resource:read",
+            "--project-id",
+            "proj-1",
+            "--resource-id",
+            "res-1",
+        ]
+    )
+    assert exit_code == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["token"] == "cs_secret"
+    client = FakeClient.instances[0]
+    assert client.token == "cs_existing"
+    assert client.calls[0] == (
+        "POST",
+        "/workspaces/ws-1/api-tokens",
+        {
+            "name": "Hermes",
+            "scopes": ["project:query", "resource:read"],
+            "allowed_project_ids": ["proj-1"],
+            "allowed_resource_ids": ["res-1"],
+            "expires_at": None,
+        },
+        {201},
+    )
+
+    assert cli_main(["--json", "token", "list", "--workspace-id", "ws-1"]) == 0
+    assert json.loads(capsys.readouterr().out)[0]["id"] == "tok-1"
+
+    assert cli_main(["--json", "token", "revoke", "--workspace-id", "ws-1", "--token-id", "tok-1"]) == 0
+    assert json.loads(capsys.readouterr().out)["id"] == "tok-1"

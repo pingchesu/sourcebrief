@@ -191,6 +191,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 - [`docs/GUIDE.md`](docs/GUIDE.md) - create a project, ingest resources, query, review, use agent context
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - system design and runtime components
 - [`docs/SPEC.md`](docs/SPEC.md) - full product and architecture specification
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) - finite alpha milestone roadmap after M1-M10
 - [`docs/MILESTONE-1.md`](docs/MILESTONE-1.md) - foundation runtime
 - [`docs/MILESTONE-2.md`](docs/MILESTONE-2.md) - resource ingestion and lexical search
 - [`docs/MILESTONE-3.md`](docs/MILESTONE-3.md) - embeddings, hybrid retrieval, context packets
@@ -198,6 +199,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 - [`docs/MILESTONE-5.md`](docs/MILESTONE-5.md) - review, lifecycle, freshness, usage analytics
 - [`docs/MILESTONE-6.md`](docs/MILESTONE-6.md) - agent-context API and MCP integration
 - [`docs/MILESTONE-7-10.md`](docs/MILESTONE-7-10.md) - agent registry, providerized embedding/rerank, graph index, graph-aware retrieval
+- [`docs/MILESTONE-11.md`](docs/MILESTONE-11.md) - alpha auth, service tokens, and scope enforcement
 
 ## Tech stack
 
@@ -230,7 +232,7 @@ The smoke test covers document and git ingestion, snapshots, chunks, embeddings,
 
 Near-term hardening areas:
 
-- real auth and scoped API tokens
+- production auth integration beyond alpha dev headers and service tokens
 - scheduled refresh workers
 - richer review UI
 - production embedding and rerank adapters

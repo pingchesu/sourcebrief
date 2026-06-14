@@ -33,6 +33,7 @@ services:
       DATABASE_URL: postgresql+psycopg://contextsmith:contextsmith@postgres:5432/contextsmith
       REDIS_URL: redis://redis:6379/0
       CONTEXTSMITH_AUTO_MIGRATE: "true"
+      CONTEXTSMITH_DEV_AUTH: "true"
     ports:
       - "18000:8000"
     depends_on:

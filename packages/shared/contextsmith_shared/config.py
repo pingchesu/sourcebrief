@@ -15,6 +15,7 @@ class Settings(BaseSettings):
         "REDIS_URL", os.getenv("CONTEXTSMITH_REDIS_URL", "redis://localhost:6380/0")
     )
     auto_migrate: bool = False
+    dev_auth: bool = False
 
     model_config = SettingsConfigDict(env_prefix="CONTEXTSMITH_", extra="ignore")
 
