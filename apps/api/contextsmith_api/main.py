@@ -27,7 +27,12 @@ from contextsmith_api.schemas import (
     ProjectRead,
     ResourceCreate,
     ResourceRead,
+    ResourceReviewItem,
+    ResourceReviewRequest,
+    ResourceReviewResponse,
     ResourceUpdate,
+    ResourceUsageItem,
+    ResourceUsageResponse,
     SearchHit,
     SearchRequest,
     SearchResponse,
@@ -343,16 +348,31 @@ def list_audit_events(
     workspace_id: UUID,
     email: str = Depends(require_principal),
     session: Session = Depends(get_session),
-) -> list[AuditEvent]:
+) -> list[AuditEventRead]:
     user = get_or_create_user(session, email)
     require_workspace_member(session, workspace_id, user)
-    return list(
+    events = list(
         session.scalars(
             select(AuditEvent)
             .where(AuditEvent.workspace_id == workspace_id)
             .order_by(AuditEvent.created_at.asc())
         )
     )
+    return [
+        AuditEventRead(
+            id=event.id,
+            workspace_id=event.workspace_id,
+            actor_user_id=event.actor_user_id,
+            actor_token_id=event.actor_token_id,
+            action=event.action,
+            target_type=event.target_type,
+            target_id=event.target_id,
+            target_ref=event.target_ref,
+            metadata=event.meta,
+            created_at=event.created_at,
+        )
+        for event in events
+    ]
 
 
 @app.get("/workspaces/{workspace_id}/index-runs/{index_run_id}", response_model=IndexRunRead)
@@ -389,6 +409,8 @@ def update_resource(
     _require_project_member(session, workspace_id, project_id, user)
     resource = _resolve_resource(session, workspace_id, project_id, resource_id)
     fields = payload.model_dump(exclude_unset=True)
+    if resource.archived_at is not None and fields.get("retrieval_enabled") is True:
+        raise HTTPException(status_code=409, detail="archived resources cannot be re-enabled")
     nullable_rejected = {"name", "uri", "update_frequency", "source_config"}
     for key, value in fields.items():
         if key in nullable_rejected and value is None:
@@ -406,6 +428,283 @@ def update_resource(
     )
     session.commit()
     return resource
+
+
+@app.delete(
+    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}",
+    status_code=204,
+)
+def delete_resource(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> None:
+    user = get_or_create_user(session, email)
+    _require_project_member(session, workspace_id, project_id, user)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    now = datetime.now(UTC)
+    previous = {
+        "status": resource.status,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "archived_at": resource.archived_at.isoformat() if resource.archived_at else None,
+    }
+    resource.deleted_at = now
+    resource.retrieval_enabled = False
+    resource.status = "deleted"
+    resource.archived_at = resource.archived_at or now
+    new = {
+        "status": resource.status,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "archived_at": resource.archived_at.isoformat() if resource.archived_at else None,
+        "deleted_at": resource.deleted_at.isoformat() if resource.deleted_at else None,
+    }
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            action="resource.delete",
+            target_type="resource",
+            target_id=resource.id,
+            meta={"previous": previous, "new": new, "deleted_at": now.isoformat()},
+        )
+    )
+    session.commit()
+    return None
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/archive",
+    response_model=ResourceRead,
+)
+def archive_resource(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> Resource:
+    user = get_or_create_user(session, email)
+    _require_project_member(session, workspace_id, project_id, user)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    now = datetime.now(UTC)
+    previous = {
+        "status": resource.status,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "archived_at": resource.archived_at.isoformat() if resource.archived_at else None,
+    }
+    resource.archived_at = now
+    resource.status = "archived"
+    resource.retrieval_enabled = False
+    new = {
+        "status": resource.status,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "archived_at": resource.archived_at.isoformat() if resource.archived_at else None,
+    }
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            action="resource.archive",
+            target_type="resource",
+            target_id=resource.id,
+            meta={"previous": previous, "new": new, "archived_at": now.isoformat()},
+        )
+    )
+    session.commit()
+    return resource
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/review",
+    response_model=ResourceRead,
+)
+def review_resource(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    payload: ResourceReviewRequest,
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> Resource:
+    user = get_or_create_user(session, email)
+    _require_project_member(session, workspace_id, project_id, user)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    if resource.archived_at is not None and payload.retrieval_enabled is True:
+        raise HTTPException(status_code=409, detail="archived resources cannot be re-enabled")
+    previous = {
+        "review_status": resource.review_status,
+        "review_note": resource.review_note,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "stale_after_days": resource.stale_after_days,
+    }
+    resource.review_status = payload.review_status
+    resource.review_note = payload.review_note
+    resource.last_reviewed_at = datetime.now(UTC)
+    resource.last_reviewed_by = user.id
+    if payload.retrieval_enabled is not None:
+        resource.retrieval_enabled = payload.retrieval_enabled
+    if payload.stale_after_days is not None:
+        resource.stale_after_days = payload.stale_after_days
+    new = {
+        "review_status": resource.review_status,
+        "review_note": resource.review_note,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "stale_after_days": resource.stale_after_days,
+        "last_reviewed_at": resource.last_reviewed_at.isoformat() if resource.last_reviewed_at else None,
+        "last_reviewed_by": str(resource.last_reviewed_by) if resource.last_reviewed_by else None,
+    }
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            action="resource.review",
+            target_type="resource",
+            target_id=resource.id,
+            meta={
+                "previous": previous,
+                "new": new,
+                "review_status": payload.review_status,
+                "review_note": payload.review_note,
+                "retrieval_enabled": payload.retrieval_enabled,
+                "stale_after_days": payload.stale_after_days,
+            },
+        )
+    )
+    session.commit()
+    return resource
+
+
+def _resource_review_item(session: Session, resource: Resource) -> ResourceReviewItem:
+    usage = session.execute(
+        text(
+            """
+            SELECT COUNT(*) AS hit_count, MAX(created_at) AS last_used_at
+            FROM retrieval_hits
+            WHERE workspace_id = :ws AND project_id = :proj AND resource_id = :res
+            """
+        ),
+        {"ws": resource.workspace_id, "proj": resource.project_id, "res": resource.id},
+    ).mappings().one()
+    last_index = session.execute(
+        text(
+            """
+            SELECT status, finished_at
+            FROM index_runs
+            WHERE workspace_id = :ws AND project_id = :proj AND resource_id = :res
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ),
+        {"ws": resource.workspace_id, "proj": resource.project_id, "res": resource.id},
+    ).mappings().first()
+    now = datetime.now(UTC)
+    age_days = None
+    reasons: list[str] = []
+    freshness_status = "fresh"
+    if resource.archived_at is not None:
+        freshness_status = "archived"
+        reasons.append("archived")
+    elif resource.current_snapshot_id is None:
+        freshness_status = "stale"
+        reasons.append("no_current_snapshot")
+    else:
+        base = resource.last_refresh_finished_at or resource.created_at
+        if base is not None:
+            if base.tzinfo is None:
+                base = base.replace(tzinfo=UTC)
+            age_days = max(0, (now - base).days)
+            if age_days > resource.stale_after_days:
+                freshness_status = "stale"
+                reasons.append("refresh_age_exceeded")
+        if resource.review_status in {"stale", "needs_update"}:
+            freshness_status = "stale"
+            reasons.append(f"review_status:{resource.review_status}")
+    return ResourceReviewItem(
+        resource=ResourceRead.model_validate(resource, from_attributes=True),
+        freshness_status=freshness_status,
+        freshness_age_days=age_days,
+        usage_count=int(usage["hit_count"] or 0),
+        last_used_at=usage["last_used_at"],
+        last_index_status=last_index["status"] if last_index else None,
+        last_index_finished_at=last_index["finished_at"] if last_index else None,
+        stale_reasons=reasons,
+    )
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/resource-review",
+    response_model=ResourceReviewResponse,
+)
+def list_resource_review(
+    workspace_id: UUID,
+    project_id: UUID,
+    include_archived: bool = Query(default=False),
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> ResourceReviewResponse:
+    user = get_or_create_user(session, email)
+    _require_project_access(session, workspace_id, project_id, user)
+    predicates = [
+        Resource.workspace_id == workspace_id,
+        Resource.project_id == project_id,
+        Resource.deleted_at.is_(None),
+    ]
+    if not include_archived:
+        predicates.append(Resource.archived_at.is_(None))
+    resources = list(session.scalars(select(Resource).where(*predicates).order_by(Resource.created_at.asc())))
+    items = [_resource_review_item(session, resource) for resource in resources]
+    return ResourceReviewResponse(count=len(items), resources=items)
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/resource-usage",
+    response_model=ResourceUsageResponse,
+)
+def resource_usage(
+    workspace_id: UUID,
+    project_id: UUID,
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> ResourceUsageResponse:
+    user = get_or_create_user(session, email)
+    _require_project_access(session, workspace_id, project_id, user)
+    rows = session.execute(
+        text(
+            """
+            SELECT r.id AS resource_id,
+                   COUNT(DISTINCT rh.query_run_id) AS query_count,
+                   COUNT(DISTINCT rh.id) AS hit_count,
+                   COUNT(DISTINCT cpi.context_packet_id) AS context_packet_count,
+                   MAX(rh.created_at) AS last_used_at
+            FROM resources r
+            LEFT JOIN retrieval_hits rh ON rh.resource_id = r.id
+              AND rh.workspace_id = r.workspace_id
+              AND rh.project_id = r.project_id
+            LEFT JOIN context_packet_items cpi ON cpi.resource_id = r.id
+              AND cpi.workspace_id = r.workspace_id
+              AND cpi.project_id = r.project_id
+            WHERE r.workspace_id = :ws
+              AND r.project_id = :proj
+              AND r.deleted_at IS NULL
+            GROUP BY r.id
+            ORDER BY hit_count DESC, r.id ASC
+            """
+        ),
+        {"ws": workspace_id, "proj": project_id},
+    ).mappings().all()
+    items = [
+        ResourceUsageItem(
+            resource_id=row["resource_id"],
+            query_count=int(row["query_count"] or 0),
+            hit_count=int(row["hit_count"] or 0),
+            context_packet_count=int(row["context_packet_count"] or 0),
+            last_used_at=row["last_used_at"],
+        )
+        for row in rows
+    ]
+    return ResourceUsageResponse(count=len(items), resources=items)
 
 
 @app.get(
@@ -549,6 +848,7 @@ def search_project(
               WHERE r.workspace_id = CAST(:ws AS uuid)
                 AND r.project_id = CAST(:proj AS uuid)
                 AND r.deleted_at IS NULL
+                AND r.archived_at IS NULL
                 AND r.retrieval_enabled = true
                 AND r.current_snapshot_id IS NOT NULL
                 {resource_clause}
@@ -632,6 +932,7 @@ def code_search_project(
               AND sym.project_id = CAST(:proj AS uuid)
               AND sym.deleted_at IS NULL
               AND r.deleted_at IS NULL
+              AND r.archived_at IS NULL
               AND r.retrieval_enabled = true
               AND r.current_snapshot_id IS NOT NULL
               {resource_clause}

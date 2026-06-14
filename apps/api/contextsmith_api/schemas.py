@@ -42,6 +42,7 @@ class ResourceUpdate(BaseModel):
     update_frequency: str | None = None
     source_config: dict | None = None
     retrieval_enabled: bool | None = None
+    stale_after_days: int | None = Field(default=None, ge=1, le=3650)
 
 
 class ResourceRead(BaseModel):
@@ -55,6 +56,48 @@ class ResourceRead(BaseModel):
     retrieval_enabled: bool
     update_frequency: str
     current_snapshot_id: UUID | None = None
+    review_status: str = "unreviewed"
+    review_note: str | None = None
+    last_reviewed_at: datetime | None = None
+    last_reviewed_by: UUID | None = None
+    archived_at: datetime | None = None
+    stale_after_days: int = 30
+
+
+class ResourceReviewRequest(BaseModel):
+    review_status: str = Field(pattern=r"^(approved|needs_update|stale|ignored|unreviewed)$")
+    review_note: str | None = None
+    retrieval_enabled: bool | None = None
+    stale_after_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class ResourceReviewItem(BaseModel):
+    resource: ResourceRead
+    freshness_status: str
+    freshness_age_days: int | None = None
+    usage_count: int = 0
+    last_used_at: datetime | None = None
+    last_index_status: str | None = None
+    last_index_finished_at: datetime | None = None
+    stale_reasons: list[str] = Field(default_factory=list)
+
+
+class ResourceReviewResponse(BaseModel):
+    count: int
+    resources: list[ResourceReviewItem]
+
+
+class ResourceUsageItem(BaseModel):
+    resource_id: UUID
+    query_count: int
+    hit_count: int
+    context_packet_count: int
+    last_used_at: datetime | None = None
+
+
+class ResourceUsageResponse(BaseModel):
+    count: int
+    resources: list[ResourceUsageItem]
 
 
 class IndexRunRead(BaseModel):
@@ -97,9 +140,13 @@ class SnapshotRead(BaseModel):
 class AuditEventRead(BaseModel):
     id: UUID
     workspace_id: UUID
+    actor_user_id: UUID | None = None
+    actor_token_id: UUID | None = None
     action: str
     target_type: str
     target_id: UUID | None
+    target_ref: dict = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
     created_at: datetime
 
 

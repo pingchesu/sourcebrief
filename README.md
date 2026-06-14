@@ -38,6 +38,8 @@ See [`docs/MILESTONE-3.md`](docs/MILESTONE-3.md) for embeddings, pgvector storag
 
 See [`docs/MILESTONE-4.md`](docs/MILESTONE-4.md) for deterministic code symbol extraction and code search with file/line/commit citations.
 
+See [`docs/MILESTONE-5.md`](docs/MILESTONE-5.md) for resource review, lifecycle cleanup, freshness, and usage analytics.
+
 ## Initial scope
 
 ContextSmith is planned as an open-source SaaS-scale platform with the following first-class capabilities:
@@ -54,7 +56,7 @@ ContextSmith is planned as an open-source SaaS-scale platform with the following
 
 ## Status
 
-Milestones 1–3 are merged on `main`; Milestone 4 is implemented on the active feature branch pending review/verification/merge.
+Milestones 1–4 are merged on `main`; Milestone 5 is implemented on the active feature branch pending review/verification/merge.
 
 ## License
 

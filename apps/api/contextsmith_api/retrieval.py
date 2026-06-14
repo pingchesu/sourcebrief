@@ -100,6 +100,7 @@ def retrieve_context_candidates(
               WHERE r.workspace_id = CAST(:ws AS uuid)
                 AND r.project_id = CAST(:proj AS uuid)
                 AND r.deleted_at IS NULL
+                AND r.archived_at IS NULL
                 AND r.retrieval_enabled = true
                 AND r.current_snapshot_id IS NOT NULL
                 {resource_clause}
@@ -141,6 +142,7 @@ def retrieve_context_candidates(
               WHERE r.workspace_id = CAST(:ws AS uuid)
                 AND r.project_id = CAST(:proj AS uuid)
                 AND r.deleted_at IS NULL
+                AND r.archived_at IS NULL
                 AND r.retrieval_enabled = true
                 AND r.current_snapshot_id IS NOT NULL
                 {resource_clause}
