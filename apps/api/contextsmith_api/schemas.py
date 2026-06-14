@@ -28,6 +28,33 @@ class ProjectRead(BaseModel):
     visibility: str
 
 
+class ApiTokenCreate(BaseModel):
+    name: str = Field(min_length=1)
+    scopes: list[str] = Field(default_factory=list)
+    allowed_project_ids: list[UUID] | None = None
+    allowed_resource_ids: list[UUID] | None = None
+    expires_at: datetime | None = None
+
+
+class ApiTokenRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    name: str
+    scopes: list[str]
+    allowed_project_ids: list[UUID] | None = None
+    allowed_resource_ids: list[UUID] | None = None
+    created_by: UUID | None = None
+    expires_at: datetime | None = None
+    last_used_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class ApiTokenCreateResponse(BaseModel):
+    token: str
+    api_token: ApiTokenRead
+
+
 class AgentProfileUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1)
     description: str | None = None

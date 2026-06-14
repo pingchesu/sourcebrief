@@ -19,9 +19,10 @@ class ContextSmithCliError(RuntimeError):
 
 
 class ContextSmithClient:
-    def __init__(self, api_url: str, email: str, timeout: float = 30.0) -> None:
+    def __init__(self, api_url: str, email: str, token: str | None = None, timeout: float = 30.0) -> None:
         self.api_url = api_url.rstrip("/")
         self.email = email
+        self.token = token
         self.timeout = timeout
 
     def request(
@@ -34,7 +35,11 @@ class ContextSmithClient:
     ) -> Any:
         expected = expected or {200}
         data = None
-        headers = {"X-User-Email": self.email, "Accept": "application/json"}
+        headers = {"Accept": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        else:
+            headers["X-User-Email"] = self.email
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
@@ -75,6 +80,15 @@ def _resource_ids(values: list[str] | None) -> list[str] | None:
     return values or None
 
 
+def _split_csv_or_repeated(values: list[str] | None) -> list[str] | None:
+    if not values:
+        return None
+    result: list[str] = []
+    for value in values:
+        result.extend(part.strip() for part in value.split(",") if part.strip())
+    return result or None
+
+
 def _wait_for_run(client: ContextSmithClient, workspace_id: str, index_run_id: str, timeout: int) -> dict[str, Any]:
     deadline = time.time() + timeout
     current: dict[str, Any] = {"status": "queued", "id": index_run_id}
@@ -108,6 +122,29 @@ def cmd_project_create(client: ContextSmithClient, args: argparse.Namespace) -> 
         body={"name": args.name, "description": args.description},
         expected={201},
     )
+
+
+def cmd_token_create(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/api-tokens",
+        body={
+            "name": args.name,
+            "scopes": _split_csv_or_repeated(args.scope) or [],
+            "allowed_project_ids": _split_csv_or_repeated(args.project_id),
+            "allowed_resource_ids": _split_csv_or_repeated(args.resource_id),
+            "expires_at": args.expires_at,
+        },
+        expected={201},
+    )
+
+
+def cmd_token_list(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    return client.request("GET", f"/workspaces/{args.workspace_id}/api-tokens")
+
+
+def cmd_token_revoke(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    return client.request("DELETE", f"/workspaces/{args.workspace_id}/api-tokens/{args.token_id}")
 
 
 def _maybe_refresh(client: ContextSmithClient, args: argparse.Namespace, resource: dict[str, Any]) -> dict[str, Any]:
@@ -220,7 +257,12 @@ def cmd_mcp_context(client: ContextSmithClient, args: argparse.Namespace) -> Any
             "method": "tools/call",
             "params": {
                 "name": "contextsmith.get_agent_context",
-                "arguments": {"query": args.query, "runtime": args.runtime, "top_k": args.top_k},
+                "arguments": {
+                    "query": args.query,
+                    "runtime": args.runtime,
+                    "top_k": args.top_k,
+                    "resource_ids": _resource_ids(args.resource_id),
+                },
             },
         },
     )
@@ -258,6 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="contextsmith", description="ContextSmith CLI")
     parser.add_argument("--api-url", default=os.getenv("CONTEXTSMITH_API_URL", DEFAULT_API_URL))
     parser.add_argument("--email", default=os.getenv("CONTEXTSMITH_EMAIL", DEFAULT_EMAIL))
+    parser.add_argument("--token", default=os.getenv("CONTEXTSMITH_TOKEN"), help="Bearer API token; overrides --email dev auth")
     parser.add_argument("--json", action="store_true", help="print full JSON response")
     parser.set_defaults(func=None)
 
@@ -278,6 +321,25 @@ def build_parser() -> argparse.ArgumentParser:
     project_create.add_argument("--name", required=True)
     project_create.add_argument("--description")
     project_create.set_defaults(func=cmd_project_create)
+
+    tokens = sub.add_parser("token", help="workspace API token commands").add_subparsers(dest="token_command")
+    token_create = tokens.add_parser("create", help="create a bearer API token for agents/Hermes")
+    token_create.add_argument("--workspace-id", required=True)
+    token_create.add_argument("--name", required=True)
+    token_create.add_argument("--scope", action="append", required=True, help="scope, repeatable or comma-separated")
+    token_create.add_argument("--project-id", action="append", help="allowed project ID, repeatable or comma-separated")
+    token_create.add_argument("--resource-id", action="append", help="allowed resource ID, repeatable or comma-separated")
+    token_create.add_argument("--expires-at", help="ISO-8601 timestamp")
+    token_create.set_defaults(func=cmd_token_create)
+
+    token_list = tokens.add_parser("list", help="list API tokens without plaintext secrets")
+    token_list.add_argument("--workspace-id", required=True)
+    token_list.set_defaults(func=cmd_token_list)
+
+    token_revoke = tokens.add_parser("revoke", help="revoke an API token")
+    token_revoke.add_argument("--workspace-id", required=True)
+    token_revoke.add_argument("--token-id", required=True)
+    token_revoke.set_defaults(func=cmd_token_revoke)
 
     resources = sub.add_parser("resource", help="resource commands").add_subparsers(dest="resource_command")
     add_doc = resources.add_parser("add-doc", help="add a markdown/document resource")
@@ -353,6 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
     mcp.add_argument("--project-id", required=True)
     mcp.add_argument("--query", required=True)
     mcp.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
+    mcp.add_argument("--resource-id", action="append")
     mcp.add_argument("--top-k", type=int, default=8)
     mcp.set_defaults(func=cmd_mcp_context)
 
@@ -374,7 +437,7 @@ def _print_default(command: str | None, data: Any) -> None:
             for hit in data.get("hits", []):
                 print(f"- {hit.get('path') or hit.get('title') or hit.get('resource_id')}: {hit.get('snippet')}")
             return
-        if command in {"agent-context", "mcp-context", "agent"}:
+        if command in {"agent-context", "mcp-context", "agent", "token"}:
             _print_json(data)
             return
     _print_json(data)
@@ -386,7 +449,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.func is None:
         parser.print_help(sys.stderr)
         return 2
-    client = ContextSmithClient(args.api_url, args.email)
+    client = ContextSmithClient(args.api_url, args.email, token=args.token)
     try:
         data = args.func(client, args)
     except ContextSmithCliError as exc:

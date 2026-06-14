@@ -13,7 +13,17 @@ from rq import Queue
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from contextsmith_api.auth import get_or_create_user, require_principal, require_workspace_member
+from contextsmith_api.auth import (
+    Principal,
+    hash_token,
+    new_plaintext_token,
+    require_any_scope,
+    require_principal,
+    require_scope,
+    require_workspace_member,
+    token_allows_project,
+    token_allows_resource,
+)
 from contextsmith_api.retrieval import make_snippet, retrieve_context_candidates
 from contextsmith_api.schemas import (
     AgentContextCitation,
@@ -21,6 +31,9 @@ from contextsmith_api.schemas import (
     AgentContextResponse,
     AgentProfileRead,
     AgentProfileUpdate,
+    ApiTokenCreate,
+    ApiTokenCreateResponse,
+    ApiTokenRead,
     AuditEventRead,
     CodeSearchRequest,
     CodeSearchResponse,
@@ -54,6 +67,7 @@ from contextsmith_shared.db import get_session
 from contextsmith_shared.embeddings import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROVIDER
 from contextsmith_shared.models import (
     AgentProfile,
+    ApiToken,
     AuditEvent,
     ContextPacket,
     ContextPacketItem,
@@ -71,6 +85,17 @@ from contextsmith_shared.models import (
 )
 
 app = FastAPI(title="ContextSmith API", version="0.1.0")
+
+ALLOWED_TOKEN_SCOPES = {
+    "project:read",
+    "project:query",
+    "resource:read",
+    "resource:write",
+    "resource:refresh",
+    "review:read",
+    "review:write",
+    "token:admin",
+}
 
 app.add_middleware(
     CORSMiddleware,
@@ -189,9 +214,11 @@ def _agent_profile_read(session: Session, workspace_id: UUID, project: Project, 
     )
 
 
-def _require_project_access(session: Session, workspace_id: UUID, project_id: UUID, user) -> Project:
-    """Resolve a project and enforce visibility/membership for reads/search."""
-    require_workspace_member(session, workspace_id, user)
+def _require_project_access(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal) -> Project:
+    """Resolve a project and enforce visibility/membership plus token project scope."""
+    require_workspace_member(session, workspace_id, principal)
+    if not token_allows_project(principal, project_id):
+        raise HTTPException(status_code=404, detail="project not found")
     project = _resolve_project(session, workspace_id, project_id)
     if project.visibility in {"workspace", "public"}:
         return project
@@ -199,7 +226,7 @@ def _require_project_access(session: Session, workspace_id: UUID, project_id: UU
         select(ProjectMembership).where(
             ProjectMembership.workspace_id == workspace_id,
             ProjectMembership.project_id == project_id,
-            ProjectMembership.user_id == user.id,
+            ProjectMembership.user_id == principal.user.id,
         )
     )
     if membership is None:
@@ -207,15 +234,17 @@ def _require_project_access(session: Session, workspace_id: UUID, project_id: UU
     return project
 
 
-def _require_project_member(session: Session, workspace_id: UUID, project_id: UUID, user) -> Project:
-    """Resolve a project and require explicit project membership for mutations."""
-    require_workspace_member(session, workspace_id, user)
+def _require_project_member(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal) -> Project:
+    """Resolve a project and require explicit project membership plus token project scope for mutations."""
+    require_workspace_member(session, workspace_id, principal)
+    if not token_allows_project(principal, project_id):
+        raise HTTPException(status_code=404, detail="project not found")
     project = _resolve_project(session, workspace_id, project_id)
     membership = session.scalar(
         select(ProjectMembership).where(
             ProjectMembership.workspace_id == workspace_id,
             ProjectMembership.project_id == project_id,
-            ProjectMembership.user_id == user.id,
+            ProjectMembership.user_id == principal.user.id,
         )
     )
     if membership is None:
@@ -224,8 +253,14 @@ def _require_project_member(session: Session, workspace_id: UUID, project_id: UU
 
 
 def _resolve_resource(
-    session: Session, workspace_id: UUID, project_id: UUID, resource_id: UUID
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    principal: Principal | None = None,
 ) -> Resource:
+    if principal is not None and not token_allows_resource(principal, resource_id):
+        raise HTTPException(status_code=404, detail="resource not found")
     resource = session.scalar(
         select(Resource).where(
             Resource.id == resource_id,
@@ -238,13 +273,68 @@ def _resolve_resource(
     return resource
 
 
+def _require_workspace_admin(session: Session, workspace_id: UUID, principal: Principal) -> WorkspaceMembership:
+    membership = require_workspace_member(session, workspace_id, principal)
+    if membership.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="workspace admin role required")
+    return membership
+
+
+def _validate_token_scopes(scopes: list[str]) -> list[str]:
+    normalized = sorted(set(scopes))
+    invalid = sorted(set(normalized) - ALLOWED_TOKEN_SCOPES)
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"invalid token scopes: {', '.join(invalid)}")
+    if not normalized:
+        raise HTTPException(status_code=422, detail="token scopes cannot be empty")
+    return normalized
+
+
+def _api_token_read(token: ApiToken) -> ApiTokenRead:
+    return ApiTokenRead(
+        id=token.id,
+        workspace_id=token.workspace_id,
+        name=token.name,
+        scopes=list(token.scopes or []),
+        allowed_project_ids=token.allowed_project_ids,
+        allowed_resource_ids=token.allowed_resource_ids,
+        created_by=token.created_by,
+        expires_at=token.expires_at,
+        last_used_at=token.last_used_at,
+        revoked_at=token.revoked_at,
+        created_at=token.created_at,
+    )
+
+
+def _require_requested_resources_allowed(principal: Principal, resource_ids: list[UUID] | None) -> None:
+    if not resource_ids:
+        return
+    denied = [resource_id for resource_id in resource_ids if not token_allows_resource(principal, resource_id)]
+    if denied:
+        raise HTTPException(status_code=404, detail="resource not found")
+
+
+def _effective_resource_ids(principal: Principal, resource_ids: list[UUID] | None) -> list[UUID] | None:
+    token = principal.api_token
+    requested = resource_ids or None
+    if token is None or token.allowed_resource_ids is None:
+        _require_requested_resources_allowed(principal, requested)
+        return requested
+    if requested is None:
+        return list(token.allowed_resource_ids)
+    _require_requested_resources_allowed(principal, requested)
+    return requested
+
+
 @app.post("/workspaces", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
 def create_workspace(
     payload: WorkspaceCreate,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> Workspace:
-    user = get_or_create_user(session, email)
+    if principal.is_token:
+        raise HTTPException(status_code=403, detail="workspace creation requires user authentication")
+    user = principal.user
     workspace = Workspace(name=payload.name, slug=payload.slug)
     session.add(workspace)
     session.flush()
@@ -253,6 +343,7 @@ def create_workspace(
         AuditEvent(
             workspace_id=workspace.id,
             actor_user_id=user.id,
+            actor_token_id=principal.token_id,
             action="workspace.create",
             target_type="workspace",
             target_id=workspace.id,
@@ -265,26 +356,123 @@ def create_workspace(
 @app.get("/workspaces/{workspace_id}", response_model=WorkspaceRead)
 def get_workspace(
     workspace_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> Workspace:
-    user = get_or_create_user(session, email)
-    require_workspace_member(session, workspace_id, user)
+    require_scope(principal, "project:read")
+    require_workspace_member(session, workspace_id, principal)
     workspace = session.get(Workspace, workspace_id)
     if workspace is None or workspace.deleted_at is not None:
         raise HTTPException(status_code=404, detail="workspace not found")
     return workspace
 
 
+@app.post("/workspaces/{workspace_id}/api-tokens", response_model=ApiTokenCreateResponse, status_code=201)
+def create_api_token(
+    workspace_id: UUID,
+    payload: ApiTokenCreate,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> ApiTokenCreateResponse:
+    if principal.is_token:
+        raise HTTPException(status_code=403, detail="token creation requires user authentication")
+    require_scope(principal, "token:admin")
+    _require_workspace_admin(session, workspace_id, principal)
+    scopes = _validate_token_scopes(payload.scopes)
+    for project_id in payload.allowed_project_ids or []:
+        _require_project_access(session, workspace_id, project_id, principal)
+    for resource_id in payload.allowed_resource_ids or []:
+        resource = session.get(Resource, resource_id)
+        if resource is None or resource.workspace_id != workspace_id or resource.deleted_at is not None:
+            raise HTTPException(status_code=404, detail="resource not found")
+        _require_project_access(session, workspace_id, resource.project_id, principal)
+    plaintext = new_plaintext_token()
+    token = ApiToken(
+        workspace_id=workspace_id,
+        name=payload.name,
+        token_hash=hash_token(plaintext),
+        scopes=scopes,
+        allowed_project_ids=payload.allowed_project_ids,
+        allowed_resource_ids=payload.allowed_resource_ids,
+        created_by=principal.user.id,
+        expires_at=payload.expires_at,
+    )
+    session.add(token)
+    session.flush()
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=principal.user.id,
+            actor_token_id=principal.token_id,
+            action="api_token.create",
+            target_type="api_token",
+            target_id=token.id,
+            meta={"scopes": scopes, "name": payload.name},
+        )
+    )
+    session.commit()
+    return ApiTokenCreateResponse(token=plaintext, api_token=_api_token_read(token))
+
+
+@app.get("/workspaces/{workspace_id}/api-tokens", response_model=list[ApiTokenRead])
+def list_api_tokens(
+    workspace_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> list[ApiTokenRead]:
+    require_scope(principal, "token:admin")
+    _require_workspace_admin(session, workspace_id, principal)
+    tokens = list(
+        session.scalars(
+            select(ApiToken)
+            .where(ApiToken.workspace_id == workspace_id)
+            .order_by(ApiToken.created_at.asc())
+        )
+    )
+    return [_api_token_read(token) for token in tokens]
+
+
+@app.delete("/workspaces/{workspace_id}/api-tokens/{token_id}", response_model=ApiTokenRead)
+def revoke_api_token(
+    workspace_id: UUID,
+    token_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> ApiTokenRead:
+    require_scope(principal, "token:admin")
+    _require_workspace_admin(session, workspace_id, principal)
+    token = session.scalar(select(ApiToken).where(ApiToken.workspace_id == workspace_id, ApiToken.id == token_id))
+    if token is None:
+        raise HTTPException(status_code=404, detail="token not found")
+    if token.revoked_at is None:
+        token.revoked_at = datetime.now(UTC)
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=principal.user.id,
+            actor_token_id=principal.token_id,
+            action="api_token.revoke",
+            target_type="api_token",
+            target_id=token.id,
+            meta={"name": token.name},
+        )
+    )
+    session.commit()
+    return _api_token_read(token)
+
+
 @app.post("/workspaces/{workspace_id}/projects", response_model=ProjectRead, status_code=201)
 def create_project(
     workspace_id: UUID,
     payload: ProjectCreate,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> Project:
-    user = get_or_create_user(session, email)
-    require_workspace_member(session, workspace_id, user)
+    if principal.is_token:
+        raise HTTPException(status_code=403, detail="project creation requires user authentication")
+    user = principal.user
+    require_scope(principal, "token:admin")
+    _require_workspace_admin(session, workspace_id, principal)
     project = Project(
         workspace_id=workspace_id,
         name=payload.name,
@@ -306,6 +494,7 @@ def create_project(
         AuditEvent(
             workspace_id=workspace_id,
             actor_user_id=user.id,
+            actor_token_id=principal.token_id,
             action="project.create",
             target_type="project",
             target_id=project.id,
@@ -319,21 +508,22 @@ def create_project(
 def get_project(
     workspace_id: UUID,
     project_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> Project:
-    user = get_or_create_user(session, email)
-    return _require_project_access(session, workspace_id, project_id, user)
+    require_scope(principal, "project:read")
+    return _require_project_access(session, workspace_id, project_id, principal)
 
 
 @app.get("/workspaces/{workspace_id}/agents", response_model=list[AgentProfileRead])
 def list_agents(
     workspace_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> list[AgentProfileRead]:
-    user = get_or_create_user(session, email)
-    require_workspace_member(session, workspace_id, user)
+    user = principal.user
+    require_scope(principal, "project:read")
+    require_workspace_member(session, workspace_id, principal)
     projects = list(
         session.scalars(
             select(Project)
@@ -344,7 +534,7 @@ def list_agents(
     agents: list[AgentProfileRead] = []
     for project in projects:
         try:
-            _require_project_access(session, workspace_id, project.id, user)
+            _require_project_access(session, workspace_id, project.id, principal)
         except HTTPException:
             continue
         profile = _ensure_agent_profile(session, workspace_id, project, user.id)
@@ -357,11 +547,12 @@ def list_agents(
 def get_agent_profile(
     workspace_id: UUID,
     project_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> AgentProfileRead:
-    user = get_or_create_user(session, email)
-    project = _require_project_access(session, workspace_id, project_id, user)
+    user = principal.user
+    require_scope(principal, "project:read")
+    project = _require_project_access(session, workspace_id, project_id, principal)
     profile = _ensure_agent_profile(session, workspace_id, project, user.id)
     session.commit()
     return _agent_profile_read(session, workspace_id, project, profile)
@@ -372,11 +563,12 @@ def update_agent_profile(
     workspace_id: UUID,
     project_id: UUID,
     payload: AgentProfileUpdate,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> AgentProfileRead:
-    user = get_or_create_user(session, email)
-    project = _require_project_member(session, workspace_id, project_id, user)
+    user = principal.user
+    require_scope(principal, "token:admin")
+    project = _require_project_member(session, workspace_id, project_id, principal)
     profile = _ensure_agent_profile(session, workspace_id, project, user.id)
     fields = payload.model_dump(exclude_unset=True)
     nullable_forbidden = {"name", "default_runtime", "tool_policy"}
@@ -391,6 +583,7 @@ def update_agent_profile(
         AuditEvent(
             workspace_id=workspace_id,
             actor_user_id=user.id,
+            actor_token_id=principal.token_id,
             action="agent_profile.update",
             target_type="agent_profile",
             target_id=profile.id,
@@ -410,11 +603,14 @@ def create_resource(
     workspace_id: UUID,
     project_id: UUID,
     payload: ResourceCreate,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> Resource:
-    user = get_or_create_user(session, email)
-    _require_project_member(session, workspace_id, project_id, user)
+    user = principal.user
+    require_scope(principal, "resource:write")
+    if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
+        raise HTTPException(status_code=403, detail="resource-scoped tokens cannot create new resources")
+    _require_project_member(session, workspace_id, project_id, principal)
     resource = Resource(
         workspace_id=workspace_id,
         project_id=project_id,
@@ -431,6 +627,7 @@ def create_resource(
         AuditEvent(
             workspace_id=workspace_id,
             actor_user_id=user.id,
+            actor_token_id=principal.token_id,
             action="resource.create",
             target_type="resource",
             target_id=resource.id,
@@ -448,12 +645,12 @@ def get_resource(
     workspace_id: UUID,
     project_id: UUID,
     resource_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> Resource:
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
-    return _resolve_resource(session, workspace_id, project_id, resource_id)
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    return _resolve_resource(session, workspace_id, project_id, resource_id, principal)
 
 
 @app.post(
@@ -466,12 +663,13 @@ def refresh_resource(
     project_id: UUID,
     resource_id: UUID,
     fail: bool = Query(default=False),
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> IndexRun:
-    user = get_or_create_user(session, email)
-    _require_project_member(session, workspace_id, project_id, user)
-    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    user = principal.user
+    require_scope(principal, "resource:refresh")
+    _require_project_member(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     run = IndexRun(
         workspace_id=workspace_id,
         project_id=project_id,
@@ -486,6 +684,7 @@ def refresh_resource(
         AuditEvent(
             workspace_id=workspace_id,
             actor_user_id=user.id,
+            actor_token_id=principal.token_id,
             action="resource.refresh",
             target_type="resource",
             target_id=resource.id,
@@ -511,11 +710,11 @@ def refresh_resource(
 @app.get("/workspaces/{workspace_id}/audit-events", response_model=list[AuditEventRead])
 def list_audit_events(
     workspace_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> list[AuditEventRead]:
-    user = get_or_create_user(session, email)
-    require_workspace_member(session, workspace_id, user)
+    require_scope(principal, "token:admin")
+    require_workspace_member(session, workspace_id, principal)
     events = list(
         session.scalars(
             select(AuditEvent)
@@ -544,17 +743,19 @@ def list_audit_events(
 def get_index_run(
     workspace_id: UUID,
     index_run_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> IndexRun:
-    user = get_or_create_user(session, email)
-    require_workspace_member(session, workspace_id, user)
+    require_any_scope(principal, {"project:read", "resource:read", "resource:refresh"})
+    require_workspace_member(session, workspace_id, principal)
     run = session.scalar(
         select(IndexRun).where(IndexRun.workspace_id == workspace_id, IndexRun.id == index_run_id)
     )
     if run is None:
         raise HTTPException(status_code=404, detail="index run not found")
-    _require_project_access(session, workspace_id, run.project_id, user)
+    if not token_allows_resource(principal, run.resource_id):
+        raise HTTPException(status_code=404, detail="index run not found")
+    _require_project_access(session, workspace_id, run.project_id, principal)
     return run
 
 
@@ -567,12 +768,13 @@ def update_resource(
     project_id: UUID,
     resource_id: UUID,
     payload: ResourceUpdate,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> Resource:
-    user = get_or_create_user(session, email)
-    _require_project_member(session, workspace_id, project_id, user)
-    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    user = principal.user
+    require_scope(principal, "resource:write")
+    _require_project_member(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     fields = payload.model_dump(exclude_unset=True)
     if resource.archived_at is not None and fields.get("retrieval_enabled") is True:
         raise HTTPException(status_code=409, detail="archived resources cannot be re-enabled")
@@ -585,6 +787,7 @@ def update_resource(
         AuditEvent(
             workspace_id=workspace_id,
             actor_user_id=user.id,
+            actor_token_id=principal.token_id,
             action="resource.update",
             target_type="resource",
             target_id=resource.id,
@@ -603,12 +806,13 @@ def delete_resource(
     workspace_id: UUID,
     project_id: UUID,
     resource_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> None:
-    user = get_or_create_user(session, email)
-    _require_project_member(session, workspace_id, project_id, user)
-    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    user = principal.user
+    require_scope(principal, "resource:write")
+    _require_project_member(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     now = datetime.now(UTC)
     previous = {
         "status": resource.status,
@@ -629,6 +833,7 @@ def delete_resource(
         AuditEvent(
             workspace_id=workspace_id,
             actor_user_id=user.id,
+            actor_token_id=principal.token_id,
             action="resource.delete",
             target_type="resource",
             target_id=resource.id,
@@ -647,12 +852,13 @@ def archive_resource(
     workspace_id: UUID,
     project_id: UUID,
     resource_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> Resource:
-    user = get_or_create_user(session, email)
-    _require_project_member(session, workspace_id, project_id, user)
-    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    user = principal.user
+    require_scope(principal, "resource:write")
+    _require_project_member(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     now = datetime.now(UTC)
     previous = {
         "status": resource.status,
@@ -671,6 +877,7 @@ def archive_resource(
         AuditEvent(
             workspace_id=workspace_id,
             actor_user_id=user.id,
+            actor_token_id=principal.token_id,
             action="resource.archive",
             target_type="resource",
             target_id=resource.id,
@@ -690,12 +897,13 @@ def review_resource(
     project_id: UUID,
     resource_id: UUID,
     payload: ResourceReviewRequest,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> Resource:
-    user = get_or_create_user(session, email)
-    _require_project_member(session, workspace_id, project_id, user)
-    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    user = principal.user
+    require_scope(principal, "review:write")
+    _require_project_member(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     if resource.archived_at is not None and payload.retrieval_enabled is True:
         raise HTTPException(status_code=409, detail="archived resources cannot be re-enabled")
     previous = {
@@ -724,6 +932,7 @@ def review_resource(
         AuditEvent(
             workspace_id=workspace_id,
             actor_user_id=user.id,
+            actor_token_id=principal.token_id,
             action="resource.review",
             target_type="resource",
             target_id=resource.id,
@@ -806,11 +1015,11 @@ def list_resource_review(
     workspace_id: UUID,
     project_id: UUID,
     include_archived: bool = Query(default=False),
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> ResourceReviewResponse:
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
+    require_scope(principal, "review:read")
+    _require_project_access(session, workspace_id, project_id, principal)
     predicates = [
         Resource.workspace_id == workspace_id,
         Resource.project_id == project_id,
@@ -818,6 +1027,8 @@ def list_resource_review(
     ]
     if not include_archived:
         predicates.append(Resource.archived_at.is_(None))
+    if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
+        predicates.append(Resource.id.in_(principal.api_token.allowed_resource_ids))
     resources = list(session.scalars(select(Resource).where(*predicates).order_by(Resource.created_at.asc())))
     items = [_resource_review_item(session, resource) for resource in resources]
     return ResourceReviewResponse(count=len(items), resources=items)
@@ -830,11 +1041,11 @@ def list_resource_review(
 def resource_usage(
     workspace_id: UUID,
     project_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> ResourceUsageResponse:
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
+    require_scope(principal, "review:read")
+    _require_project_access(session, workspace_id, project_id, principal)
     rows = session.execute(
         text(
             """
@@ -859,6 +1070,10 @@ def resource_usage(
         ),
         {"ws": workspace_id, "proj": project_id},
     ).mappings().all()
+    allowed_resource_ids = principal.api_token.allowed_resource_ids if principal.api_token is not None else None
+    if allowed_resource_ids is not None:
+        allowed = set(allowed_resource_ids)
+        rows = [row for row in rows if row["resource_id"] in allowed]
     items = [
         ResourceUsageItem(
             resource_id=row["resource_id"],
@@ -879,19 +1094,22 @@ def resource_usage(
 def list_resources(
     workspace_id: UUID,
     project_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> list[Resource]:
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    predicates = [
+        Resource.workspace_id == workspace_id,
+        Resource.project_id == project_id,
+        Resource.deleted_at.is_(None),
+    ]
+    if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
+        predicates.append(Resource.id.in_(principal.api_token.allowed_resource_ids))
     return list(
         session.scalars(
             select(Resource)
-            .where(
-                Resource.workspace_id == workspace_id,
-                Resource.project_id == project_id,
-                Resource.deleted_at.is_(None),
-            )
+            .where(*predicates)
             .order_by(Resource.created_at.asc())
         )
     )
@@ -905,12 +1123,12 @@ def list_snapshots(
     workspace_id: UUID,
     project_id: UUID,
     resource_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> list[SnapshotRead]:
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
-    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     snapshots = session.scalars(
         select(SourceSnapshot)
         .where(
@@ -947,12 +1165,12 @@ def get_resource_graph(
     project_id: UUID,
     resource_id: UUID,
     limit: int = Query(default=200, ge=1, le=1000),
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> GraphRead:
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
-    resource = _resolve_resource(session, workspace_id, project_id, resource_id)
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     if resource.current_snapshot_id is None:
         return GraphRead(node_count=0, edge_count=0, nodes=[], edges=[])
     nodes = list(
@@ -1021,12 +1239,12 @@ def list_resource_index_runs(
     workspace_id: UUID,
     project_id: UUID,
     resource_id: UUID,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> list[IndexRun]:
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
-    _resolve_resource(session, workspace_id, project_id, resource_id)
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     return list(
         session.scalars(
             select(IndexRun)
@@ -1054,11 +1272,12 @@ def search_project(
     workspace_id: UUID,
     project_id: UUID,
     payload: SearchRequest,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> SearchResponse:
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
+    require_scope(principal, "project:query")
+    resource_ids = _effective_resource_ids(principal, payload.resource_ids)
+    _require_project_access(session, workspace_id, project_id, principal)
 
     resource_clause = ""
     params: dict = {
@@ -1067,9 +1286,9 @@ def search_project(
         "q": payload.query,
         "k": payload.top_k,
     }
-    if payload.resource_ids:
+    if resource_ids:
         resource_clause = "AND r.id = ANY(CAST(:rids AS uuid[]))"
-        params["rids"] = [str(rid) for rid in payload.resource_ids]
+        params["rids"] = [str(rid) for rid in resource_ids]
 
     sql = text(
         f"""
@@ -1128,7 +1347,7 @@ def code_search_project(
     workspace_id: UUID,
     project_id: UUID,
     payload: CodeSearchRequest,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> CodeSearchResponse:
     """Search extracted code symbols with file/line/commit citations.
@@ -1136,8 +1355,9 @@ def code_search_project(
     This endpoint returns deterministic source-derived symbols only. It does not
     infer call edges or behavior with an LLM.
     """
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
+    require_scope(principal, "project:query")
+    resource_ids = _effective_resource_ids(principal, payload.resource_ids)
+    _require_project_access(session, workspace_id, project_id, principal)
     resource_clause = ""
     params: dict = {
         "ws": str(workspace_id),
@@ -1145,9 +1365,9 @@ def code_search_project(
         "q": payload.query,
         "limit": payload.limit,
     }
-    if payload.resource_ids:
+    if resource_ids:
         resource_clause = "AND r.id = ANY(CAST(:rids AS uuid[]))"
-        params["rids"] = [str(rid) for rid in payload.resource_ids]
+        params["rids"] = [str(rid) for rid in resource_ids]
     rows = session.execute(
         text(
             f"""
@@ -1228,7 +1448,7 @@ def _build_agent_context_response(
     workspace_id: UUID,
     project_id: UUID,
     payload: AgentContextRequest,
-    email: str,
+    principal: Principal,
 ) -> AgentContextResponse:
     candidates = retrieve_context_candidates(
         session,
@@ -1278,7 +1498,7 @@ def _build_agent_context_response(
             workspace_id=workspace_id,
             project_id=project_id,
             payload=CodeSearchRequest(query=payload.query, resource_ids=payload.resource_ids, limit=min(payload.top_k, 20)),
-            email=email,
+            principal=principal,
             session=session,
         )
         symbols = symbol_response.symbols
@@ -1311,17 +1531,19 @@ def agent_context(
     workspace_id: UUID,
     project_id: UUID,
     payload: AgentContextRequest,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> AgentContextResponse:
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
+    require_scope(principal, "project:query")
+    resource_ids = _effective_resource_ids(principal, payload.resource_ids)
+    payload = payload.model_copy(update={"resource_ids": resource_ids})
+    _require_project_access(session, workspace_id, project_id, principal)
     return _build_agent_context_response(
         session,
         workspace_id=workspace_id,
         project_id=project_id,
         payload=payload,
-        email=email,
+        principal=principal,
     )
 
 
@@ -1334,7 +1556,7 @@ async def mcp_endpoint(
     workspace_id: UUID,
     project_id: UUID,
     request: Request,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> dict | Response:
     """Minimal central MCP-compatible JSON-RPC endpoint for project context.
@@ -1342,8 +1564,8 @@ async def mcp_endpoint(
     This intentionally exposes one typed operation; production/external actions
     remain outside repo agents and must use dedicated MCP tools.
     """
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
+    require_scope(principal, "project:query")
+    _require_project_access(session, workspace_id, project_id, principal)
     try:
         body = await request.json()
     except Exception:
@@ -1406,12 +1628,17 @@ async def mcp_endpoint(
             payload = AgentContextRequest(**arguments)
         except ValidationError as exc:
             return _json_rpc_error(rpc_id, -32602, f"invalid params: {exc.errors()[0]['msg']}")
+        try:
+            resource_ids = _effective_resource_ids(principal, payload.resource_ids)
+        except HTTPException:
+            return _json_rpc_error(rpc_id, -32603, "resource not found")
+        payload = payload.model_copy(update={"resource_ids": resource_ids})
         result = _build_agent_context_response(
             session,
             workspace_id=workspace_id,
             project_id=project_id,
             payload=payload,
-            email=email,
+            principal=principal,
         )
         return {
             "jsonrpc": "2.0",
@@ -1433,14 +1660,17 @@ def create_context_packet(
     workspace_id: UUID,
     project_id: UUID,
     payload: ContextPacketRequest,
-    email: str = Depends(require_principal),
+    principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
 ) -> ContextPacketRead:
     """Build a cited context packet through permission-scoped hybrid retrieval."""
     if payload.mode != "hybrid":
         raise HTTPException(status_code=422, detail="only hybrid context packets are supported")
-    user = get_or_create_user(session, email)
-    _require_project_access(session, workspace_id, project_id, user)
+    user = principal.user
+    require_scope(principal, "project:query")
+    resource_ids = _effective_resource_ids(principal, payload.resource_ids)
+    payload = payload.model_copy(update={"resource_ids": resource_ids})
+    _require_project_access(session, workspace_id, project_id, principal)
 
     query_run = QueryRun(
         workspace_id=workspace_id,
@@ -1558,6 +1788,7 @@ def create_context_packet(
             AuditEvent(
                 workspace_id=workspace_id,
                 actor_user_id=user.id,
+                actor_token_id=principal.token_id,
                 action="context_packet.create",
                 target_type="context_packet",
                 target_id=packet.id,
