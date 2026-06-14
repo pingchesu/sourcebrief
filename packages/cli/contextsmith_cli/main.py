@@ -224,6 +224,31 @@ def cmd_resource_list(client: ContextSmithClient, args: argparse.Namespace) -> A
     return client.request("GET", f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources")
 
 
+def cmd_resource_restore(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}/restore",
+    )
+
+
+def cmd_resource_purge(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}/purge",
+    )
+
+
+def cmd_resource_schedule_due(client: ContextSmithClient, args: argparse.Namespace) -> Any:
+    query = f"limit={args.limit}"
+    if args.dry_run:
+        query += "&dry_run=true"
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/scheduled-refreshes?{query}",
+        expected={202},
+    )
+
+
 def cmd_search(client: ContextSmithClient, args: argparse.Namespace) -> Any:
     return client.request(
         "POST",
@@ -373,6 +398,25 @@ def build_parser() -> argparse.ArgumentParser:
     list_resources.add_argument("--workspace-id", required=True)
     list_resources.add_argument("--project-id", required=True)
     list_resources.set_defaults(func=cmd_resource_list)
+
+    restore = resources.add_parser("restore", help="restore an archived or soft-deleted resource")
+    restore.add_argument("--workspace-id", required=True)
+    restore.add_argument("--project-id", required=True)
+    restore.add_argument("--resource-id", required=True)
+    restore.set_defaults(func=cmd_resource_restore)
+
+    purge = resources.add_parser("purge", help="hard purge a soft-deleted resource and artifacts")
+    purge.add_argument("--workspace-id", required=True)
+    purge.add_argument("--project-id", required=True)
+    purge.add_argument("--resource-id", required=True)
+    purge.set_defaults(func=cmd_resource_purge)
+
+    schedule = resources.add_parser("schedule-due", help="enqueue due scheduled refreshes for a project")
+    schedule.add_argument("--workspace-id", required=True)
+    schedule.add_argument("--project-id", required=True)
+    schedule.add_argument("--limit", type=int, default=100)
+    schedule.add_argument("--dry-run", action="store_true")
+    schedule.set_defaults(func=cmd_resource_schedule_due)
 
     graph = resources.add_parser("graph", help="show a resource graph index")
     graph.add_argument("--workspace-id", required=True)

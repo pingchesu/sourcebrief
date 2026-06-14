@@ -41,12 +41,14 @@ from contextsmith_api.schemas import (
     ContextPacketItemRead,
     ContextPacketRead,
     ContextPacketRequest,
+    DueRefreshResponse,
     GraphEdgeRead,
     GraphNodeRead,
     GraphRead,
     IndexRunRead,
     ProjectCreate,
     ProjectRead,
+    PurgeResourceResponse,
     ResourceCreate,
     ResourceRead,
     ResourceReviewItem,
@@ -65,6 +67,7 @@ from contextsmith_api.schemas import (
 from contextsmith_shared.config import get_settings
 from contextsmith_shared.db import get_session
 from contextsmith_shared.embeddings import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROVIDER
+from contextsmith_shared.lifecycle import compute_next_refresh_at
 from contextsmith_shared.models import (
     AgentProfile,
     ApiToken,
@@ -96,6 +99,7 @@ ALLOWED_TOKEN_SCOPES = {
     "review:write",
     "token:admin",
 }
+ACTIVE_INDEX_STATUSES = {"enqueueing", "queued", "running"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -258,6 +262,8 @@ def _resolve_resource(
     project_id: UUID,
     resource_id: UUID,
     principal: Principal | None = None,
+    *,
+    include_deleted: bool = False,
 ) -> Resource:
     if principal is not None and not token_allows_resource(principal, resource_id):
         raise HTTPException(status_code=404, detail="resource not found")
@@ -268,9 +274,32 @@ def _resolve_resource(
             Resource.workspace_id == workspace_id,
         )
     )
-    if resource is None or resource.deleted_at is not None:
+    if resource is None or (resource.deleted_at is not None and not include_deleted):
         raise HTTPException(status_code=404, detail="resource not found")
     return resource
+
+
+def _purge_resource_artifacts(session: Session, resource: Resource) -> dict[str, int]:
+    params = {"resource_id": resource.id}
+    statements = [
+        ("resources_current_snapshot", "UPDATE resources SET current_snapshot_id = NULL WHERE id = :resource_id"),
+        ("context_packet_items", "DELETE FROM context_packet_items WHERE resource_id = :resource_id"),
+        ("retrieval_hits", "DELETE FROM retrieval_hits WHERE resource_id = :resource_id"),
+        ("chunk_embeddings", "DELETE FROM chunk_embeddings WHERE resource_id = :resource_id"),
+        ("graph_edges", "DELETE FROM graph_edges WHERE resource_id = :resource_id"),
+        ("graph_nodes", "DELETE FROM graph_nodes WHERE resource_id = :resource_id"),
+        ("code_symbols", "DELETE FROM code_symbols WHERE resource_id = :resource_id"),
+        ("chunks", "DELETE FROM chunks WHERE resource_id = :resource_id"),
+        ("index_runs", "DELETE FROM index_runs WHERE resource_id = :resource_id"),
+        ("source_snapshots", "DELETE FROM source_snapshots WHERE resource_id = :resource_id"),
+    ]
+    counts: dict[str, int] = {}
+    for name, sql in statements:
+        result = session.execute(text(sql), params)
+        counts[name] = int(result.rowcount or 0)
+    result = session.execute(text("DELETE FROM resources WHERE id = :resource_id"), params)
+    counts["resources"] = int(result.rowcount or 0)
+    return counts
 
 
 def _require_workspace_admin(session: Session, workspace_id: UUID, principal: Principal) -> WorkspaceMembership:
@@ -623,6 +652,7 @@ def create_resource(
     )
     session.add(resource)
     session.flush()
+    resource.next_refresh_at = compute_next_refresh_at(resource)
     session.add(
         AuditEvent(
             workspace_id=workspace_id,
@@ -707,6 +737,51 @@ def refresh_resource(
     return run
 
 
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes",
+    response_model=DueRefreshResponse,
+    status_code=202,
+)
+def enqueue_scheduled_refreshes(
+    workspace_id: UUID,
+    project_id: UUID,
+    dry_run: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=500),
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> DueRefreshResponse:
+    require_scope(principal, "resource:refresh")
+    _require_project_member(session, workspace_id, project_id, principal)
+    allowed_resource_ids = principal.api_token.allowed_resource_ids if principal.api_token is not None else None
+    if allowed_resource_ids is not None:
+        allowed = list(allowed_resource_ids)
+    else:
+        allowed = None
+    from contextsmith_worker.maintenance import enqueue_due_refreshes
+
+    result = enqueue_due_refreshes(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        resource_ids=allowed,
+        limit=limit,
+        dry_run=dry_run,
+    )
+    if not dry_run:
+        session.add(
+            AuditEvent(
+                workspace_id=workspace_id,
+                actor_user_id=principal.user.id,
+                actor_token_id=principal.token_id,
+                action="resource.scheduled_refresh",
+                target_type="project",
+                target_id=project_id,
+                meta=result,
+            )
+        )
+        session.commit()
+    return DueRefreshResponse.model_validate(result)
+
+
 @app.get("/workspaces/{workspace_id}/audit-events", response_model=list[AuditEventRead])
 def list_audit_events(
     workspace_id: UUID,
@@ -783,6 +858,8 @@ def update_resource(
         if key in nullable_rejected and value is None:
             raise HTTPException(status_code=422, detail=f"{key} cannot be null")
         setattr(resource, key, value)
+    if "update_frequency" in fields or "source_config" in fields:
+        resource.next_refresh_at = compute_next_refresh_at(resource)
     session.add(
         AuditEvent(
             workspace_id=workspace_id,
@@ -823,6 +900,7 @@ def delete_resource(
     resource.retrieval_enabled = False
     resource.status = "deleted"
     resource.archived_at = resource.archived_at or now
+    resource.next_refresh_at = None
     new = {
         "status": resource.status,
         "retrieval_enabled": resource.retrieval_enabled,
@@ -868,6 +946,7 @@ def archive_resource(
     resource.archived_at = now
     resource.status = "archived"
     resource.retrieval_enabled = False
+    resource.next_refresh_at = None
     new = {
         "status": resource.status,
         "retrieval_enabled": resource.retrieval_enabled,
@@ -886,6 +965,108 @@ def archive_resource(
     )
     session.commit()
     return resource
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/restore",
+    response_model=ResourceRead,
+)
+def restore_resource(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> Resource:
+    user = principal.user
+    require_scope(principal, "resource:write")
+    _require_project_member(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal, include_deleted=True)
+    if resource.deleted_at is None and resource.archived_at is None and resource.status not in {"deleted", "archived"}:
+        raise HTTPException(status_code=409, detail="resource is not archived or deleted")
+    previous = {
+        "status": resource.status,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "archived_at": resource.archived_at.isoformat() if resource.archived_at else None,
+        "deleted_at": resource.deleted_at.isoformat() if resource.deleted_at else None,
+    }
+    resource.deleted_at = None
+    resource.archived_at = None
+    resource.status = "active"
+    resource.retrieval_enabled = True
+    resource.next_refresh_at = compute_next_refresh_at(resource)
+    new = {
+        "status": resource.status,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "archived_at": None,
+        "deleted_at": None,
+        "next_refresh_at": resource.next_refresh_at.isoformat() if resource.next_refresh_at else None,
+    }
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            actor_token_id=principal.token_id,
+            action="resource.restore",
+            target_type="resource",
+            target_id=resource.id,
+            meta={"previous": previous, "new": new},
+        )
+    )
+    session.commit()
+    return resource
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge",
+    response_model=PurgeResourceResponse,
+)
+def purge_resource(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> PurgeResourceResponse:
+    user = principal.user
+    require_scope(principal, "resource:write")
+    _require_project_member(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal, include_deleted=True)
+    if resource.deleted_at is None and resource.status != "deleted":
+        raise HTTPException(status_code=409, detail="resource must be soft-deleted before purge")
+    active_run = session.scalar(
+        select(IndexRun.id)
+        .where(
+            IndexRun.workspace_id == workspace_id,
+            IndexRun.project_id == project_id,
+            IndexRun.resource_id == resource_id,
+            IndexRun.status.in_(ACTIVE_INDEX_STATUSES),
+        )
+        .limit(1)
+    )
+    if active_run is not None:
+        raise HTTPException(status_code=409, detail="resource has an active index run")
+    previous = {
+        "status": resource.status,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "archived_at": resource.archived_at.isoformat() if resource.archived_at else None,
+        "deleted_at": resource.deleted_at.isoformat() if resource.deleted_at else None,
+    }
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            actor_token_id=principal.token_id,
+            action="resource.purge",
+            target_type="resource",
+            target_id=resource.id,
+            meta={"previous": previous},
+        )
+    )
+    session.flush()
+    counts = _purge_resource_artifacts(session, resource)
+    session.commit()
+    return PurgeResourceResponse(resource_id=resource_id, purged=counts.get("resources", 0) == 1, counts=counts)
 
 
 @app.post(

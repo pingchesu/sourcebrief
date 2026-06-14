@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import time
 import uuid
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 from redis import Redis
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from contextsmith_api.main import app
 from contextsmith_shared.config import get_settings
 from contextsmith_shared.db import get_engine, get_sessionmaker
-from contextsmith_shared.models import IndexRun
+from contextsmith_shared.models import IndexRun, Resource
 from contextsmith_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
@@ -162,6 +163,21 @@ def test_resource_review_usage_archive_and_delete_flow() -> None:
     )
     assert any(item["resource"]["id"] == resource_id for item in shown_review.json()["resources"])
 
+    restored = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/restore",
+        headers=headers,
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["status"] == "active"
+    assert restored.json()["retrieval_enabled"] is True
+    restored_search = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packets",
+        json={"query": "marmotreview", "top_k": 3, "resource_ids": [resource_id]},
+        headers=headers,
+    )
+    assert restored_search.status_code == 201
+    assert restored_search.json()["count"] >= 1
+
     deleted = client.delete(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", headers=headers)
     assert deleted.status_code == 204
     deleted_search = client.post(
@@ -174,12 +190,60 @@ def test_resource_review_usage_archive_and_delete_flow() -> None:
     resources = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/resources", headers=headers)
     assert all(resource["id"] != resource_id for resource in resources.json())
 
+    restored_deleted = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/restore",
+        headers=headers,
+    )
+    assert restored_deleted.status_code == 200, restored_deleted.text
+    assert restored_deleted.json()["deleted_at"] is None
+    deleted_again = client.delete(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", headers=headers)
+    assert deleted_again.status_code == 204
+    session = get_sessionmaker()()
+    try:
+        active_run = IndexRun(
+            workspace_id=UUID(workspace_id),
+            project_id=UUID(project_id),
+            resource_id=UUID(resource_id),
+            trigger="manual",
+            status="queued",
+            meta={},
+        )
+        session.add(active_run)
+        session.commit()
+        active_run_id = active_run.id
+    finally:
+        session.close()
+    blocked_purge = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge",
+        headers=headers,
+    )
+    assert blocked_purge.status_code == 409
+    session = get_sessionmaker()()
+    try:
+        active_run = session.get(IndexRun, active_run_id)
+        assert active_run is not None
+        active_run.status = "failed"
+        session.commit()
+    finally:
+        session.close()
+    purge = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge",
+        headers=headers,
+    )
+    assert purge.status_code == 200, purge.text
+    assert purge.json()["purged"] is True
+    assert purge.json()["counts"]["resources"] == 1
+    purged_get = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", headers=headers)
+    assert purged_get.status_code == 404
+
     audit = client.get(f"/workspaces/{workspace_id}/audit-events", headers=headers)
     assert audit.status_code == 200
     lifecycle_events = [event for event in audit.json() if event["target_id"] == resource_id]
     review_event = next(event for event in lifecycle_events if event["action"] == "resource.review")
     archive_event = next(event for event in lifecycle_events if event["action"] == "resource.archive")
+    restore_event = next(event for event in lifecycle_events if event["action"] == "resource.restore")
     delete_event = next(event for event in lifecycle_events if event["action"] == "resource.delete")
+    purge_event = next(event for event in lifecycle_events if event["action"] == "resource.purge")
     assert review_event["actor_user_id"] is not None
     assert review_event["metadata"]["review_note"] == "source drift"
     assert review_event["metadata"]["new"]["review_status"] == "needs_update"
@@ -187,8 +251,145 @@ def test_resource_review_usage_archive_and_delete_flow() -> None:
     assert archive_event["metadata"]["previous"]["status"] in {"active", "failed"}
     assert archive_event["metadata"]["new"]["status"] == "archived"
     assert archive_event["metadata"]["new"]["retrieval_enabled"] is False
-    assert delete_event["metadata"]["previous"]["status"] == "archived"
+    assert restore_event["metadata"]["previous"]["status"] == "archived"
+    assert restore_event["metadata"]["new"]["status"] == "active"
+    assert delete_event["metadata"]["previous"]["status"] == "active"
     assert delete_event["metadata"]["new"]["status"] == "deleted"
+    assert purge_event["metadata"]["previous"]["status"] == "deleted"
+
+
+def test_scheduled_refresh_enqueues_due_resources_and_advances_next_refresh() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "m12-schedule")
+    resource_id = add_doc(client, workspace_id, project_id, headers, "Scheduled Doc", "schedulemarker")
+    patch = client.patch(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}",
+        json={"update_frequency": "daily"},
+        headers=headers,
+    )
+    assert patch.status_code == 200, patch.text
+    assert patch.json()["next_refresh_at"] is not None
+
+    session = get_sessionmaker()()
+    try:
+        resource = session.get(Resource, UUID(resource_id))
+        assert resource is not None
+        resource.next_refresh_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+    finally:
+        session.close()
+
+    dry_run = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes?dry_run=true",
+        headers=headers,
+    )
+    assert dry_run.status_code == 202, dry_run.text
+    assert dry_run.json()["enqueued"] == 1
+    assert dry_run.json()["resource_ids"] == [resource_id]
+
+    scheduled = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes",
+        headers=headers,
+    )
+    assert scheduled.status_code == 202, scheduled.text
+    assert scheduled.json()["enqueued"] == 1
+    assert scheduled.json()["resource_ids"] == [resource_id]
+
+    session = get_sessionmaker()()
+    try:
+        run = session.scalar(
+            select(IndexRun).where(IndexRun.resource_id == UUID(resource_id), IndexRun.trigger == "scheduled").order_by(IndexRun.created_at.desc())
+        )
+        assert run is not None
+        assert run.status == "queued"
+        run_id = str(run.id)
+    finally:
+        session.close()
+    run_index(run_id)
+
+    session = get_sessionmaker()()
+    try:
+        resource = session.get(Resource, UUID(resource_id))
+        assert resource is not None
+        assert resource.last_refresh_finished_at is not None
+        assert resource.next_refresh_at is not None
+        assert resource.next_refresh_at > datetime.now(UTC)
+    finally:
+        session.close()
+
+    not_due = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes?dry_run=true",
+        headers=headers,
+    )
+    assert not_due.status_code == 202, not_due.text
+    assert not_due.json()["enqueued"] == 0
+
+
+def test_scheduled_refresh_and_lifecycle_respect_resource_scoped_tokens() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "m12-token")
+    allowed_id = add_doc(client, workspace_id, project_id, headers, "Allowed Doc", "allowedtoken")
+    denied_id = add_doc(client, workspace_id, project_id, headers, "Denied Doc", "deniedtoken")
+    for rid in (allowed_id, denied_id):
+        patch = client.patch(
+            f"/workspaces/{workspace_id}/projects/{project_id}/resources/{rid}",
+            json={"update_frequency": "daily"},
+            headers=headers,
+        )
+        assert patch.status_code == 200, patch.text
+    session = get_sessionmaker()()
+    try:
+        for rid in (allowed_id, denied_id):
+            resource = session.get(Resource, UUID(rid))
+            assert resource is not None
+            resource.next_refresh_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+    finally:
+        session.close()
+
+    token = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        json={
+            "name": "m12 scoped",
+            "scopes": ["resource:refresh", "resource:write"],
+            "allowed_project_ids": [project_id],
+            "allowed_resource_ids": [allowed_id],
+        },
+        headers=headers,
+    )
+    assert token.status_code == 201, token.text
+    bearer = {"Authorization": f"Bearer {token.json()['token']}"}
+
+    scoped_due = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes?dry_run=true",
+        headers=bearer,
+    )
+    assert scoped_due.status_code == 202, scoped_due.text
+    assert scoped_due.json()["resource_ids"] == [allowed_id]
+
+    archive_allowed = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{allowed_id}/archive",
+        headers=headers,
+    )
+    assert archive_allowed.status_code == 200
+    restore_allowed = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{allowed_id}/restore",
+        headers=bearer,
+    )
+    assert restore_allowed.status_code == 200, restore_allowed.text
+
+    archive_denied = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{denied_id}/archive",
+        headers=headers,
+    )
+    assert archive_denied.status_code == 200
+    restore_denied = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{denied_id}/restore",
+        headers=bearer,
+    )
+    assert restore_denied.status_code == 404
 
 
 def test_resource_lifecycle_requires_project_membership() -> None:
@@ -202,6 +403,9 @@ def test_resource_lifecycle_requires_project_membership() -> None:
         ("get", f"/workspaces/{workspace_id}/projects/{project_id}/resource-usage"),
         ("post", f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/review"),
         ("post", f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/archive"),
+        ("post", f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/restore"),
+        ("post", f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge"),
+        ("post", f"/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes"),
         ("delete", f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}"),
     ]:
         kwargs = {"headers": intruder}

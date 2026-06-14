@@ -55,6 +55,12 @@ class FakeClient:
             return [{"id": "tok-1", "name": "Hermes", "scopes": ["project:query"]}]
         if method == "DELETE" and path == "/workspaces/ws-1/api-tokens/tok-1":
             return {"id": "tok-1", "revoked_at": "2026-01-01T00:00:00Z"}
+        if method == "POST" and path.endswith("/restore"):
+            return {"id": "res-1", "status": "active", "retrieval_enabled": True}
+        if method == "POST" and path.endswith("/purge"):
+            return {"resource_id": "res-1", "purged": True, "counts": {"resources": 1}}
+        if method == "POST" and path.endswith("/scheduled-refreshes?limit=10&dry_run=true"):
+            return {"scanned": 1, "enqueued": 1, "resource_ids": ["res-1"], "skipped_active": [], "dry_run": True}
         return {"status": "ok"}
 
 
@@ -239,3 +245,67 @@ def test_token_commands_and_bearer_client(monkeypatch, capsys):
 
     assert cli_main(["--json", "token", "revoke", "--workspace-id", "ws-1", "--token-id", "tok-1"]) == 0
     assert json.loads(capsys.readouterr().out)["id"] == "tok-1"
+
+
+def test_resource_lifecycle_cli_commands(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "resource",
+                "restore",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--resource-id",
+                "res-1",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["status"] == "active"
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "resource",
+                "purge",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--resource-id",
+                "res-1",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["purged"] is True
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "resource",
+                "schedule-due",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--limit",
+                "10",
+                "--dry-run",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["resource_ids"] == ["res-1"]
+    client = FakeClient.instances[-1]
+    assert client.calls[-1][0:2] == (
+        "POST",
+        "/workspaces/ws-1/projects/proj-1/scheduled-refreshes?limit=10&dry_run=true",
+    )

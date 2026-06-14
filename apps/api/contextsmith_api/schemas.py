@@ -116,6 +116,10 @@ class ResourceRead(BaseModel):
     last_reviewed_at: datetime | None = None
     last_reviewed_by: UUID | None = None
     archived_at: datetime | None = None
+    deleted_at: datetime | None = None
+    next_refresh_at: datetime | None = None
+    last_refresh_started_at: datetime | None = None
+    last_refresh_finished_at: datetime | None = None
     stale_after_days: int = 30
 
 
@@ -153,6 +157,20 @@ class ResourceUsageItem(BaseModel):
 class ResourceUsageResponse(BaseModel):
     count: int
     resources: list[ResourceUsageItem]
+
+
+class DueRefreshResponse(BaseModel):
+    scanned: int
+    enqueued: int
+    resource_ids: list[UUID] = Field(default_factory=list)
+    skipped_active: list[UUID] = Field(default_factory=list)
+    dry_run: bool = False
+
+
+class PurgeResourceResponse(BaseModel):
+    resource_id: UUID
+    purged: bool
+    counts: dict[str, int] = Field(default_factory=dict)
 
 
 class IndexRunRead(BaseModel):

@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from contextsmith_shared.db import get_sessionmaker
+from contextsmith_shared.lifecycle import compute_next_refresh_at
 from contextsmith_shared.models import IndexRun, Resource
 from contextsmith_worker.ingestion import ingest_resource
 
@@ -37,11 +38,15 @@ def run_index(index_run_id: str) -> None:
 
         if resource is None:
             raise RuntimeError(f"resource not found: {run.resource_id}")
+        if resource.deleted_at is not None or resource.archived_at is not None or resource.status in {"deleted", "archived"}:
+            raise RuntimeError(f"resource is not active: {run.resource_id}")
 
         ingest_resource(session, resource, run)
 
         finished = datetime.now(UTC)
         resource.last_refresh_finished_at = finished
+        resource.status = "active"
+        resource.next_refresh_at = compute_next_refresh_at(resource, now=finished)
         run.status = "succeeded"
         run.finished_at = finished
         session.commit()

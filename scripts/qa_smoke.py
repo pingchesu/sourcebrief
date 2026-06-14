@@ -238,6 +238,33 @@ def main() -> None:
     if not review_row or review_row["usage_count"] < 1:
         fail(f"resource review missing usage: {review}")
 
+    archived = request("POST", f"/workspaces/{ws}/projects/{proj}/resources/{res}/archive", 200, headers=HEADERS)
+    if archived["status"] != "archived" or archived["retrieval_enabled"]:
+        fail(f"archive did not disable retrieval: {archived}")
+    restored = request("POST", f"/workspaces/{ws}/projects/{proj}/resources/{res}/restore", 200, headers=HEADERS)
+    if restored["status"] != "active" or not restored["retrieval_enabled"]:
+        fail(f"restore did not reactivate resource: {restored}")
+    scheduled = request("POST", f"/workspaces/{ws}/projects/{proj}/scheduled-refreshes?dry_run=true", 202, headers=HEADERS)
+    if "enqueued" not in scheduled or "resource_ids" not in scheduled:
+        fail(f"scheduled refresh dry-run missing shape: {scheduled}")
+    purge_resource = request(
+        "POST",
+        f"/workspaces/{ws}/projects/{proj}/resources",
+        201,
+        json={
+            "type": "markdown",
+            "name": "QA Purge Doc",
+            "uri": "doc://qa-purge",
+            "source_config": {"content": "temporary purge smoke"},
+        },
+        headers=HEADERS,
+    )
+    purge_res = purge_resource["id"]
+    request("DELETE", f"/workspaces/{ws}/projects/{proj}/resources/{purge_res}", 204, headers=HEADERS)
+    purged = request("POST", f"/workspaces/{ws}/projects/{proj}/resources/{purge_res}/purge", 200, headers=HEADERS)
+    if not purged["purged"] or purged["counts"].get("resources") != 1:
+        fail(f"resource purge failed: {purged}")
+
     # Negative search returns nothing.
     empty = request(
         "POST",
@@ -428,7 +455,7 @@ def main() -> None:
 
     print(
         "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, "
-        "CLI search, agent profile, query/resource usage analytics, review lifecycle, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "CLI search, agent profile, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 
