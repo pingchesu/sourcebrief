@@ -135,6 +135,22 @@ make test-integration
 
 `npm audit` may report moderate dependency warnings from the frontend stack. They do not block the current local MVP gate, but should be handled before public deployment.
 
+## CLI check
+
+The local package installs the `contextsmith` CLI:
+
+```bash
+contextsmith --help
+contextsmith health
+```
+
+The CLI reads these environment variables:
+
+```bash
+export CONTEXTSMITH_API_URL=http://localhost:18000
+export CONTEXTSMITH_EMAIL=demo@example.com
+```
+
 ## What next?
 
-After the stack is running, continue with [`docs/GUIDE.md`](GUIDE.md) to create a workspace, ingest a resource, query it, and request an agent context packet.
+After the stack is running, continue with [`docs/GUIDE.md`](GUIDE.md) to create a workspace, ingest a markdown resource or git repo, query it, and request an agent context packet.
