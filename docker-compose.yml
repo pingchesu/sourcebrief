@@ -44,7 +44,8 @@ services:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/readyz"]
       interval: 5s
       timeout: 5s
-      retries: 30
+      retries: 60
+      start_period: 180s
 
   worker-default:
     build:
