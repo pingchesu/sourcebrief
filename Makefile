@@ -17,7 +17,7 @@ WEB_URL ?= http://localhost:$(CONTEXTSMITH_WEB_PORT)
 DATABASE_URL ?= $(if $(CONTEXTSMITH_DATABASE_URL),$(CONTEXTSMITH_DATABASE_URL),postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(CONTEXTSMITH_POSTGRES_PORT)/$(POSTGRES_DB))
 export PYTHONPATH := apps/api:packages/shared:packages/worker
 
-.PHONY: venv web-deps lint test test-integration compose-up compose-down compose-ps compose-logs migrate migrate-compose qa-smoke verify clean prepare-qa-fixtures
+.PHONY: venv web-deps lint typecheck test test-integration compose-up compose-down compose-ps compose-logs migrate migrate-compose qa-smoke alpha-eval release-gate verify clean prepare-qa-fixtures
 
 venv:
 	uv venv --python 3.11 --allow-existing $(VENV)
@@ -28,6 +28,10 @@ web-deps:
 
 lint: venv web-deps
 	$(BIN)/ruff check apps packages tests scripts
+	npm --prefix apps/web run lint
+
+typecheck: venv web-deps
+	$(BIN)/mypy apps packages scripts --ignore-missing-imports --follow-imports=silent
 	npm --prefix apps/web run lint
 
 test: venv
@@ -62,7 +66,22 @@ qa-smoke: venv compose-up
 	$(BIN)/python scripts/wait_for_http.py $(WEB_URL)/api/health 120
 	API_URL=$(API_URL) WEB_URL=$(WEB_URL) CONTEXTSMITH_API_URL=$(API_URL) CONTEXTSMITH_WEB_URL=$(WEB_URL) $(BIN)/python scripts/qa_smoke.py
 
-verify: lint test compose-up migrate migrate-compose test-integration qa-smoke
+alpha-eval: venv compose-up
+	$(BIN)/python scripts/wait_for_http.py $(API_URL)/readyz 120
+	API_URL=$(API_URL) CONTEXTSMITH_API_URL=$(API_URL) $(BIN)/python scripts/alpha_eval.py
+
+release-gate:
+	$(MAKE) lint
+	$(MAKE) typecheck
+	$(MAKE) test
+	$(MAKE) compose-up
+	$(MAKE) migrate
+	$(MAKE) migrate-compose
+	$(MAKE) test-integration
+	$(MAKE) qa-smoke
+	$(MAKE) alpha-eval
+
+verify: release-gate
 
 clean:
 	rm -rf $(VENV) .pytest_cache .ruff_cache

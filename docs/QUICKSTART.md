@@ -55,17 +55,26 @@ This command does the full local path:
 2. installs Python dev dependencies
 3. installs frontend dependencies
 4. runs Python lint
-5. runs frontend typecheck
-6. runs unit tests
-7. builds and starts Docker services
-8. runs Alembic migrations
-9. runs integration tests against real Postgres/Redis/API behavior
-10. runs the QA smoke flow
+5. runs backend mypy typecheck
+6. runs frontend typecheck
+7. runs unit tests
+8. builds and starts Docker services
+9. runs host and container Alembic migrations
+10. runs integration tests against real Postgres/Redis/API behavior
+11. runs the QA smoke flow
+12. runs alpha evaluation and writes `artifacts/alpha-eval-report.json`
 
-Expected final smoke output:
+`make verify` is an alias for the full release gate:
+
+```bash
+make release-gate
+```
+
+It runs lint/typecheck, unit tests, integration tests, host/container migrations, real-service QA smoke, and alpha eval. Expected final smoke/eval output includes:
 
 ```text
 QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, CLI search, agent profile, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, Hermes integration script, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health
+Alpha eval passed: 3 golden questions, report=artifacts/alpha-eval-report.json
 ```
 
 ## Open the local services

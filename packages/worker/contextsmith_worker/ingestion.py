@@ -190,7 +190,10 @@ def redact_secrets(text: str) -> tuple[str, dict[str, int]]:
     counts: dict[str, int] = {}
     redacted = text
     for name, pattern in _SECRET_PATTERNS:
-        redacted, count = pattern.subn(lambda m, n=name: f"[REDACTED:{n}]", redacted)
+        def replacement(_match: re.Match[str], redaction_name: str = name) -> str:
+            return f"[REDACTED:{redaction_name}]"
+
+        redacted, count = pattern.subn(replacement, redacted)
         if count:
             counts[name] = counts.get(name, 0) + count
     return redacted, counts
@@ -368,7 +371,7 @@ def validate_public_https_host(hostname: str) -> None:
         infos = socket.getaddrinfo(lowered, None, proto=socket.IPPROTO_TCP)
     except socket.gaierror as exc:
         raise ValueError(f"git host DNS resolution failed: {lowered}") from exc
-    addresses = {info[4][0] for info in infos}
+    addresses = {str(info[4][0]) for info in infos}
     if not addresses or any(not _is_public_ip(address) for address in addresses):
         raise ValueError("git host must resolve only to public IPs")
 
