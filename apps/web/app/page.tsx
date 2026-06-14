@@ -72,6 +72,7 @@ const endpoints: Array<[string, string]> = [
   ['GET', '/workspaces/{ws}/projects/{proj}/resources/{res}/index-runs'],
   ['POST', '/workspaces/{ws}/projects/{proj}/search'],
   ['POST', '/workspaces/{ws}/projects/{proj}/context-packets'],
+  ['POST', '/workspaces/{ws}/projects/{proj}/code-search'],
 ];
 
 export default function Home() {

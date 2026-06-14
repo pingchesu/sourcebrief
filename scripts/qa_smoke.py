@@ -64,6 +64,11 @@ def build_git_fixture(ts: int) -> tuple[str, str]:
         "# QA Git Repo\n\nThe quokkasmoke marker proves git ingestion through RQ.\n",
         encoding="utf-8",
     )
+    (repo_path / "src").mkdir()
+    (repo_path / "src" / "app.py").write_text(
+        "class SmokeService:\n    pass\n\ndef smoke_symbol():\n    return 'ok'\n",
+        encoding="utf-8",
+    )
     (repo_path / "node_modules").mkdir()
     (repo_path / "node_modules" / "ignored.js").write_text("ignoredsmoke", encoding="utf-8")
     subprocess.run(["git", "-C", str(repo_path), "add", "-A"], env=env, check=True)
@@ -252,6 +257,18 @@ def main() -> None:
     )
     if git_search["count"] < 1 or git_search["hits"][0].get("commit") != git_commit:
         fail(f"git search/citation failed: {git_search}")
+    code_search = request(
+        "POST",
+        f"/workspaces/{ws}/projects/{proj}/code-search",
+        200,
+        json={"query": "smoke_symbol", "resource_ids": [git_res]},
+        headers=HEADERS,
+    )
+    if code_search["count"] < 1:
+        fail(f"code search returned no symbols: {code_search}")
+    code_hit = code_search["symbols"][0]
+    if code_hit["name"] != "smoke_symbol" or code_hit.get("commit") != git_commit:
+        fail(f"code symbol citation failed: {code_search}")
 
     # Audit trail covers the mutating actions.
     audit_events = request("GET", f"/workspaces/{ws}/audit-events", 200, headers=HEADERS)
@@ -284,7 +301,7 @@ def main() -> None:
         fail(f"frontend health failed: {web.status_code} {web.text}")
 
     print(
-        "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → lexical/hybrid context retrieval with citations, "
+        "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → lexical/hybrid context retrieval with citations, "
         "query analytics, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 

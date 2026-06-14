@@ -33,6 +33,7 @@ from urllib.parse import urlparse, urlunparse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from contextsmith_shared.code_intel import extract_code_symbols
 from contextsmith_shared.embeddings import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_PROVIDER,
@@ -40,7 +41,7 @@ from contextsmith_shared.embeddings import (
     embed_text,
     vector_literal,
 )
-from contextsmith_shared.models import Chunk, IndexRun, Resource, SourceSnapshot
+from contextsmith_shared.models import Chunk, CodeSymbol, IndexRun, Resource, SourceSnapshot
 
 # --- configuration ---------------------------------------------------------
 
@@ -54,6 +55,8 @@ DEFAULT_MAX_DOCUMENT_BYTES = 5_000_000
 HARD_MAX_DOCUMENT_BYTES = 20_000_000
 DEFAULT_MAX_CHUNKS = 5_000
 HARD_MAX_CHUNKS = 20_000
+DEFAULT_MAX_SYMBOLS = 5_000
+HARD_MAX_SYMBOLS = 20_000
 DEFAULT_MAX_CHARS = 2_000
 DEFAULT_OVERLAP = 200
 DEFAULT_CLONE_TIMEOUT = 120
@@ -639,8 +642,35 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
         int((resource.source_config or {}).get("max_chunks", DEFAULT_MAX_CHUNKS)),
         HARD_MAX_CHUNKS,
     )
+    max_symbols = min(
+        int((resource.source_config or {}).get("max_symbols", DEFAULT_MAX_SYMBOLS)),
+        HARD_MAX_SYMBOLS,
+    )
     chunks_created = 0
+    symbols_created = 0
     for doc in docs:
+        doc_hash = content_hash(doc["content"])
+        for symbol in extract_code_symbols(doc.get("path"), doc["content"]):
+            if symbols_created >= max_symbols:
+                raise RuntimeError(f"symbol budget exceeded for resource {resource.id}")
+            session.add(
+                CodeSymbol(
+                    workspace_id=resource.workspace_id,
+                    project_id=resource.project_id,
+                    resource_id=resource.id,
+                    source_snapshot_id=snapshot.id,
+                    path=symbol.path,
+                    name=symbol.name,
+                    kind=symbol.kind,
+                    language=symbol.language,
+                    line_start=symbol.line_start,
+                    line_end=symbol.line_end,
+                    signature=symbol.signature,
+                    content_hash=doc_hash,
+                    meta=doc.get("meta", {}),
+                )
+            )
+            symbols_created += 1
         for ordinal, piece in enumerate(iter_chunks(doc["content"])):
             if chunks_created >= max_chunks:
                 raise RuntimeError(f"chunk budget exceeded for resource {resource.id}")
@@ -665,6 +695,7 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
     snapshot.indexed_at = datetime.now(UTC)
     run.documents_seen = len(docs)
     run.chunks_created = chunks_created
+    run.symbols_created = symbols_created
     run.embeddings_created = chunks_created
     resource.current_snapshot_id = snapshot.id
     resource.status = "active"

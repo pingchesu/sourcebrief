@@ -16,6 +16,9 @@ from contextsmith_api.auth import get_or_create_user, require_principal, require
 from contextsmith_api.retrieval import make_snippet, retrieve_context_candidates
 from contextsmith_api.schemas import (
     AuditEventRead,
+    CodeSearchRequest,
+    CodeSearchResponse,
+    CodeSymbolHit,
     ContextPacketItemRead,
     ContextPacketRead,
     ContextPacketRequest,
@@ -575,6 +578,93 @@ def search_project(
             )
         )
     return SearchResponse(query=payload.query, count=len(hits), hits=hits)
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/code-search",
+    response_model=CodeSearchResponse,
+)
+def code_search_project(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: CodeSearchRequest,
+    email: str = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> CodeSearchResponse:
+    """Search extracted code symbols with file/line/commit citations.
+
+    This endpoint returns deterministic source-derived symbols only. It does not
+    infer call edges or behavior with an LLM.
+    """
+    user = get_or_create_user(session, email)
+    _require_project_access(session, workspace_id, project_id, user)
+    resource_clause = ""
+    params: dict = {
+        "ws": str(workspace_id),
+        "proj": str(project_id),
+        "q": payload.query,
+        "limit": payload.limit,
+    }
+    if payload.resource_ids:
+        resource_clause = "AND r.id = ANY(CAST(:rids AS uuid[]))"
+        params["rids"] = [str(rid) for rid in payload.resource_ids]
+    rows = session.execute(
+        text(
+            f"""
+            SELECT sym.resource_id, sym.source_snapshot_id, sym.path, sym.name,
+                   sym.kind, sym.language, sym.line_start, sym.line_end,
+                   sym.signature, sym.content_hash,
+                   snap.version, snap.version_kind, snap.metadata AS snap_meta,
+                   ts_rank(
+                     to_tsvector('simple', sym.name || ' ' || sym.path || ' ' || sym.signature),
+                     plainto_tsquery('simple', :q)
+                   ) AS score
+            FROM code_symbols sym
+            JOIN resources r ON r.current_snapshot_id = sym.source_snapshot_id
+              AND r.id = sym.resource_id
+              AND r.workspace_id = sym.workspace_id
+              AND r.project_id = sym.project_id
+            JOIN source_snapshots snap ON snap.id = sym.source_snapshot_id
+              AND snap.workspace_id = sym.workspace_id
+              AND snap.project_id = sym.project_id
+              AND snap.resource_id = sym.resource_id
+            WHERE sym.workspace_id = CAST(:ws AS uuid)
+              AND sym.project_id = CAST(:proj AS uuid)
+              AND sym.deleted_at IS NULL
+              AND r.deleted_at IS NULL
+              AND r.retrieval_enabled = true
+              AND r.current_snapshot_id IS NOT NULL
+              {resource_clause}
+              AND to_tsvector('simple', sym.name || ' ' || sym.path || ' ' || sym.signature)
+                  @@ plainto_tsquery('simple', :q)
+            ORDER BY score DESC, sym.path ASC, sym.line_start ASC
+            LIMIT :limit
+            """
+        ),
+        params,
+    ).mappings().all()
+    symbols: list[CodeSymbolHit] = []
+    for row in rows:
+        snap_meta = row["snap_meta"] if isinstance(row["snap_meta"], dict) else {}
+        symbols.append(
+            CodeSymbolHit(
+                resource_id=row["resource_id"],
+                snapshot_id=row["source_snapshot_id"],
+                path=row["path"],
+                name=row["name"],
+                kind=row["kind"],
+                language=row["language"],
+                line_start=row["line_start"],
+                line_end=row["line_end"],
+                signature=row["signature"],
+                content_hash=row["content_hash"],
+                version=row["version"],
+                version_kind=row["version_kind"],
+                commit=snap_meta.get("commit"),
+                score=float(row["score"] or 0.0),
+            )
+        )
+    return CodeSearchResponse(query=payload.query, count=len(symbols), symbols=symbols)
 
 
 @app.post(

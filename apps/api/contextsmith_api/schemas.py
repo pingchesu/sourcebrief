@@ -41,6 +41,7 @@ class ResourceUpdate(BaseModel):
     uri: str | None = Field(default=None, min_length=1)
     update_frequency: str | None = None
     source_config: dict | None = None
+    retrieval_enabled: bool | None = None
 
 
 class ResourceRead(BaseModel):
@@ -166,3 +167,32 @@ class ContextPacketRead(BaseModel):
     model: str
     count: int
     items: list[ContextPacketItemRead]
+
+
+class CodeSearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    resource_ids: list[UUID] | None = None
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class CodeSymbolHit(BaseModel):
+    resource_id: UUID
+    snapshot_id: UUID
+    path: str
+    name: str
+    kind: str
+    language: str
+    line_start: int
+    line_end: int
+    signature: str
+    content_hash: str
+    version: str
+    version_kind: str
+    commit: str | None = None
+    score: float
+
+
+class CodeSearchResponse(BaseModel):
+    query: str
+    count: int
+    symbols: list[CodeSymbolHit]
