@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,7 @@ BASE = "http://localhost:18000"
 FRONTEND = "http://localhost:13000"
 HEADERS = {"X-User-Email": f"qa-{int(time.time())}@example.com"}
 MARKER = "contextsmithqamarker"
+TOKEN_PATTERN = re.compile(r"cs_[A-Za-z0-9_-]{20,}")
 
 
 def request(method: str, path: str, expected: int, **kwargs):
@@ -521,6 +523,57 @@ def main() -> None:
     if mcp_call["result"]["structuredContent"]["runtime"] != "codex":
         fail(f"MCP tools/call failed: {mcp_call}")
 
+    hermes_check = subprocess.run(
+        [
+            sys.executable,
+            "scripts/hermes_integration.py",
+            "--api-url",
+            BASE,
+            "--email",
+            HEADERS["X-User-Email"],
+            "--workspace-id",
+            ws,
+            "--project-id",
+            proj,
+            "--resource-id",
+            git_res,
+            "--query",
+            "smoke_symbol",
+            "--expect-text",
+            "smoke_symbol",
+            "--redact-token",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    if hermes_check.returncode != 0:
+        fail(f"Hermes integration script failed: stdout={hermes_check.stdout}\nstderr={hermes_check.stderr}")
+    hermes_output = json.loads(hermes_check.stdout)
+    if TOKEN_PATTERN.search(hermes_check.stdout):
+        fail(f"Hermes integration script leaked plaintext token in redacted output: {hermes_check.stdout}")
+    if hermes_output["status"] != "ok" or "contextsmith.get_agent_context" not in hermes_output["mcp"]["tool_names"]:
+        fail(f"Hermes integration script returned invalid output: {hermes_output}")
+    if hermes_output.get("token") != "<redacted>":
+        fail(f"Hermes integration script did not redact token field: {hermes_output}")
+    header = hermes_output["hermes_config"]["mcp_servers"]["contextsmith"]["headers"]["Authorization"]
+    if header != "Bearer <redacted>":
+        fail(f"Hermes integration script did not redact config header: {hermes_output}")
+    expected_scopes = {"project:read", "project:query", "resource:read", "review:read"}
+    actual_scopes = set(hermes_output["api_token"]["scopes"])
+    if actual_scopes != expected_scopes:
+        fail(f"Hermes token scopes are not read-only default: {hermes_output}")
+    if hermes_output["api_token"].get("allowed_project_ids") != [proj]:
+        fail(f"Hermes token project allowlist mismatch: {hermes_output}")
+    if hermes_output["api_token"].get("allowed_resource_ids") != [git_res]:
+        fail(f"Hermes token resource allowlist mismatch: {hermes_output}")
+    if hermes_output["agent_context"]["citation_count"] < 1 or hermes_output["agent_context"]["context_chars"] < 1:
+        fail(f"Hermes integration script did not validate cited context: {hermes_output}")
+    if hermes_output["mcp"]["citation_count"] < 1:
+        fail(f"Hermes integration script did not validate MCP citations: {hermes_output}")
+
     # Audit trail covers the mutating actions.
     audit_events = request("GET", f"/workspaces/{ws}/audit-events", 200, headers=HEADERS)
     actions = {event["action"] for event in audit_events}
@@ -553,7 +606,7 @@ def main() -> None:
 
     print(
         "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, "
-        "CLI search, agent profile, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "CLI search, agent profile, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, Hermes integration script, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 

@@ -204,6 +204,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 - [`docs/MILESTONE-13.md`](docs/MILESTONE-13.md) - safe URL/upload connectors and secret redaction
 - [`docs/MILESTONE-14.md`](docs/MILESTONE-14.md) - provider health, embedding namespace hardening, and query diagnostics
 - [`docs/MILESTONE-15.md`](docs/MILESTONE-15.md) - SaaS alpha web console for project/resource/token/review/agent flows
+- [`docs/MILESTONE-16.md`](docs/MILESTONE-16.md) - Hermes/MCP integration pack and scoped token validation
 
 ## Tech stack
 
