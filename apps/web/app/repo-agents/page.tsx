@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PageHeader, Card, Metric, StatusChip, EmptyState } from '../../components/ui';
 import { AgentContextPreview } from '../../components/AgentContextPreview';
 import { usePlatform } from '../../lib/platform-context';
-import type { AgentContextResponse, Resource, ReviewItem, UsageItem } from '../../lib/types';
-import { fmt, short } from '../../lib/api';
+import type { AgentContextResponse, Resource, ReviewItem, RepoAgentBrief, UsageItem } from '../../lib/types';
+import { short } from '../../lib/api';
 
 function readiness(resource: Resource, review?: ReviewItem) {
   if (resource.status !== 'active') return 'inactive';
@@ -44,11 +44,27 @@ export default function RepoAgentsPage() {
   const usageByResource = useMemo(() => new Map(usageItems.map((item) => [item.resource_id, item])), [usageItems]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [preview, setPreview] = useState<AgentContextResponse | null>(null);
+  const [brief, setBrief] = useState<RepoAgentBrief | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const selected = repoAgents.find((resource) => resource.id === selectedId) ?? repoAgents[0] ?? null;
   const selectedReview = selected ? reviewByResource.get(selected.id) : undefined;
   const selectedUsage = selected ? usageByResource.get(selected.id) : undefined;
+
+  useEffect(() => {
+    if (!selected) { setBrief(null); setBriefError(null); setBriefLoading(false); return; }
+    let cancelled = false;
+    setBrief(null);
+    setBriefError(null);
+    setBriefLoading(true);
+    client<RepoAgentBrief>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/repo-agents/${selected.id}/brief`)
+      .then((result) => { if (!cancelled) setBrief(result); })
+      .catch((err) => { if (!cancelled) setBriefError(String(err)); })
+      .finally(() => { if (!cancelled) setBriefLoading(false); });
+    return () => { cancelled = true; };
+  }, [client, selected?.id, settings.workspaceId, settings.projectId]);
 
   async function generateSubAgentPrompt(resource: Resource) {
     setSelectedId(resource.id);
@@ -88,9 +104,10 @@ export default function RepoAgentsPage() {
       <Card>
         <h2>{selected.name} sub-agent</h2>
         <p className="muted">This repo is a scoped sub-agent. Hermes/Codex should route repo-specific questions to this resource id instead of querying the whole project blindly.</p>
-        <div className="grid three"><Metric label="Readiness" value={readiness(selected, selectedReview)} /><Metric label="Review" value={selected.review_status} /><Metric label="Retrieval hits" value={selectedUsage?.hit_count ?? 0} /></div>
-        <div><div className="label">Repo identity</div><div className="code">resource_id={selected.id}<br />snapshot={selected.current_snapshot_id ?? 'none'}<br />uri={selected.uri}</div></div>
-        <div><div className="label">Freshness / lifecycle</div><div className="code">last_refresh={fmt(selected.last_refresh_finished_at)}<br />next_refresh={fmt(selected.next_refresh_at)}<br />stale_reasons={selectedReview?.stale_reasons.join(', ') || 'none'}</div></div>
+        <div className="grid three"><Metric label="Readiness" value={brief?.readiness ?? readiness(selected, selectedReview)} /><Metric label="Review" value={selected.review_status} /><Metric label="Retrieval hits" value={selectedUsage?.hit_count ?? 0} /></div>
+        <div><div className="label">Repo identity</div><div className="code">resource_id={selected.id}<br />snapshot={selected.current_snapshot_id ?? 'none'}<br />branch={brief?.branch ?? 'default'}<br />uri={selected.uri}</div></div>
+        <div><div className="label">Generated operating brief</div>{briefError ? <div className="notice error">{briefError}</div> : <pre className="code-block light">{brief?.operating_brief ?? (briefLoading ? 'Loading repo-agent brief…' : 'No repo-agent brief available.')}</pre>}</div>
+        <div><div className="label">Quality gates</div><div className="code">{brief?.quality_gates.join('\n') ?? (briefLoading ? 'loading' : 'unavailable')}</div></div>
       </Card>
       <Card>
         <h2>Runtime invocation contract</h2>
@@ -99,7 +116,7 @@ export default function RepoAgentsPage() {
       </Card>
       <Card>
         <h2>What to ask this sub-agent</h2>
-        <div className="grid">{suggestedQuestions(selected).map((question) => <button key={question} type="button" className="scope-pill" onClick={() => void generateSubAgentPrompt(selected)}><strong>{question}</strong><small>Generates a cited, repo-scoped operating brief</small></button>)}</div>
+        <div className="grid">{(brief?.suggested_questions ?? suggestedQuestions(selected)).map((question) => <button key={question} type="button" className="scope-pill" onClick={() => void generateSubAgentPrompt(selected)}><strong>{question}</strong><small>Generates a cited, repo-scoped operating brief</small></button>)}</div>
       </Card>
       <Card>
         <h2>Sub-agent boundary</h2>

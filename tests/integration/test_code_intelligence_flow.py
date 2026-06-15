@@ -95,6 +95,12 @@ def build_code_repo(path: str) -> str:
         )
     with open(os.path.join(path, "src", "ui.ts"), "w", encoding="utf-8") as fh:
         fh.write("export function renderCheckout() { return true; }\n")
+    with open(os.path.join(path, "main.py"), "w", encoding="utf-8") as fh:
+        fh.write("from src.checkout import reconcile_cart\n")
+    with open(os.path.join(path, "README.md"), "w", encoding="utf-8") as fh:
+        fh.write("# Code Repo\n\nRunbook marker checkoutrepo42. The reconcile_cart function is the checkout entrypoint.\n")
+    with open(os.path.join(path, "pyproject.toml"), "w", encoding="utf-8") as fh:
+        fh.write("[project]\nname = 'code-repo'\n")
     subprocess.run(["git", "-C", path, "add", "-A"], env=env, check=True)
     subprocess.run(["git", "-C", path, "commit", "-q", "-m", "code symbols"], env=env, check=True)
     return subprocess.run(
@@ -301,3 +307,86 @@ def test_symbol_budget_failure_is_recorded() -> None:
     response = client.get(f"/workspaces/{workspace_id}/index-runs/{run_id}", headers=headers)
     assert response.status_code == 200
     assert response.json()["status"] == "failed"
+
+
+def test_repo_agent_brief_and_retrieval_eval_are_productized(tmp_path) -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "mature-alpha")
+    repo_path = str(tmp_path / "brief-repo")
+    build_code_repo(repo_path)
+    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
+    resource_id = add_resource(
+        client,
+        workspace_id,
+        project_id,
+        headers,
+        {
+            "type": "git",
+            "name": "Brief Repo",
+            "uri": f"file://{repo_path}",
+            "source_config": {"branch": "main"},
+        },
+    )
+    completed = ingest_inproc(client, workspace_id, project_id, resource_id, headers)
+    assert completed["status"] == "succeeded"
+
+    brief = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{resource_id}/brief",
+        headers=headers,
+    )
+    assert brief.status_code == 200, brief.text
+    brief_body = brief.json()
+    assert brief_body["readiness"] == "ready"
+    assert "git-backed repo sub-agent" in brief_body["operating_brief"]
+    assert "main.py" in brief_body["entrypoint_paths"]
+    assert "pyproject.toml" in brief_body["config_paths"]
+    assert brief_body["symbol_samples"]
+    assert any(symbol["name"] == "reconcile_cart" for symbol in brief_body["symbol_samples"])
+
+    eval_response = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
+        json={
+            "runtime": "hermes",
+            "max_chars": 8000,
+            "questions": [
+                {
+                    "id": "checkout-symbol",
+                    "query": "reconcile_cart",
+                    "expected_resource_ids": [resource_id],
+                    "resource_ids": [resource_id],
+                    "required_texts": ["reconcile_cart"],
+                    "expected_paths": ["src/checkout.py"],
+                    "expected_symbols": ["reconcile_cart"],
+                    "min_citations": 1,
+                    "top_k": 8,
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert eval_response.status_code == 200, eval_response.text
+    eval_body = eval_response.json()
+    assert eval_body["summary"]["status"] == "passed"
+    assert eval_body["summary"]["passed_count"] == 1
+    assert eval_body["results"][0]["passed"] is True
+    assert resource_id in eval_body["results"][0]["cited_resource_ids"]
+    assert eval_body["results"][0]["hit_quality"]
+
+    forbidden = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
+        json={
+            "questions": [
+                {
+                    "id": "forbidden-resource-regression",
+                    "query": "Where is reconcile_cart implemented?",
+                    "forbidden_resource_ids": [resource_id],
+                    "min_citations": 1,
+                }
+            ]
+        },
+        headers=headers,
+    )
+    assert forbidden.status_code == 200, forbidden.text
+    assert forbidden.json()["summary"]["status"] == "failed"
+    assert "forbidden_resources_cited" in forbidden.json()["summary"]["failure_reasons"][0]

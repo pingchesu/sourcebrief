@@ -6,6 +6,7 @@ import re
 import subprocess
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Any, cast
 from uuid import UUID
 
@@ -71,6 +72,7 @@ from contextsmith_api.schemas import (
     ProjectCreate,
     ProjectRead,
     PurgeResourceResponse,
+    RepoAgentBriefRead,
     ResourceCreate,
     ResourceRead,
     ResourceReviewItem,
@@ -79,6 +81,10 @@ from contextsmith_api.schemas import (
     ResourceUpdate,
     ResourceUsageItem,
     ResourceUsageResponse,
+    RetrievalEvalRequest,
+    RetrievalEvalResponse,
+    RetrievalEvalResult,
+    RetrievalEvalSummary,
     SearchHit,
     SearchRequest,
     SearchResponse,
@@ -340,6 +346,8 @@ def _agent_file_response(
                     "## How to use\n"
                     "Query ContextSmith with this resource_id as the only resource scope when the task is repo-specific.\n"
                     "Ask for cited files, symbols, entrypoints, config, runbooks, and operational boundaries before editing.\n\n"
+                    "## Generated operating brief\n"
+                    f"Fetch `/workspaces/{workspace_id}/projects/{project.id}/repo-agents/{resource.id}/brief` for the current deterministic operating brief, readiness, quality gates, entrypoints, configs, runbooks, and symbol samples.\n\n"
                     "## Safety boundary\n"
                     "This skill provides context only. Production mutations still require Hermes approval, typed MCP tools, and evidence.\n"
                 ),
@@ -529,6 +537,185 @@ def _resolve_resource(
     if resource is None or (resource.deleted_at is not None and not include_deleted):
         raise HTTPException(status_code=404, detail="resource not found")
     return resource
+
+
+_ENTRYPOINT_RE = re.compile(r"(^|/)(main|app|server|cli|manage|index|worker|run|startup)\.(py|ts|tsx|js|go|rs|java)$", re.I)
+_CONFIG_RE = re.compile(r"(^|/)(Dockerfile|docker-compose.*\.ya?ml|compose.*\.ya?ml|pyproject\.toml|package\.json|Makefile|.*config.*\.(ya?ml|json|toml|py|ts)|\.github/workflows/.*\.ya?ml)$", re.I)
+_RUNTIME_RE = re.compile(r"(^|/)(deploy|deployment|runtime|infra|scripts|helm|k8s|compose|docker|\.github/workflows)(/|$)", re.I)
+_RUNBOOK_RE = re.compile(r"(^|/)(README|RUNBOOK|OPERATION|OPERATIONS|docs/.*|.*runbook.*)\.(md|rst|txt)$", re.I)
+
+
+def _collect_matching_paths(session: Session, resource: Resource, pattern: re.Pattern[str], *, limit: int = 8) -> list[str]:
+    if resource.current_snapshot_id is None:
+        return []
+    rows = session.execute(
+        text(
+            """
+            SELECT DISTINCT COALESCE(NULLIF(path, ''), title) AS path
+            FROM chunks
+            WHERE workspace_id = :ws
+              AND project_id = :proj
+              AND resource_id = :res
+              AND source_snapshot_id = :snap
+              AND deleted_at IS NULL
+              AND COALESCE(NULLIF(path, ''), title) IS NOT NULL
+            ORDER BY path ASC
+            """
+        ),
+        {"ws": resource.workspace_id, "proj": resource.project_id, "res": resource.id, "snap": resource.current_snapshot_id},
+    ).mappings().all()
+    matches = [str(row["path"]) for row in rows if pattern.search(str(row["path"]))]
+    return matches[:limit]
+
+
+def _repo_agent_readiness(resource: Resource, stats: Mapping[str, Any]) -> str:
+    if resource.status != "active" or resource.archived_at is not None:
+        return "inactive"
+    if not resource.retrieval_enabled:
+        return "retrieval-off"
+    if resource.current_snapshot_id is None:
+        return "not-indexed"
+    if int(stats.get("chunk_count") or 0) == 0:
+        return "empty-index"
+    if int(stats.get("embedding_count") or 0) == 0:
+        return "no-embeddings"
+    if resource.review_status in {"needs_update", "stale"}:
+        return "needs-review"
+    return "ready"
+
+
+def _repo_agent_brief_response(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    resource: Resource,
+) -> RepoAgentBriefRead:
+    if resource.type.lower() != "git":
+        raise HTTPException(status_code=422, detail="repo-agent brief is only available for git resources")
+    stats = cast(
+        Mapping[str, Any],
+        session.execute(
+            text(
+                """
+                SELECT
+                  (SELECT COUNT(*) FROM chunks c WHERE c.workspace_id = :ws AND c.project_id = :proj AND c.resource_id = :res AND c.source_snapshot_id = :snap AND c.deleted_at IS NULL) AS chunk_count,
+                  (SELECT COUNT(*) FROM code_symbols cs WHERE cs.workspace_id = :ws AND cs.project_id = :proj AND cs.resource_id = :res AND cs.source_snapshot_id = :snap AND cs.deleted_at IS NULL) AS symbol_count,
+                  (SELECT COUNT(*) FROM graph_nodes gn WHERE gn.workspace_id = :ws AND gn.project_id = :proj AND gn.resource_id = :res AND gn.source_snapshot_id = :snap) AS graph_node_count,
+                  (SELECT COUNT(*) FROM graph_edges ge WHERE ge.workspace_id = :ws AND ge.project_id = :proj AND ge.resource_id = :res AND ge.source_snapshot_id = :snap) AS graph_edge_count,
+                  (SELECT COUNT(*) FROM chunk_embeddings ce WHERE ce.workspace_id = :ws AND ce.project_id = :proj AND ce.resource_id = :res AND ce.source_snapshot_id = :snap) AS embedding_count,
+                  (SELECT MAX(finished_at) FROM index_runs ir WHERE ir.workspace_id = :ws AND ir.project_id = :proj AND ir.resource_id = :res AND ir.status = 'succeeded') AS last_index_finished_at,
+                  (SELECT status FROM index_runs ir WHERE ir.workspace_id = :ws AND ir.project_id = :proj AND ir.resource_id = :res ORDER BY created_at DESC LIMIT 1) AS last_index_status,
+                  (SELECT metadata FROM source_snapshots ss WHERE ss.id = :snap AND ss.workspace_id = :ws AND ss.project_id = :proj AND ss.resource_id = :res) AS snapshot_metadata
+                """
+            ),
+            {"ws": workspace_id, "proj": project_id, "res": resource.id, "snap": resource.current_snapshot_id},
+        ).mappings().first()
+        or {},
+    )
+    snapshot_metadata = cast(dict[str, Any], stats.get("snapshot_metadata") if isinstance(stats.get("snapshot_metadata"), dict) else {})
+    source_config = cast(dict[str, Any], resource.source_config or {})
+    entrypoints = _collect_matching_paths(session, resource, _ENTRYPOINT_RE)
+    configs = _collect_matching_paths(session, resource, _CONFIG_RE)
+    runtime_paths = _collect_matching_paths(session, resource, _RUNTIME_RE)
+    runbooks = _collect_matching_paths(session, resource, _RUNBOOK_RE)
+    symbol_rows = session.execute(
+        text(
+            """
+            SELECT path, name, kind, language, line_start, line_end, signature, content_hash
+            FROM code_symbols
+            WHERE workspace_id = :ws
+              AND project_id = :proj
+              AND resource_id = :res
+              AND source_snapshot_id = :snap
+              AND deleted_at IS NULL
+            ORDER BY CASE kind WHEN 'class' THEN 0 WHEN 'function' THEN 1 ELSE 2 END, path ASC, line_start ASC
+            LIMIT 12
+            """
+        ),
+        {"ws": workspace_id, "proj": project_id, "res": resource.id, "snap": resource.current_snapshot_id},
+    ).mappings().all()
+    symbol_samples = [
+        {
+            "path": row["path"],
+            "name": row["name"],
+            "kind": row["kind"],
+            "language": row["language"],
+            "line_start": row["line_start"],
+            "line_end": row["line_end"],
+            "signature": row["signature"],
+            "content_hash": row["content_hash"],
+        }
+        for row in symbol_rows
+    ]
+    readiness = _repo_agent_readiness(resource, stats)
+    branch = source_config.get("branch") or source_config.get("ref") or snapshot_metadata.get("branch")
+    commit = snapshot_metadata.get("commit") or snapshot_metadata.get("version")
+    last_index_finished_at = stats.get("last_index_finished_at")
+    suggested_questions = [
+        f"What is {resource.name} responsible for? Cite exact files.",
+        f"Show {resource.name}'s main entrypoints, configs, and runtime/deployment boundaries.",
+        f"What tests or checks should run before changing {resource.name}?",
+        f"Find runbooks, operational risks, and production-mutation boundaries for {resource.name}.",
+    ]
+    quality_gates = [
+        "current_snapshot_id is present" if resource.current_snapshot_id else "missing current_snapshot_id",
+        f"chunks={int(stats.get('chunk_count') or 0)}",
+        f"embeddings={int(stats.get('embedding_count') or 0)}",
+        f"symbols={int(stats.get('symbol_count') or 0)}",
+        f"last_index_status={stats.get('last_index_status') or 'unknown'}",
+        f"review_status={resource.review_status}",
+    ]
+    brief_lines = [
+        f"{resource.name} is a git-backed repo sub-agent scoped to resource `{resource.id}`.",
+        f"Readiness: {readiness}. Branch/ref: {branch or 'default'}. Commit/version: {commit or resource.current_snapshot_id or 'none'}.",
+        f"Index shape: {int(stats.get('chunk_count') or 0)} chunks, {int(stats.get('symbol_count') or 0)} symbols, {int(stats.get('graph_node_count') or 0)} graph nodes, {int(stats.get('embedding_count') or 0)} embeddings.",
+    ]
+    if entrypoints:
+        brief_lines.append("Likely entrypoints: " + ", ".join(entrypoints[:5]) + ".")
+    if configs:
+        brief_lines.append("Likely config/build files: " + ", ".join(configs[:5]) + ".")
+    if runtime_paths:
+        brief_lines.append("Likely runtime/deployment paths: " + ", ".join(runtime_paths[:5]) + ".")
+    if runbooks:
+        brief_lines.append("Likely docs/runbooks: " + ", ".join(runbooks[:5]) + ".")
+    brief_lines.append("Use this repo-agent for repo-specific explanation, code navigation, cited operating briefs, and change-impact questions. Do not use it as authorization for production mutations.")
+    return RepoAgentBriefRead(
+        resource_id=resource.id,
+        name=resource.name,
+        uri=resource.uri,
+        readiness=readiness,
+        current_snapshot_id=resource.current_snapshot_id,
+        branch=branch,
+        commit=commit,
+        update_frequency=resource.update_frequency,
+        freshness={
+            "review_status": resource.review_status,
+            "last_refresh_finished_at": resource.last_refresh_finished_at.isoformat() if resource.last_refresh_finished_at else None,
+            "next_refresh_at": resource.next_refresh_at.isoformat() if resource.next_refresh_at else None,
+            "last_index_finished_at": last_index_finished_at.isoformat() if isinstance(last_index_finished_at, datetime) else None,
+            "last_index_status": stats.get("last_index_status"),
+        },
+        stats={
+            "chunk_count": int(stats.get("chunk_count") or 0),
+            "symbol_count": int(stats.get("symbol_count") or 0),
+            "graph_node_count": int(stats.get("graph_node_count") or 0),
+            "graph_edge_count": int(stats.get("graph_edge_count") or 0),
+            "embedding_count": int(stats.get("embedding_count") or 0),
+        },
+        operating_brief="\n".join(brief_lines),
+        entrypoint_paths=entrypoints,
+        config_paths=configs,
+        runtime_paths=runtime_paths,
+        runbook_paths=runbooks,
+        symbol_samples=symbol_samples,
+        suggested_questions=suggested_questions,
+        invocation={
+            "endpoint": f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+            "body": {"runtime": "hermes", "resource_ids": [str(resource.id)], "include_code_symbols": True},
+        },
+        safety_boundary="Context only. Production mutations require Hermes approval, typed MCP tools, and evidence workflow.",
+        quality_gates=quality_gates,
+    )
 
 
 def _purge_resource_artifacts(session: Session, resource: Resource) -> dict[str, int]:
@@ -2268,6 +2455,151 @@ def agent_context(
         project_id=project_id,
         payload=payload,
         principal=principal,
+    )
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{resource_id}/brief",
+    response_model=RepoAgentBriefRead,
+)
+def get_repo_agent_brief(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RepoAgentBriefRead:
+    require_scope(principal, "project:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
+    return _repo_agent_brief_response(session, workspace_id, project_id, resource)
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
+    response_model=RetrievalEvalResponse,
+)
+def run_retrieval_eval(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: RetrievalEvalRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RetrievalEvalResponse:
+    require_scope(principal, "project:query")
+    _require_project_access(session, workspace_id, project_id, principal)
+    effective_resource_ids_by_question: list[list[UUID] | None] = []
+    referenced_ids: set[UUID] = set()
+    for question in payload.questions:
+        effective_resource_ids = _effective_resource_ids(principal, question.resource_ids)
+        effective_resource_ids_by_question.append(effective_resource_ids)
+        referenced_ids.update(question.expected_resource_ids)
+        referenced_ids.update(question.forbidden_resource_ids)
+        referenced_ids.update(effective_resource_ids or [])
+    for rid in referenced_ids:
+        _resolve_resource(session, workspace_id, project_id, rid, principal)
+    embedding_config = current_embedding_config()
+    diagnostics_resource_ids: list[UUID] | None
+    if any(resource_ids is None for resource_ids in effective_resource_ids_by_question):
+        diagnostics_resource_ids = None
+    else:
+        diagnostics_resource_ids = sorted({rid for resource_ids in effective_resource_ids_by_question for rid in (resource_ids or [])})
+    diagnostics = embedding_namespace_diagnostics(
+        session,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        resource_ids=diagnostics_resource_ids,
+    )
+    results: list[RetrievalEvalResult] = []
+    all_failure_reasons: list[str] = []
+    for question, effective_resource_ids in zip(payload.questions, effective_resource_ids_by_question, strict=True):
+        started = perf_counter()
+        response = _build_agent_context_response(
+            session,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            payload=AgentContextRequest(
+                query=question.query,
+                top_k=question.top_k,
+                resource_ids=effective_resource_ids,
+                runtime=payload.runtime,
+                include_code_symbols=question.include_code_symbols,
+                max_chars=payload.max_chars,
+            ),
+            principal=principal,
+        )
+        latency_ms = round((perf_counter() - started) * 1000, 2)
+        cited_resource_ids = {citation.resource_id for citation in response.citations}
+        cited_paths = {citation.path for citation in response.citations if citation.path}
+        cited_symbol_names = {symbol.name for symbol in response.symbols}
+        failures: list[str] = []
+        if len(response.citations) < question.min_citations:
+            failures.append("missing_citations")
+        missing_expected = sorted(rid for rid in question.expected_resource_ids if rid not in cited_resource_ids)
+        if missing_expected:
+            failures.append("missing_expected_resources:" + ",".join(str(rid) for rid in missing_expected))
+        forbidden_hits = sorted(rid for rid in question.forbidden_resource_ids if rid in cited_resource_ids)
+        if forbidden_hits:
+            failures.append("forbidden_resources_cited:" + ",".join(str(rid) for rid in forbidden_hits))
+        missing_paths = [path for path in question.expected_paths if path not in cited_paths]
+        if missing_paths:
+            failures.append("missing_expected_paths:" + ",".join(path[:128] for path in missing_paths))
+        missing_symbols = [symbol for symbol in question.expected_symbols if symbol not in cited_symbol_names]
+        if missing_symbols:
+            failures.append("missing_expected_symbols:" + ",".join(symbol[:128] for symbol in missing_symbols))
+        lower_context = response.context.lower()
+        for required in question.required_texts:
+            if required.lower() not in lower_context:
+                failures.append(f"missing_required_text:{required[:128]}")
+        all_failure_reasons.extend(failures)
+        results.append(
+            RetrievalEvalResult(
+                id=question.id,
+                query=question.query,
+                passed=not failures,
+                failure_reasons=failures,
+                latency_ms=latency_ms,
+                citation_count=len(response.citations),
+                context_chars=len(response.context),
+                symbol_count=len(response.symbols),
+                expected_resource_ids=question.expected_resource_ids,
+                cited_resource_ids=sorted(cited_resource_ids),
+                forbidden_resource_ids=question.forbidden_resource_ids,
+                hit_quality=[
+                    {
+                        "resource_id": str(citation.resource_id),
+                        "snapshot_id": str(citation.snapshot_id),
+                        "path": citation.path,
+                        "title": citation.title,
+                        "ordinal": citation.ordinal,
+                        "version": citation.version,
+                        "score": citation.score,
+                        "graph_score": citation.graph_score,
+                    }
+                    for citation in response.citations
+                ],
+            )
+        )
+    passed_count = sum(1 for result in results if result.passed)
+    latencies = [result.latency_ms for result in results]
+    return RetrievalEvalResponse(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        generated_at=datetime.now(UTC),
+        provider=embedding_config.provider,
+        model=embedding_config.model,
+        diagnostics={**diagnostics, "rerank_score_range": [0.0, 1.0]},
+        summary=RetrievalEvalSummary(
+            status="passed" if passed_count == len(results) else "failed",
+            question_count=len(results),
+            passed_count=passed_count,
+            failed_count=len(results) - passed_count,
+            pass_rate=round(passed_count / len(results), 4) if results else 0.0,
+            max_latency_ms=max(latencies) if latencies else 0.0,
+            avg_latency_ms=round(sum(latencies) / len(latencies), 2) if latencies else 0.0,
+            failure_reasons=sorted(set(all_failure_reasons)),
+        ),
+        results=results,
     )
 
 
