@@ -214,6 +214,86 @@ class GitResourceEnvUpdate(BaseModel):
     update_frequency: str | None = None
 
 
+class RepoAgentBriefRead(BaseModel):
+    resource_id: UUID
+    name: str
+    uri: str
+    readiness: str
+    current_snapshot_id: UUID | None = None
+    branch: str | None = None
+    commit: str | None = None
+    update_frequency: str
+    freshness: dict = Field(default_factory=dict)
+    stats: dict = Field(default_factory=dict)
+    operating_brief: str
+    entrypoint_paths: list[str] = Field(default_factory=list)
+    config_paths: list[str] = Field(default_factory=list)
+    runtime_paths: list[str] = Field(default_factory=list)
+    runbook_paths: list[str] = Field(default_factory=list)
+    symbol_samples: list[dict] = Field(default_factory=list)
+    suggested_questions: list[str] = Field(default_factory=list)
+    invocation: dict = Field(default_factory=dict)
+    safety_boundary: str
+    quality_gates: list[str] = Field(default_factory=list)
+
+
+class RetrievalEvalQuestion(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    query: str = Field(min_length=1, max_length=4000)
+    expected_resource_ids: list[UUID] = Field(default_factory=list, max_length=20)
+    forbidden_resource_ids: list[UUID] = Field(default_factory=list, max_length=20)
+    resource_ids: list[UUID] | None = Field(default=None, max_length=20)
+    expected_paths: list[str] = Field(default_factory=list, max_length=20)
+    expected_symbols: list[str] = Field(default_factory=list, max_length=20)
+    required_texts: list[str] = Field(default_factory=list, max_length=20)
+    min_citations: int = Field(default=1, ge=0, le=20)
+    top_k: int = Field(default=8, ge=1, le=20)
+    include_code_symbols: bool = True
+
+
+class RetrievalEvalRequest(BaseModel):
+    questions: list[RetrievalEvalQuestion] = Field(min_length=1, max_length=10)
+    runtime: str = Field(default="hermes", pattern=r"^(api|hermes|claude|codex|cursor)$")
+    max_chars: int = Field(default=8000, ge=1000, le=12000)
+
+
+class RetrievalEvalResult(BaseModel):
+    id: str
+    query: str
+    passed: bool
+    failure_reasons: list[str] = Field(default_factory=list)
+    latency_ms: float
+    citation_count: int
+    context_chars: int
+    symbol_count: int
+    expected_resource_ids: list[UUID] = Field(default_factory=list)
+    cited_resource_ids: list[UUID] = Field(default_factory=list)
+    forbidden_resource_ids: list[UUID] = Field(default_factory=list)
+    hit_quality: list[dict] = Field(default_factory=list)
+
+
+class RetrievalEvalSummary(BaseModel):
+    status: str
+    question_count: int
+    passed_count: int
+    failed_count: int
+    pass_rate: float
+    max_latency_ms: float
+    avg_latency_ms: float
+    failure_reasons: list[str] = Field(default_factory=list)
+
+
+class RetrievalEvalResponse(BaseModel):
+    workspace_id: UUID
+    project_id: UUID
+    generated_at: datetime
+    provider: str
+    model: str
+    diagnostics: dict = Field(default_factory=dict)
+    summary: RetrievalEvalSummary
+    results: list[RetrievalEvalResult]
+
+
 class DueRefreshResponse(BaseModel):
     scanned: int
     enqueued: int

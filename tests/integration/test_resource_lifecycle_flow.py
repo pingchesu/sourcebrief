@@ -409,12 +409,16 @@ def test_resource_lifecycle_requires_project_membership() -> None:
         ("get", f"/workspaces/{workspace_id}/projects/{project_id}/agent-files"),
         ("post", f"/workspaces/{workspace_id}/projects/{project_id}/agent-files/regenerate"),
         ("get", f"/workspaces/{workspace_id}/projects/{project_id}/git-env"),
+        ("post", f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals"),
+        ("get", f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{resource_id}/brief"),
         ("patch", f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/git-env"),
         ("delete", f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}"),
     ]:
-        kwargs = {"headers": intruder}
+        kwargs: dict[str, object] = {"headers": intruder}
         if method == "post" and url.endswith("/review"):
             kwargs["json"] = {"review_status": "approved"}
+        if method == "post" and url.endswith("/retrieval-evals"):
+            kwargs["json"] = {"questions": [{"id": "q1", "query": "authreview"}]}
         if method == "patch" and url.endswith("/git-env"):
             kwargs["json"] = {"branch": "main"}
         response = getattr(client, method)(url, **kwargs)

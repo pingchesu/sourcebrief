@@ -358,6 +358,34 @@ def test_api_tokens_enforce_scopes_and_resource_allowlists() -> None:
     )
     assert explicit_denied.status_code == 404
 
+    scoped_eval = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
+        json={
+            "questions": [
+                {
+                    "id": "scoped-token-defaults-to-allowed-resource",
+                    "query": "marker token",
+                    "expected_resource_ids": [resource_id],
+                    "required_texts": ["Runbook body"],
+                    "top_k": 8,
+                }
+            ]
+        },
+        headers=bearer,
+    )
+    assert scoped_eval.status_code == 200, scoped_eval.text
+    scoped_eval_body = scoped_eval.json()
+    assert scoped_eval_body["summary"]["status"] == "passed"
+    assert scoped_eval_body["diagnostics"]["matching_embedding_count"] > 0
+    assert {citation["resource_id"] for citation in scoped_eval_body["results"][0]["hit_quality"]} == {resource_id}
+
+    eval_denied = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
+        json={"questions": [{"id": "denied", "query": "marker token", "resource_ids": [other_resource_id]}]},
+        headers=bearer,
+    )
+    assert eval_denied.status_code == 404
+
     revoked = client.delete(f"/workspaces/{workspace_id}/api-tokens/{token_id}", headers=headers)
     assert revoked.status_code == 200, revoked.text
     after_revoke = client.post(

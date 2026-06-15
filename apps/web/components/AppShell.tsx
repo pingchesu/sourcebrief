@@ -10,6 +10,7 @@ const NAV = [
   ['/', 'Dashboard'],
   ['/import', 'Import Resources'],
   ['/repo-agents', 'Repo Agents'],
+  ['/evals', 'Quality Evals'],
   ['/agent-files', 'Agent Files'],
   ['/git-env', 'Git Env'],
   ['/maintenance', 'Update / Reindex'],
