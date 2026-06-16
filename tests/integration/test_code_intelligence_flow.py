@@ -368,10 +368,23 @@ def test_repo_agent_brief_and_retrieval_eval_are_productized(tmp_path) -> None:
     assert eval_response.status_code == 200, eval_response.text
     eval_body = eval_response.json()
     assert eval_body["summary"]["status"] == "passed"
+    assert eval_body["run_id"]
     assert eval_body["summary"]["passed_count"] == 1
     assert eval_body["results"][0]["passed"] is True
     assert resource_id in eval_body["results"][0]["cited_resource_ids"]
     assert eval_body["results"][0]["hit_quality"]
+
+    history = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals", headers=headers)
+    assert history.status_code == 200, history.text
+    assert history.json()["count"] >= 1
+    assert history.json()["runs"][0]["id"] == eval_body["run_id"]
+    detail = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals/{eval_body['run_id']}",
+        headers=headers,
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["summary"]["status"] == "passed"
+    assert detail.json()["results"][0]["hit_quality"]
 
     forbidden = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",

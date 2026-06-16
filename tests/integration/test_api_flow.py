@@ -376,8 +376,46 @@ def test_api_tokens_enforce_scopes_and_resource_allowlists() -> None:
     assert scoped_eval.status_code == 200, scoped_eval.text
     scoped_eval_body = scoped_eval.json()
     assert scoped_eval_body["summary"]["status"] == "passed"
+    assert scoped_eval_body["run_id"]
     assert scoped_eval_body["diagnostics"]["matching_embedding_count"] > 0
     assert {citation["resource_id"] for citation in scoped_eval_body["results"][0]["hit_quality"]} == {resource_id}
+
+    project_wide_eval = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
+        json={
+            "questions": [
+                {
+                    "id": "project-wide-hidden-from-resource-token",
+                    "query": "marker token",
+                    "min_citations": 1,
+                    "top_k": 8,
+                }
+            ]
+        },
+        headers=headers,
+    )
+    assert project_wide_eval.status_code == 200, project_wide_eval.text
+    assert project_wide_eval.json()["run_id"]
+
+    scoped_history = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals?limit=1",
+        headers=bearer,
+    )
+    assert scoped_history.status_code == 200, scoped_history.text
+    assert scoped_history.json()["count"] == 1
+    assert scoped_history.json()["runs"][0]["id"] == scoped_eval_body["run_id"]
+    assert scoped_history.json()["runs"][0]["project_wide"] is False
+    hidden_detail = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals/{project_wide_eval.json()['run_id']}",
+        headers=bearer,
+    )
+    assert hidden_detail.status_code == 404
+    scoped_detail = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals/{scoped_eval_body['run_id']}",
+        headers=bearer,
+    )
+    assert scoped_detail.status_code == 200, scoped_detail.text
+    assert scoped_detail.json()["results"][0]["id"] == "scoped-token-defaults-to-allowed-resource"
 
     eval_denied = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",

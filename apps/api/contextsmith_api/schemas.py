@@ -284,9 +284,48 @@ class RetrievalEvalSummary(BaseModel):
 
 
 class RetrievalEvalResponse(BaseModel):
+    run_id: UUID | None = None
     workspace_id: UUID
     project_id: UUID
     generated_at: datetime
+    provider: str
+    model: str
+    diagnostics: dict = Field(default_factory=dict)
+    summary: RetrievalEvalSummary
+    results: list[RetrievalEvalResult]
+
+
+class RetrievalEvalRunSummaryRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    created_at: datetime
+    runtime: str
+    provider: str
+    model: str
+    status: str
+    question_count: int
+    passed_count: int
+    failed_count: int
+    pass_rate: float
+    max_latency_ms: float
+    avg_latency_ms: float
+    project_wide: bool
+    resource_ids: list[UUID] = Field(default_factory=list)
+    failure_reasons: list[str] = Field(default_factory=list)
+
+
+class RetrievalEvalRunListResponse(BaseModel):
+    count: int
+    runs: list[RetrievalEvalRunSummaryRead]
+
+
+class RetrievalEvalRunRead(BaseModel):
+    run_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    created_at: datetime
+    runtime: str
     provider: str
     model: str
     diagnostics: dict = Field(default_factory=dict)

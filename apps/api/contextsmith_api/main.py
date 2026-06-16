@@ -84,6 +84,9 @@ from contextsmith_api.schemas import (
     RetrievalEvalRequest,
     RetrievalEvalResponse,
     RetrievalEvalResult,
+    RetrievalEvalRunListResponse,
+    RetrievalEvalRunRead,
+    RetrievalEvalRunSummaryRead,
     RetrievalEvalSummary,
     SearchHit,
     SearchRequest,
@@ -111,6 +114,8 @@ from contextsmith_shared.models import (
     ProjectMembership,
     QueryRun,
     Resource,
+    RetrievalEvalItem,
+    RetrievalEvalRun,
     RetrievalHit,
     SourceSnapshot,
     User,
@@ -2475,6 +2480,192 @@ def get_repo_agent_brief(
     return _repo_agent_brief_response(session, workspace_id, project_id, resource)
 
 
+def _eval_run_visible_to_principal(principal: Principal, run: RetrievalEvalRun) -> bool:
+    token = principal.api_token
+    if token is None or token.allowed_resource_ids is None:
+        return True
+    if run.project_wide:
+        return False
+    return set(run.resource_ids or []).issubset(set(token.allowed_resource_ids))
+
+
+def _retrieval_eval_run_summary_read(run: RetrievalEvalRun) -> RetrievalEvalRunSummaryRead:
+    summary = run.summary or {}
+    return RetrievalEvalRunSummaryRead(
+        id=run.id,
+        workspace_id=run.workspace_id,
+        project_id=run.project_id,
+        created_at=run.created_at,
+        runtime=run.runtime,
+        provider=run.provider,
+        model=run.model,
+        status=run.status,
+        question_count=run.question_count,
+        passed_count=run.passed_count,
+        failed_count=run.failed_count,
+        pass_rate=run.pass_rate,
+        max_latency_ms=run.max_latency_ms,
+        avg_latency_ms=run.avg_latency_ms,
+        project_wide=run.project_wide,
+        resource_ids=run.resource_ids or [],
+        failure_reasons=list(summary.get("failure_reasons") or []),
+    )
+
+
+def _retrieval_eval_run_read(session: Session, run: RetrievalEvalRun) -> RetrievalEvalRunRead:
+    items = list(
+        session.scalars(
+            select(RetrievalEvalItem)
+            .where(
+                RetrievalEvalItem.workspace_id == run.workspace_id,
+                RetrievalEvalItem.project_id == run.project_id,
+                RetrievalEvalItem.eval_run_id == run.id,
+            )
+            .order_by(RetrievalEvalItem.ordinal.asc())
+        )
+    )
+    return RetrievalEvalRunRead(
+        run_id=run.id,
+        workspace_id=run.workspace_id,
+        project_id=run.project_id,
+        created_at=run.created_at,
+        runtime=run.runtime,
+        provider=run.provider,
+        model=run.model,
+        diagnostics=run.diagnostics or {},
+        summary=RetrievalEvalSummary(**(run.summary or {})),
+        results=[
+            RetrievalEvalResult(
+                id=item.question_id,
+                query=item.query,
+                passed=item.passed,
+                failure_reasons=item.failure_reasons or [],
+                latency_ms=item.latency_ms,
+                citation_count=item.citation_count,
+                context_chars=item.context_chars,
+                symbol_count=item.symbol_count,
+                expected_resource_ids=item.expected_resource_ids or [],
+                cited_resource_ids=item.cited_resource_ids or [],
+                forbidden_resource_ids=item.forbidden_resource_ids or [],
+                hit_quality=item.hit_quality or [],
+            )
+            for item in items
+        ],
+    )
+
+
+def _persist_retrieval_eval_run(
+    session: Session,
+    *,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    payload: RetrievalEvalRequest,
+    response: RetrievalEvalResponse,
+    project_wide: bool,
+    resource_ids: set[UUID],
+) -> RetrievalEvalResponse:
+    run = RetrievalEvalRun(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        actor_user_id=principal.user.id,
+        actor_token_id=principal.token_id,
+        runtime=payload.runtime,
+        provider=response.provider,
+        model=response.model,
+        status=response.summary.status,
+        question_count=response.summary.question_count,
+        passed_count=response.summary.passed_count,
+        failed_count=response.summary.failed_count,
+        pass_rate=response.summary.pass_rate,
+        max_latency_ms=response.summary.max_latency_ms,
+        avg_latency_ms=response.summary.avg_latency_ms,
+        max_chars=payload.max_chars,
+        project_wide=project_wide,
+        resource_ids=sorted(resource_ids),
+        summary=response.summary.model_dump(mode="json"),
+        diagnostics=response.diagnostics,
+    )
+    session.add(run)
+    session.flush()
+    for ordinal, result in enumerate(response.results):
+        session.add(
+            RetrievalEvalItem(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                eval_run_id=run.id,
+                ordinal=ordinal,
+                question_id=result.id,
+                query=result.query,
+                passed=result.passed,
+                latency_ms=result.latency_ms,
+                citation_count=result.citation_count,
+                context_chars=result.context_chars,
+                symbol_count=result.symbol_count,
+                expected_resource_ids=result.expected_resource_ids,
+                cited_resource_ids=result.cited_resource_ids,
+                forbidden_resource_ids=result.forbidden_resource_ids,
+                failure_reasons=result.failure_reasons,
+                hit_quality=result.hit_quality,
+            )
+        )
+    session.commit()
+    return response.model_copy(update={"run_id": run.id})
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
+    response_model=RetrievalEvalRunListResponse,
+)
+def list_retrieval_eval_runs(
+    workspace_id: UUID,
+    project_id: UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RetrievalEvalRunListResponse:
+    require_scope(principal, "project:query")
+    _require_project_access(session, workspace_id, project_id, principal)
+    stmt = select(RetrievalEvalRun).where(
+        RetrievalEvalRun.workspace_id == workspace_id,
+        RetrievalEvalRun.project_id == project_id,
+    )
+    token = principal.api_token
+    if token is not None and token.allowed_resource_ids is not None:
+        resource_ids_column = cast(Any, RetrievalEvalRun.resource_ids)
+        stmt = stmt.where(
+            RetrievalEvalRun.project_wide.is_(False),
+            resource_ids_column.contained_by(token.allowed_resource_ids),
+        )
+    rows = list(session.scalars(stmt.order_by(RetrievalEvalRun.created_at.desc()).limit(limit)))
+    return RetrievalEvalRunListResponse(count=len(rows), runs=[_retrieval_eval_run_summary_read(run) for run in rows])
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals/{run_id}",
+    response_model=RetrievalEvalRunRead,
+)
+def get_retrieval_eval_run(
+    workspace_id: UUID,
+    project_id: UUID,
+    run_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RetrievalEvalRunRead:
+    require_scope(principal, "project:query")
+    _require_project_access(session, workspace_id, project_id, principal)
+    run = session.scalar(
+        select(RetrievalEvalRun).where(
+            RetrievalEvalRun.id == run_id,
+            RetrievalEvalRun.workspace_id == workspace_id,
+            RetrievalEvalRun.project_id == project_id,
+        )
+    )
+    if run is None or not _eval_run_visible_to_principal(principal, run):
+        raise HTTPException(status_code=404, detail="eval run not found")
+    return _retrieval_eval_run_read(session, run)
+
+
 @app.post(
     "/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
     response_model=RetrievalEvalResponse,
@@ -2582,7 +2773,7 @@ def run_retrieval_eval(
         )
     passed_count = sum(1 for result in results if result.passed)
     latencies = [result.latency_ms for result in results]
-    return RetrievalEvalResponse(
+    eval_response = RetrievalEvalResponse(
         workspace_id=workspace_id,
         project_id=project_id,
         generated_at=datetime.now(UTC),
@@ -2600,6 +2791,25 @@ def run_retrieval_eval(
             failure_reasons=sorted(set(all_failure_reasons)),
         ),
         results=results,
+    )
+    persisted_resource_ids = set(referenced_ids)
+    project_wide = False
+    for effective_resource_ids in effective_resource_ids_by_question:
+        if effective_resource_ids is None:
+            project_wide = True
+        else:
+            persisted_resource_ids.update(effective_resource_ids)
+    for result in results:
+        persisted_resource_ids.update(result.cited_resource_ids)
+    return _persist_retrieval_eval_run(
+        session,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        principal=principal,
+        payload=payload,
+        response=eval_response,
+        project_wide=project_wide,
+        resource_ids=persisted_resource_ids,
     )
 
 

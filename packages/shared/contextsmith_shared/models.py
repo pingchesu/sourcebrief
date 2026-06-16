@@ -280,6 +280,53 @@ class RetrievalHit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class RetrievalEvalRun(Base):
+    __tablename__ = "retrieval_eval_runs"
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    actor_token_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("api_tokens.id"))
+    runtime: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    passed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pass_rate: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    max_latency_ms: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    avg_latency_ms: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    max_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    project_wide: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    resource_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list)
+    summary: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    diagnostics: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RetrievalEvalItem(Base):
+    __tablename__ = "retrieval_eval_items"
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    eval_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("retrieval_eval_runs.id"), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    question_id: Mapped[str] = mapped_column(Text, nullable=False)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    latency_ms: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    citation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    context_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    symbol_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expected_resource_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list)
+    cited_resource_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list)
+    forbidden_resource_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list)
+    failure_reasons: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
+    hit_quality: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ContextPacket(Base):
     __tablename__ = "context_packets"
     id = uuid_pk()
