@@ -33,5 +33,14 @@ export async function apiFetchText(settings: PlatformSettings, path: string, ini
   return text;
 }
 
+export async function apiFetchBlob(settings: PlatformSettings, path: string, init: RequestInit = {}): Promise<Blob> {
+  const response = await fetch(`${settings.apiBaseUrl}${path}`, { ...init, headers: { ...authHeaders(settings), ...(init.headers as Record<string, string> | undefined) } });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiError(response.status, text || response.statusText);
+  }
+  return response.blob();
+}
+
 export const short = (id?: string | null) => id ? id.slice(0, 8) : '—';
 export const fmt = (value?: string | null) => value ? new Date(value).toLocaleString() : '—';

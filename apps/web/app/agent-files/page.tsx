@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { PageHeader, Card, EmptyState, Metric, StatusChip } from '../../components/ui';
 import { usePlatform } from '../../lib/platform-context';
 import type { AgentFile, AgentFilesResponse } from '../../lib/types';
-import { apiFetchText, fmt } from '../../lib/api';
+import { apiFetchBlob, apiFetchText, fmt } from '../../lib/api';
 
 type AgentPackArtifact = { path: string; kind: string; description: string; content: string };
 
@@ -22,6 +22,15 @@ function downloadArtifact(file: AgentPackArtifact) {
   const link = document.createElement('a');
   link.href = href;
   link.download = file.path.replaceAll('/', '__');
+  link.click();
+  URL.revokeObjectURL(href);
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(href);
 }
@@ -64,6 +73,15 @@ export default function AgentFilesPage() {
     finally { setPackBusy(false); }
   }
 
+  async function downloadPackZip() {
+    setPackBusy(true); setPackError(null);
+    try {
+      const blob = await apiFetchBlob(settings, `/workspaces/${settings.workspaceId}/projects/${settings.projectId}/agent-pack.zip`);
+      downloadBlob(blob, 'contextsmith-skill-pack.zip');
+    } catch (err) { setPackError(String(err)); }
+    finally { setPackBusy(false); }
+  }
+
   useEffect(() => { void load(false); void loadPack(); }, [settings.workspaceId, settings.projectId]);
 
   return <main className="page">
@@ -75,7 +93,7 @@ export default function AgentFilesPage() {
       <h2>Install remote repo agent</h2>
       <p className="muted">Phase 1 Skill Pack is context-only and remote-first. Install the Hermes skill shim from a pinned raw GitHub URL after publishing, then configure MCP separately with a scoped token. The local runtime must not assume repo files are available for local grep/read.</p>
       <div className="notice">Available capability: <strong>contextsmith.get_agent_context</strong>. Remote grep/read/search/symbol tools are intentionally not advertised yet.</div>
-      <button className="btn secondary" disabled={packBusy} onClick={() => void loadPack()}>{packBusy ? 'Loading…' : 'Reload Skill Pack artifacts'}</button>
+      <div className="actions"><button className="btn secondary" disabled={packBusy} onClick={() => void loadPack()}>{packBusy ? 'Loading…' : 'Reload Skill Pack artifacts'}</button><button className="btn" disabled={packBusy} onClick={() => void downloadPackZip()}>Download Skill Pack (.zip)</button></div>
       {packError ? <div className="notice error">{packError}</div> : null}
       <div className="grid two">
         <div className="grid">
