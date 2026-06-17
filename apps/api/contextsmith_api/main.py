@@ -8,10 +8,12 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any, cast
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 from redis import Redis
 from rq import Queue
@@ -304,7 +306,7 @@ def _agent_file_response(
             "id": str(resource.id),
             "name": resource.name,
             "type": resource.type,
-            "uri": resource.uri,
+            "uri": _agent_pack_public_source_uri(resource.uri),
             "status": resource.status,
             "retrieval_enabled": resource.retrieval_enabled,
             "update_frequency": resource.update_frequency,
@@ -324,7 +326,7 @@ def _agent_file_response(
         "repo_agents": [str(resource.id) for resource in repo_resources],
     }
     resources_md = "\n".join(
-        f"- `{resource.type}` **{resource.name}** (`{resource.id}`): {resource.uri}; refresh={resource.update_frequency}; snapshot={resource.current_snapshot_id or 'none'}"
+        f"- `{resource.type}` **{resource.name}** (`{resource.id}`): {_agent_pack_public_source_uri(resource.uri)}; refresh={resource.update_frequency}; snapshot={resource.current_snapshot_id or 'none'}"
         for resource in resources
     ) or "- No resources imported yet."
     repo_skill_files = []
@@ -344,8 +346,8 @@ def _agent_file_response(
                     f"# {resource.name} repo agent\n\n"
                     "## Scope\n"
                     f"- Resource ID: `{resource.id}`\n"
-                    f"- URI: `{resource.uri}`\n"
-                    f"- Branch/ref: `{source_config.get('branch') or source_config.get('ref') or 'default'}`\n"
+                    f"- URI: `{_agent_pack_public_source_uri(resource.uri)}`\n"
+                    f"- Branch/ref: `{_agent_pack_public_text(str(source_config.get('branch') or source_config.get('ref')) if source_config.get('branch') or source_config.get('ref') else None, 'default')}`\n"
                     f"- Current snapshot: `{resource.current_snapshot_id or 'none'}`\n"
                     f"- Update frequency: `{resource.update_frequency}`\n\n"
                     "## How to use\n"
@@ -421,6 +423,326 @@ def _agent_file_response(
         repo_agent_count=len(repo_resources),
         files=files,
     )
+
+
+_AGENT_PACK_BLOCKED_TEXT_MARKERS = (
+    "file://",
+    "/home",
+    "/tmp",
+    "/qa-fixtures",
+    "/var",
+    "/opt",
+    "/srv",
+    "/data",
+    "/mnt",
+    "/users/",
+    "c:\\",
+    "\\\\",
+)
+_AGENT_PACK_PUBLIC_URI_SCHEMES = {"http", "https", "git", "ssh"}
+_AGENT_PACK_HASH_RE = re.compile(r"^[A-Fa-f0-9]{7,64}$")
+
+
+def _agent_pack_public_source_uri(uri: str) -> str:
+    compact_uri = " ".join(uri.split())
+    lower_uri = compact_uri.lower()
+    if any(marker in lower_uri for marker in _AGENT_PACK_BLOCKED_TEXT_MARKERS):
+        return "private-or-worker-managed-source"
+    try:
+        parsed = urlsplit(compact_uri)
+    except ValueError:
+        return "private-or-worker-managed-source"
+    if parsed.scheme and parsed.scheme.lower() not in _AGENT_PACK_PUBLIC_URI_SCHEMES:
+        return "private-or-worker-managed-source"
+    if not parsed.scheme:
+        return "private-or-worker-managed-source"
+    netloc = parsed.hostname or parsed.netloc
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+
+
+def _agent_pack_public_commit(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    compact = " ".join(value.split())
+    if _AGENT_PACK_HASH_RE.fullmatch(compact):
+        return compact
+    return None
+
+
+def _agent_pack_public_text(value: str | None, fallback: str) -> str:
+    if not value:
+        return fallback
+    compact = " ".join(value.split())
+    if any(marker in compact.lower() for marker in _AGENT_PACK_BLOCKED_TEXT_MARKERS):
+        return fallback
+    return compact
+
+
+def _agent_pack_public_description(description: str | None) -> str:
+    return _agent_pack_public_text(description, "Generated ContextSmith remote repo agent.")
+
+
+def _agent_pack_resources(resources: list[Resource], principal: Principal) -> list[Resource]:
+    return [
+        resource
+        for resource in resources
+        if resource.archived_at is None and token_allows_resource(principal, resource.id)
+    ]
+
+
+def _agent_pack_snapshot_metadata(session: Session, resources: list[Resource]) -> dict[UUID, dict[str, Any]]:
+    snapshot_ids = [resource.current_snapshot_id for resource in resources if resource.current_snapshot_id]
+    if not snapshot_ids:
+        return {}
+    rows = session.execute(
+        select(SourceSnapshot.id, SourceSnapshot.meta).where(SourceSnapshot.id.in_(snapshot_ids))
+    ).all()
+    return {
+        snapshot_id: cast(dict[str, Any], metadata if isinstance(metadata, dict) else {})
+        for snapshot_id, metadata in rows
+    }
+
+
+def _agent_pack_source(resource: Resource, snapshot_metadata: Mapping[UUID, dict[str, Any]]) -> dict[str, Any]:
+    source_config = cast(dict[str, Any], resource.source_config or {})
+    metadata = snapshot_metadata.get(resource.current_snapshot_id) if resource.current_snapshot_id else None
+    metadata = metadata or {}
+    branch = source_config.get("branch") or source_config.get("ref") or metadata.get("branch")
+    commit = _agent_pack_public_commit(metadata.get("commit") or metadata.get("version"))
+    status = "ready" if resource.current_snapshot_id and resource.status == "active" else resource.status
+    return {
+        "resource_id": str(resource.id),
+        "name": _agent_pack_public_text(resource.name, f"Resource {resource.id}"),
+        "type": resource.type,
+        "source_uri": _agent_pack_public_source_uri(resource.uri),
+        "default_branch": _agent_pack_public_text(str(branch) if branch else None, "default"),
+        "indexed_commit": commit,
+        "current_snapshot_id": str(resource.current_snapshot_id) if resource.current_snapshot_id else None,
+        "status": status,
+    }
+
+
+def _agent_pack_manifest_dict(
+    workspace_id: UUID,
+    project: Project,
+    agent_name: str,
+    agent_description: str | None,
+    sources: list[dict[str, Any]],
+) -> dict[str, Any]:
+    generated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    slug = _file_slug(agent_name or project.name)
+    public_name = _agent_pack_public_text(agent_name or project.name, f"ContextSmith Project {project.id}")
+    return {
+        "kind": "contextsmith.repo-agent",
+        "version": 1,
+        "identity": {
+            "name": public_name,
+            "slug": slug,
+            "description": _agent_pack_public_description(agent_description or project.description),
+            "workspace_id": str(workspace_id),
+            "project_id": str(project.id),
+            "agent_card_url": "${CONTEXTSMITH_API_BASE_URL}" + f"/workspaces/{workspace_id}/projects/{project.id}/repo-agents",
+        },
+        "contextsmith": {
+            "api_base_url": "${CONTEXTSMITH_API_BASE_URL}",
+            "mcp_endpoint": "${CONTEXTSMITH_API_BASE_URL}" + f"/mcp/{workspace_id}/{project.id}",
+            "agent_context_endpoint": "${CONTEXTSMITH_API_BASE_URL}" + f"/workspaces/{workspace_id}/projects/{project.id}/agent-context",
+            "auth": {"type": "bearer", "token_env": "CONTEXTSMITH_TOKEN"},
+        },
+        "runtime_access": {
+            "mode": "remote_only",
+            "local_repo_required": False,
+            "local_grep_allowed": False,
+        },
+        "capabilities": {"required": ["get_agent_context"], "optional": []},
+        "sources": sources,
+        "retrieval_profiles": {
+            "default": "context_only",
+            "profiles": {
+                "context_only": {
+                    "description": "Phase 1 preview: use contextsmith.get_agent_context only. Remote code tools are not available yet."
+                }
+            },
+        },
+        "mutation_policy": {
+            "default": "read_only",
+            "patch_generation": "disabled",
+            "remote_write": "disabled",
+            "open_pr": "disabled",
+        },
+        "citation_policy": {
+            "path_format": "repo_relative",
+            "require_indexed_commit": True,
+            "include_resource_id": True,
+        },
+        "freshness": {
+            "generated_at": generated_at,
+            "expires_after": "P7D",
+            "stale_after": "P14D",
+        },
+    }
+
+
+def _yaml_scalar(value: Any) -> str:
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text_value = str(value)
+    if not text_value or any(char in text_value for char in [":", "#", "{", "}", "[", "]", "\n", "'", '"']):
+        return json.dumps(text_value)
+    return text_value
+
+
+def _to_yaml(value: Any, indent: int = 0) -> str:
+    prefix = " " * indent
+    if isinstance(value, Mapping):
+        lines: list[str] = []
+        for key, item in value.items():
+            if isinstance(item, (Mapping, list)):
+                lines.append(f"{prefix}{key}:")
+                lines.append(_to_yaml(item, indent + 2))
+            else:
+                lines.append(f"{prefix}{key}: {_yaml_scalar(item)}")
+        return "\n".join(lines)
+    if isinstance(value, list):
+        if not value:
+            return f"{prefix}[]"
+        lines = []
+        for item in value:
+            if isinstance(item, Mapping):
+                lines.append(f"{prefix}-")
+                lines.append(_to_yaml(item, indent + 2))
+            elif isinstance(item, list):
+                lines.append(f"{prefix}-")
+                lines.append(_to_yaml(item, indent + 2))
+            else:
+                lines.append(f"{prefix}- {_yaml_scalar(item)}")
+        return "\n".join(lines)
+    return f"{prefix}{_yaml_scalar(value)}"
+
+
+def _agent_pack_manifest_yaml(manifest: Mapping[str, Any]) -> str:
+    return _to_yaml(manifest) + "\n"
+
+
+def _agent_pack_source_lines(sources: list[dict[str, Any]]) -> str:
+    if not sources:
+        return "- No authorized resources are included in this generated pack."
+    return "\n".join(
+        f"- {source['name']} ({source['type']}, resource_id={source['resource_id']}, snapshot={source.get('current_snapshot_id') or 'none'}, commit={source.get('indexed_commit') or 'unknown'})"
+        for source in sources
+    )
+
+
+def _agent_pack_hermes_skill(manifest: Mapping[str, Any]) -> str:
+    identity = cast(Mapping[str, Any], manifest["identity"])
+    contextsmith = cast(Mapping[str, Any], manifest["contextsmith"])
+    sources = cast(list[dict[str, Any]], manifest["sources"])
+    slug = str(identity["slug"])
+    description = f"Use this ContextSmith remote repo agent for {identity['name']} questions."
+    return (
+        "---\n"
+        f"name: {_yaml_scalar(slug)}\n"
+        f"description: {_yaml_scalar(description)}\n"
+        "---\n\n"
+        f"# {identity['name']}\n\n"
+        "This is a ContextSmith remote repo agent skill shim. Installing this raw `SKILL.md` only installs the Hermes skill; MCP configuration is a separate mandatory setup step.\n\n"
+        "## Runtime contract\n"
+        "- Remote-only: do not assume the target repositories exist on this machine.\n"
+        "- Do not run local `grep`, `rg`, `cat`, or filesystem edits for these repositories unless the user explicitly provides a separate local checkout for the current task.\n"
+        "- Phase 1 context-only preview: use only `contextsmith.get_agent_context`. Follow-up remote code tools are not available in this pack yet.\n"
+        "- Cite repo-relative paths, resource IDs, and indexed commits/snapshots when ContextSmith returns them.\n"
+        "- Treat indexed code as static evidence, not live production state.\n"
+        "- Mutation policy is read-only; do not claim patch, PR, write, test execution, deployment, or production mutation capability from this skill.\n\n"
+        "## Required MCP setup\n"
+        f"Configure the ContextSmith MCP endpoint separately: `{contextsmith['mcp_endpoint']}`.\n"
+        "Use a scoped bearer token through the `CONTEXTSMITH_TOKEN` environment variable or your runtime's secret manager. Do not place plaintext tokens in this skill.\n\n"
+        "## Workflow\n"
+        "1. Use this skill when the user asks about the listed project/repository scope.\n"
+        "2. Call `contextsmith.get_agent_context` with the user's question and an appropriate resource scope when known.\n"
+        "3. If the answer needs evidence not returned by ContextSmith, say the Phase 1 pack is context-only and ask whether to refresh/index or use a separate local checkout.\n"
+        "4. Preserve authorization and production-mutation boundaries.\n\n"
+        "## Authorized sources in this generated pack\n"
+        f"{_agent_pack_source_lines(sources)}\n"
+    )
+
+
+def _agent_pack_codex_agents(manifest: Mapping[str, Any]) -> str:
+    identity = cast(Mapping[str, Any], manifest["identity"])
+    sources = cast(list[dict[str, Any]], manifest["sources"])
+    return (
+        f"# {identity['name']} ContextSmith Remote Repo Agent\n\n"
+        "You are using a ContextSmith remote repo agent. The checked-out Skill Pack is not the target source repository.\n\n"
+        "- Remote-only: do not assume repository files exist in the current working directory.\n"
+        "- Do not run local `grep`, `rg`, `cat`, or edits for target repositories unless the user explicitly provides a separate local checkout.\n"
+        "- Phase 1 context-only preview: use only `contextsmith.get_agent_context`; follow-up remote code tools are not available yet.\n"
+        "- Cite repo-relative paths, resource IDs, and indexed commits/snapshots from ContextSmith.\n"
+        "- Treat indexed code as static evidence, not live production truth.\n"
+        "- Read-only by default; do not perform source-control, deployment, or production mutations.\n\n"
+        "## Authorized sources\n"
+        f"{_agent_pack_source_lines(sources)}\n"
+    )
+
+
+def _agent_pack_claude_md(manifest: Mapping[str, Any]) -> str:
+    identity = cast(Mapping[str, Any], manifest["identity"])
+    sources = cast(list[dict[str, Any]], manifest["sources"])
+    return (
+        f"# {identity['name']} ContextSmith Remote Repo Agent\n\n"
+        "Use ContextSmith MCP for this repo agent. This instruction file is not a source checkout.\n\n"
+        "- Remote-only: do not assume target repositories are local.\n"
+        "- Do not use local `grep`, `rg`, `cat`, or filesystem edits for the target repos unless the user provides a separate checkout.\n"
+        "- Phase 1 context-only preview: call `contextsmith.get_agent_context` only; additional remote code inspection tools are not available yet.\n"
+        "- Cite repo-relative paths, indexed commits/snapshots, and resource IDs.\n"
+        "- Static indexed evidence is not live production state.\n"
+        "- Ask for explicit approval before any mutation; this pack is read-only.\n\n"
+        "## Authorized sources\n"
+        f"{_agent_pack_source_lines(sources)}\n"
+    )
+
+
+def _agent_pack_mcp_json(manifest: Mapping[str, Any]) -> dict[str, Any]:
+    identity = cast(Mapping[str, Any], manifest["identity"])
+    contextsmith = cast(Mapping[str, Any], manifest["contextsmith"])
+    server_name = f"contextsmith-{identity['slug']}"
+    server = {
+        "url": contextsmith["mcp_endpoint"],
+        "headers": {"Authorization": "Bearer ${CONTEXTSMITH_TOKEN}"},
+    }
+    return {
+        "hermes": {"mcp_servers": {server_name: server}},
+        "claude": {"mcpServers": {server_name: server}},
+        "codex": {"mcp_servers": {server_name: server}},
+    }
+
+
+def _agent_pack_prepare(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+) -> tuple[Project, dict[str, Any]]:
+    require_scope(principal, "project:read")
+    project = _require_project_access(session, workspace_id, project_id, principal)
+    profile = session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.workspace_id == workspace_id,
+            AgentProfile.project_id == project.id,
+        )
+    )
+    agent_name = profile.name if profile is not None else project.name
+    agent_description = profile.description if profile is not None else project.description
+    resources = _agent_pack_resources(_current_project_resources(session, workspace_id, project_id), principal)
+    snapshot_metadata = _agent_pack_snapshot_metadata(session, resources)
+    sources = [_agent_pack_source(resource, snapshot_metadata) for resource in resources]
+    return project, _agent_pack_manifest_dict(workspace_id, project, agent_name, agent_description, sources)
 
 
 def _git_env_read(resource: Resource) -> GitResourceEnvRead:
@@ -1218,6 +1540,61 @@ def regenerate_agent_files(
     )
     session.commit()
     return _agent_file_response(session, workspace_id, project, profile, resources)
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/agent-pack/manifest")
+def get_agent_pack_manifest(
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> PlainTextResponse:
+    _, manifest = _agent_pack_prepare(session, workspace_id, project_id, principal)
+    return PlainTextResponse(_agent_pack_manifest_yaml(manifest), media_type="application/x-yaml")
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/agent-pack/hermes/SKILL.md")
+def get_agent_pack_hermes_skill(
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> PlainTextResponse:
+    _, manifest = _agent_pack_prepare(session, workspace_id, project_id, principal)
+    return PlainTextResponse(_agent_pack_hermes_skill(manifest), media_type="text/markdown")
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/agent-pack/codex/AGENTS.md")
+def get_agent_pack_codex_agents(
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> PlainTextResponse:
+    _, manifest = _agent_pack_prepare(session, workspace_id, project_id, principal)
+    return PlainTextResponse(_agent_pack_codex_agents(manifest), media_type="text/markdown")
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/agent-pack/claude/CLAUDE.md")
+def get_agent_pack_claude_md(
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> PlainTextResponse:
+    _, manifest = _agent_pack_prepare(session, workspace_id, project_id, principal)
+    return PlainTextResponse(_agent_pack_claude_md(manifest), media_type="text/markdown")
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/agent-pack/mcp.json")
+def get_agent_pack_mcp_json(
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    _, manifest = _agent_pack_prepare(session, workspace_id, project_id, principal)
+    return JSONResponse(_agent_pack_mcp_json(manifest))
 
 
 @app.get(

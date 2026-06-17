@@ -479,3 +479,117 @@ def test_agent_files_and_git_env_surface_repo_agent_outputs() -> None:
         headers=headers,
     )
     assert doc_env.status_code == 422
+
+
+def test_agent_pack_phase1_context_only_remote_install_contract() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "m24-agent-pack")
+    allowed_repo = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={
+            "type": "git",
+            "name": "Allowed Repo: YAML # Safe",
+            "uri": "https://x-access-token:secret-token@example.com/angible/allowed.git?access_token=query-secret#fragment-secret",
+            "source_config": {"url": "https://github.com/angible/allowed.git", "branch": "/var/worker/main"},
+        },
+        headers=headers,
+    )
+    assert allowed_repo.status_code == 201, allowed_repo.text
+    allowed_repo_id = allowed_repo.json()["id"]
+    profile = client.patch(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-profile",
+        json={"name": "Alpha: Beta # Gamma"},
+        headers=headers,
+    )
+    assert profile.status_code == 200, profile.text
+    hidden_repo = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={
+            "type": "git",
+            "name": "Hidden Repo",
+            "uri": "file:///qa-fixtures/hidden.bundle",
+            "source_config": {"url": "file:///qa-fixtures/hidden.bundle", "branch": "main"},
+        },
+        headers=headers,
+    )
+    assert hidden_repo.status_code == 201, hidden_repo.text
+    hidden_repo_id = hidden_repo.json()["id"]
+
+    token = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        json={
+            "name": "agent pack reader",
+            "scopes": ["project:read"],
+            "allowed_project_ids": [project_id],
+            "allowed_resource_ids": [allowed_repo_id],
+        },
+        headers=headers,
+    )
+    assert token.status_code == 201, token.text
+    bearer = {"Authorization": f"Bearer {token.json()['token']}"}
+
+    endpoints = {
+        "manifest": f"/workspaces/{workspace_id}/projects/{project_id}/agent-pack/manifest",
+        "hermes": f"/workspaces/{workspace_id}/projects/{project_id}/agent-pack/hermes/SKILL.md",
+        "codex": f"/workspaces/{workspace_id}/projects/{project_id}/agent-pack/codex/AGENTS.md",
+        "claude": f"/workspaces/{workspace_id}/projects/{project_id}/agent-pack/claude/CLAUDE.md",
+        "mcp": f"/workspaces/{workspace_id}/projects/{project_id}/agent-pack/mcp.json",
+    }
+    responses = {name: client.get(url, headers=bearer) for name, url in endpoints.items()}
+    for response in responses.values():
+        assert response.status_code == 200, response.text
+
+    generated_text = "\n".join(
+        response.text for name, response in responses.items() if name != "mcp"
+    )
+    assert "contextsmith.repo-agent" in responses["manifest"].text
+    assert "required:\n    - get_agent_context" in responses["manifest"].text
+    assert allowed_repo_id in generated_text
+    assert "Allowed Repo: YAML # Safe" in generated_text
+    assert hidden_repo_id not in generated_text
+    assert "Hidden Repo" not in generated_text
+
+    required_phrases = [
+        "Remote-only",
+        "context-only preview",
+        "contextsmith.get_agent_context",
+        "MCP configuration is a separate mandatory setup step",
+        "Do not run local `grep`, `rg`, `cat`",
+    ]
+    for phrase in required_phrases:
+        assert phrase in responses["hermes"].text
+    assert 'description: "Use this ContextSmith remote repo agent for Alpha: Beta # Gamma questions."' in responses[
+        "hermes"
+    ].text
+    assert "not the target source repository" in responses["codex"].text
+    assert "not a source checkout" in responses["claude"].text
+
+    forbidden = [
+        "grep_code",
+        "read_file",
+        "search_code",
+        "find_symbol",
+        "/tmp",
+        "/qa-fixtures",
+        "/home",
+        "/var",
+        "file://",
+        "x-access-token",
+        "secret-token",
+        "query-secret",
+        "fragment-secret",
+        "access_token",
+    ]
+    for token_text in forbidden:
+        assert token_text not in generated_text
+
+    mcp = responses["mcp"].json()
+    hermes_config = mcp["hermes"]["mcp_servers"]
+    claude_config = mcp["claude"]["mcpServers"]
+    codex_config = mcp["codex"]["mcp_servers"]
+    assert hermes_config and claude_config and codex_config
+    mcp_json_text = responses["mcp"].text
+    assert "${CONTEXTSMITH_API_BASE_URL}/mcp/" in mcp_json_text
+    assert "${CONTEXTSMITH_TOKEN}" in mcp_json_text
+    assert token.json()["token"] not in mcp_json_text
