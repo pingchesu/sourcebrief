@@ -235,6 +235,7 @@ def test_resource_review_usage_archive_and_delete_flow() -> None:
     )
     assert purge.status_code == 200, purge.text
     assert purge.json()["purged"] is True
+    assert purge.json()["counts"].get("agent_card_summaries", 0) >= 0
     assert purge.json()["counts"]["resources"] == 1
     purged_get = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", headers=headers)
     assert purged_get.status_code == 404

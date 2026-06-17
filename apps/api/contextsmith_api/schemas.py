@@ -214,6 +214,32 @@ class GitResourceEnvUpdate(BaseModel):
     update_frequency: str | None = None
 
 
+class AgentCardSummaryRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    resource_id: UUID
+    status: str
+    severity: str
+    summary: str
+    findings: list[dict] = Field(default_factory=list)
+    metrics: dict = Field(default_factory=dict)
+    source: str
+    acknowledged_at: datetime | None = None
+    acknowledged_by: UUID | None = None
+    suppressed_until: datetime | None = None
+    created_at: datetime
+
+
+class AgentCardSummaryAcknowledgeRequest(BaseModel):
+    suppress_for_hours: int | None = Field(default=None, ge=1, le=24 * 90)
+
+
+class AgentCardSummaryListResponse(BaseModel):
+    count: int
+    summaries: list[AgentCardSummaryRead]
+
+
 class RepoAgentBriefRead(BaseModel):
     resource_id: UUID
     name: str

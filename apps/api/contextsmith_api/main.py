@@ -8,7 +8,7 @@ import re
 import subprocess
 import zipfile
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
@@ -68,6 +68,9 @@ from contextsmith_api.retrieval import (
 )
 from contextsmith_api.routers import system as system_router
 from contextsmith_api.schemas import (
+    AgentCardSummaryAcknowledgeRequest,
+    AgentCardSummaryListResponse,
+    AgentCardSummaryRead,
     AgentContextCitation,
     AgentContextRequest,
     AgentContextResponse,
@@ -132,11 +135,13 @@ from contextsmith_api.schemas import (
     WorkspaceMemberRead,
     WorkspaceRead,
 )
+from contextsmith_shared.agent_card_auditor import run_agent_card_auditor
 from contextsmith_shared.config import get_settings
 from contextsmith_shared.db import get_session
 from contextsmith_shared.embeddings import current_embedding_config
 from contextsmith_shared.lifecycle import compute_next_refresh_at
 from contextsmith_shared.models import (
+    AgentCardSummary,
     AgentProfile,
     ApiToken,
     AuditEvent,
@@ -1212,6 +1217,7 @@ def _purge_resource_artifacts(session: Session, resource: Resource) -> dict[str,
     params = {"resource_id": resource.id}
     statements = [
         ("resources_current_snapshot", "UPDATE resources SET current_snapshot_id = NULL WHERE id = :resource_id"),
+        ("agent_card_summaries", "DELETE FROM agent_card_summaries WHERE resource_id = :resource_id"),
         ("context_packet_items", "DELETE FROM context_packet_items WHERE resource_id = :resource_id"),
         ("retrieval_hits", "DELETE FROM retrieval_hits WHERE resource_id = :resource_id"),
         ("chunk_embeddings", "DELETE FROM chunk_embeddings WHERE resource_id = :resource_id"),
@@ -3378,6 +3384,155 @@ def agent_context(
         payload=payload,
         principal=principal,
     )
+
+
+def _agent_card_summary_read(summary: AgentCardSummary) -> AgentCardSummaryRead:
+    return AgentCardSummaryRead(
+        id=summary.id,
+        workspace_id=summary.workspace_id,
+        project_id=summary.project_id,
+        resource_id=summary.resource_id,
+        status=summary.status,
+        severity=summary.severity,
+        summary=summary.summary,
+        findings=list(summary.findings or []),
+        metrics=dict(summary.metrics or {}),
+        source=summary.source,
+        acknowledged_at=summary.acknowledged_at,
+        acknowledged_by=summary.acknowledged_by,
+        suppressed_until=summary.suppressed_until,
+        created_at=summary.created_at,
+    )
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries",
+    response_model=AgentCardSummaryListResponse,
+)
+def list_agent_card_summaries(
+    workspace_id: UUID,
+    project_id: UUID,
+    latest_only: bool = Query(default=True),
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> AgentCardSummaryListResponse:
+    require_scope(principal, "review:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    predicates = [
+        AgentCardSummary.workspace_id == workspace_id,
+        AgentCardSummary.project_id == project_id,
+        Resource.id == AgentCardSummary.resource_id,
+        Resource.workspace_id == AgentCardSummary.workspace_id,
+        Resource.project_id == AgentCardSummary.project_id,
+        Resource.deleted_at.is_(None),
+        Resource.archived_at.is_(None),
+    ]
+    if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
+        predicates.append(AgentCardSummary.resource_id.in_(principal.api_token.allowed_resource_ids))
+    summaries = list(
+        session.scalars(
+            select(AgentCardSummary)
+            .where(*predicates)
+            .order_by(AgentCardSummary.resource_id.asc(), AgentCardSummary.created_at.desc())
+            .limit(300)
+        )
+    )
+    if latest_only:
+        latest_by_resource: dict[UUID, AgentCardSummary] = {}
+        for summary in summaries:
+            latest_by_resource.setdefault(summary.resource_id, summary)
+        items = [_agent_card_summary_read(summary) for summary in latest_by_resource.values()]
+    else:
+        items = [_agent_card_summary_read(summary) for summary in summaries[:100]]
+    return AgentCardSummaryListResponse(count=len(items), summaries=items)
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/run",
+    response_model=AgentCardSummaryListResponse,
+)
+def run_agent_card_summary_audit(
+    workspace_id: UUID,
+    project_id: UUID,
+    dry_run: bool = Query(default=True),
+    resource_ids: list[UUID] | None = Query(default=None),
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> AgentCardSummaryListResponse:
+    require_scope(principal, "review:read")
+    if not dry_run:
+        require_scope(principal, "review:write")
+        _require_project_member(session, workspace_id, project_id, principal)
+    else:
+        _require_project_access(session, workspace_id, project_id, principal)
+    effective_resource_ids = _effective_resource_ids(principal, resource_ids)
+    summaries = run_agent_card_auditor(
+        session,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        resource_ids=effective_resource_ids,
+        actor_user_id=principal.user.id,
+        actor_token_id=principal.token_id,
+        persist=not dry_run,
+    )
+    return AgentCardSummaryListResponse(count=len(summaries), summaries=[_agent_card_summary_read(summary) for summary in summaries])
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/{summary_id}/acknowledge",
+    response_model=AgentCardSummaryRead,
+)
+def acknowledge_agent_card_summary(
+    workspace_id: UUID,
+    project_id: UUID,
+    summary_id: UUID,
+    payload: AgentCardSummaryAcknowledgeRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> AgentCardSummaryRead:
+    require_scope(principal, "review:write")
+    _require_project_member(session, workspace_id, project_id, principal)
+    summary = session.scalar(
+        select(AgentCardSummary).where(
+            AgentCardSummary.id == summary_id,
+            AgentCardSummary.workspace_id == workspace_id,
+            AgentCardSummary.project_id == project_id,
+        )
+    )
+    if summary is None:
+        raise HTTPException(status_code=404, detail="agent card summary not found")
+    if not token_allows_resource(principal, summary.resource_id):
+        raise HTTPException(status_code=403, detail="token is not allowed to access this resource")
+    previous = {
+        "acknowledged_at": summary.acknowledged_at.isoformat() if summary.acknowledged_at else None,
+        "acknowledged_by": str(summary.acknowledged_by) if summary.acknowledged_by else None,
+        "suppressed_until": summary.suppressed_until.isoformat() if summary.suppressed_until else None,
+    }
+    now = datetime.now(UTC)
+    summary.acknowledged_at = now
+    summary.acknowledged_by = principal.user.id
+    summary.suppressed_until = now + timedelta(hours=payload.suppress_for_hours) if payload.suppress_for_hours else None
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=principal.user.id,
+            actor_token_id=principal.token_id,
+            action="agent_card.summary_acknowledged",
+            target_type="agent_card_summary",
+            target_id=summary.id,
+            target_ref={"resource_id": str(summary.resource_id)},
+            meta={
+                "previous": previous,
+                "new": {
+                    "acknowledged_at": summary.acknowledged_at.isoformat(),
+                    "acknowledged_by": str(summary.acknowledged_by),
+                    "suppressed_until": summary.suppressed_until.isoformat() if summary.suppressed_until else None,
+                },
+            },
+        )
+    )
+    session.commit()
+    return _agent_card_summary_read(summary)
 
 
 @app.get(

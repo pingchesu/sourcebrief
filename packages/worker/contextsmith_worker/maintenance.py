@@ -4,15 +4,16 @@ import os
 import signal
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from redis import Redis
 from rq import Queue
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from contextsmith_shared.agent_card_auditor import run_agent_card_auditor
 from contextsmith_shared.config import get_settings
 from contextsmith_shared.db import get_sessionmaker
 from contextsmith_shared.lifecycle import (
@@ -151,6 +152,99 @@ def enqueue_due_refreshes(
         session.close()
 
 
+def run_due_agent_card_audits(
+    *,
+    now: datetime | None = None,
+    limit: int = 50,
+    min_interval_hours: int = 24,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Persist due repo-agent card summaries without external side effects."""
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(hours=min_interval_hours)
+    session = get_sessionmaker()()
+    try:
+        project_rows = session.execute(
+            text(
+                """
+                WITH latest_resource_audits AS (
+                    SELECT
+                        r.workspace_id,
+                        r.project_id,
+                        r.id AS resource_id,
+                        MAX(acs.created_at) AS latest_summary_at
+                    FROM resources r
+                    LEFT JOIN agent_card_summaries acs ON acs.workspace_id = r.workspace_id
+                      AND acs.project_id = r.project_id
+                      AND acs.resource_id = r.id
+                    WHERE r.type = 'git'
+                      AND r.deleted_at IS NULL
+                    GROUP BY r.workspace_id, r.project_id, r.id
+                )
+                SELECT p.id, p.workspace_id, MIN(COALESCE(lra.latest_summary_at, TIMESTAMP 'epoch')) AS oldest_latest_summary_at
+                FROM projects p
+                JOIN latest_resource_audits lra ON lra.workspace_id = p.workspace_id
+                  AND lra.project_id = p.id
+                WHERE p.deleted_at IS NULL
+                GROUP BY p.id, p.workspace_id
+                ORDER BY oldest_latest_summary_at ASC, p.created_at ASC
+                LIMIT :limit
+                """
+            ),
+            {"limit": limit},
+        ).mappings().all()
+        audited: list[str] = []
+        skipped_recent: list[str] = []
+        for project in project_rows:
+            resource_rows = session.execute(
+                text(
+                    """
+                    SELECT r.id, MAX(acs.created_at) AS latest_summary_at
+                    FROM resources r
+                    LEFT JOIN agent_card_summaries acs ON acs.workspace_id = r.workspace_id
+                      AND acs.project_id = r.project_id
+                      AND acs.resource_id = r.id
+                    WHERE r.workspace_id = :ws
+                      AND r.project_id = :proj
+                      AND r.type = 'git'
+                      AND r.deleted_at IS NULL
+                    GROUP BY r.id, r.created_at
+                    ORDER BY COALESCE(MAX(acs.created_at), TIMESTAMP 'epoch') ASC, r.created_at ASC
+                    LIMIT :limit
+                    """
+                ),
+                {"ws": project["workspace_id"], "proj": project["id"], "limit": limit},
+            ).mappings().all()
+            due_ids: list[UUID] = []
+            for row in resource_rows:
+                latest = row["latest_summary_at"]
+                if latest is not None and latest > cutoff:
+                    skipped_recent.append(str(row["id"]))
+                else:
+                    due_ids.append(row["id"])
+            if dry_run:
+                audited.extend(str(resource_id) for resource_id in due_ids)
+            elif due_ids:
+                summaries = run_agent_card_auditor(
+                    session,
+                    workspace_id=project.workspace_id,
+                    project_id=project.id,
+                    resource_ids=due_ids,
+                    now=now,
+                    persist=True,
+                    limit=limit,
+                )
+                audited.extend(str(summary.resource_id) for summary in summaries)
+        if dry_run:
+            session.rollback()
+        return {"scanned_projects": len(project_rows), "audited": len(audited), "resource_ids": audited, "skipped_recent": skipped_recent, "dry_run": dry_run}
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 def main() -> None:
     running = True
 
@@ -162,12 +256,18 @@ def main() -> None:
     signal.signal(signal.SIGINT, stop)
     interval_seconds = int(os.getenv("CONTEXTSMITH_MAINTENANCE_INTERVAL_SECONDS", "60"))
     limit = int(os.getenv("CONTEXTSMITH_MAINTENANCE_LIMIT", "100"))
+    audit_interval_hours = int(os.getenv("CONTEXTSMITH_AGENT_CARD_AUDIT_INTERVAL_HOURS", "24"))
+    enable_agent_card_audits = os.getenv("CONTEXTSMITH_AGENT_CARD_AUDITOR", "true").lower() == "true"
     print("ContextSmith maintenance scheduler started", flush=True)
     while running:
         try:
             result = enqueue_due_refreshes(limit=limit)
             if result["enqueued"]:
                 print(f"scheduled refreshes: {result}", flush=True)
+            if enable_agent_card_audits:
+                audit_result = run_due_agent_card_audits(limit=limit, min_interval_hours=audit_interval_hours)
+                if audit_result["audited"]:
+                    print(f"agent card audits: {audit_result}", flush=True)
         except Exception as exc:  # pragma: no cover - process supervisor observes logs
             print(f"maintenance scheduler error: {exc}", file=sys.stderr, flush=True)
         for _ in range(max(1, interval_seconds)):

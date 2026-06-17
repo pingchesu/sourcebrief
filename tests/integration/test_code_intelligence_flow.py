@@ -54,6 +54,19 @@ def add_resource(client: TestClient, workspace_id: str, project_id: str, headers
     return res.json()["id"]
 
 
+def create_token(client: TestClient, workspace_id: str, headers: dict[str, str], scopes: list[str], allowed_resource_ids: list[str] | None = None) -> dict[str, str]:
+    payload: dict = {"name": f"agent-card-token-{uuid.uuid4().hex[:8]}", "scopes": scopes}
+    if allowed_resource_ids is not None:
+        payload["allowed_resource_ids"] = allowed_resource_ids
+    response = client.post(f"/workspaces/{workspace_id}/api-tokens", json=payload, headers=headers)
+    assert response.status_code == 201, response.text
+    result = response.json()
+    token_headers = {"Authorization": f"Bearer {result['token']}"}
+    if "review:write" in scopes:
+        token_headers["X-User-Email"] = headers["X-User-Email"]
+    return token_headers
+
+
 def ingest_inproc(client: TestClient, workspace_id: str, project_id: str, resource_id: str, headers: dict[str, str]) -> dict:
     session = get_sessionmaker()()
     run = IndexRun(
@@ -330,6 +343,12 @@ def test_repo_agent_brief_and_retrieval_eval_are_productized(tmp_path) -> None:
     )
     completed = ingest_inproc(client, workspace_id, project_id, resource_id, headers)
     assert completed["status"] == "succeeded"
+    review = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/review",
+        json={"review_status": "approved", "retrieval_enabled": True, "stale_after_days": 30},
+        headers=headers,
+    )
+    assert review.status_code == 200, review.text
 
     brief = client.get(
         f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{resource_id}/brief",
@@ -427,6 +446,79 @@ def test_repo_agent_brief_and_retrieval_eval_are_productized(tmp_path) -> None:
     assert detail.json()["profile"] == "hybrid_rerank"
     assert detail.json()["summary"]["status"] == "passed"
     assert detail.json()["results"][0]["hit_quality"]
+
+    read_only_persist = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/run?dry_run=false",
+        headers=create_token(client, workspace_id, headers, ["review:read"], allowed_resource_ids=[resource_id]),
+    )
+    assert read_only_persist.status_code == 403, read_only_persist.text
+
+    audit = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/run?dry_run=false",
+        headers=headers,
+    )
+    assert audit.status_code == 200, audit.text
+    audit_body = audit.json()
+    assert audit_body["count"] == 1
+    assert audit_body["summaries"][0]["resource_id"] == resource_id
+    assert audit_body["summaries"][0]["status"] == "healthy"
+    assert audit_body["summaries"][0]["metrics"]["latest_eval_profile"] == "hybrid_rerank"
+    assert audit_body["summaries"][0]["findings"] == []
+
+    summaries = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries",
+        headers=headers,
+    )
+    assert summaries.status_code == 200, summaries.text
+    assert summaries.json()["count"] == 1
+    assert summaries.json()["summaries"][0]["status"] == "healthy"
+
+    scoped_headers = create_token(client, workspace_id, headers, ["review:read", "review:write"], allowed_resource_ids=[resource_id])
+    scoped_list = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries",
+        headers=scoped_headers,
+    )
+    assert scoped_list.status_code == 200, scoped_list.text
+    assert scoped_list.json()["count"] == 1
+    hidden_headers = create_token(client, workspace_id, headers, ["review:read"], allowed_resource_ids=[])
+    hidden_list = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries",
+        headers=hidden_headers,
+    )
+    assert hidden_list.status_code == 200, hidden_list.text
+    assert hidden_list.json()["count"] == 0
+    default_dry_run = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/run",
+        headers=scoped_headers,
+    )
+    assert default_dry_run.status_code == 200, default_dry_run.text
+    assert default_dry_run.json()["count"] == 1
+    scoped_dry_run = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/run?dry_run=true",
+        headers=scoped_headers,
+    )
+    assert scoped_dry_run.status_code == 200, scoped_dry_run.text
+    assert scoped_dry_run.json()["count"] == 1
+    dry_run_after = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries?latest_only=false",
+        headers=headers,
+    )
+    assert dry_run_after.status_code == 200, dry_run_after.text
+    assert dry_run_after.json()["count"] == 1
+    ack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/{audit_body['summaries'][0]['id']}/acknowledge",
+        json={"suppress_for_hours": 24},
+        headers=scoped_headers,
+    )
+    assert ack.status_code == 200, ack.text
+    assert ack.json()["acknowledged_at"]
+    assert ack.json()["suppressed_until"]
+    hidden_ack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/{audit_body['summaries'][0]['id']}/acknowledge",
+        json={"suppress_for_hours": 24},
+        headers=hidden_headers,
+    )
+    assert hidden_ack.status_code == 403, hidden_ack.text
 
     mcp_tools = client.post(
         f"/mcp/{workspace_id}/{project_id}",
