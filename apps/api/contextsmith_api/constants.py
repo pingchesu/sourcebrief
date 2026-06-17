@@ -9,6 +9,7 @@ ALLOWED_TOKEN_SCOPES = {
     "resource:refresh",
     "review:read",
     "review:write",
+    "code:read",
     "token:admin",
 }
 

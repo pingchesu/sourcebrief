@@ -159,6 +159,26 @@ class Chunk(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class SnapshotFile(Base):
+    __tablename__ = "snapshot_files"
+    __table_args__ = (UniqueConstraint("source_snapshot_id", "path", name="uq_snapshot_files_snapshot_path"),)
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    line_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    language: Mapped[str | None] = mapped_column(Text)
+    is_binary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class IndexRun(Base):
     __tablename__ = "index_runs"
     id = uuid_pk()

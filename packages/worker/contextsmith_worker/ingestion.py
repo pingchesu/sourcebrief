@@ -45,7 +45,14 @@ from contextsmith_shared.embeddings import (
     vector_literal,
 )
 from contextsmith_shared.graph_index import build_graph_index
-from contextsmith_shared.models import Chunk, CodeSymbol, IndexRun, Resource, SourceSnapshot
+from contextsmith_shared.models import (
+    Chunk,
+    CodeSymbol,
+    IndexRun,
+    Resource,
+    SnapshotFile,
+    SourceSnapshot,
+)
 
 # --- configuration ---------------------------------------------------------
 
@@ -285,9 +292,21 @@ def is_text_file(data: bytes) -> bool:
     return True
 
 
-def should_index_path(relpath: str) -> bool:
+def validate_snapshot_path(path: str) -> str:
+    value = path.strip()
+    lower = value.lower()
+    if not value or "\x00" in value or "\\" in value:
+        raise ValueError("snapshot path must be a repo-relative POSIX path")
+    if value.startswith("/") or re.match(r"^[A-Za-z]:", value) or lower.startswith(("file://", "http://", "https://")):
+        raise ValueError("snapshot path must not be absolute or backend-local")
+    if any(part in {"", ".", ".."} for part in value.split("/")):
+        raise ValueError("snapshot path must not contain traversal")
+    return value
+
+
+def should_index_path(path: str) -> bool:
     """Return True if a repo-relative path should be indexed."""
-    posix = relpath.replace("\\", "/").strip("/")
+    posix = path.replace("\\", "/").strip("/")
     if not posix:
         return False
     parts = posix.split("/")
@@ -402,8 +421,10 @@ def validate_git_url(url: str, *, allow_local: bool = False) -> tuple[bool, str]
     if scheme == "https":
         if not parsed.hostname:
             raise ValueError("https git url missing host")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.params:
+            raise ValueError("https git url must not include credentials, query, or fragment")
         validate_public_https_host(parsed.hostname)
-        return False, candidate
+        return False, sanitize_remote_url(candidate)
     if scheme == "file":
         if not allow_local:
             raise ValueError("local git paths are disabled")
@@ -895,6 +916,23 @@ def _collect_git(resource: Resource) -> tuple[list[dict], str, str, dict]:
 
 # --- orchestration ---------------------------------------------------------
 
+def _language_for_path(path: str | None) -> str | None:
+    if not path or "." not in path:
+        return None
+    ext = path.rsplit(".", 1)[-1].lower()
+    return {
+        "py": "python",
+        "ts": "typescript",
+        "tsx": "typescript",
+        "js": "javascript",
+        "jsx": "javascript",
+        "go": "go",
+        "rs": "rust",
+        "java": "java",
+        "md": "markdown",
+    }.get(ext)
+
+
 def _store_chunk_embedding(session: Session, chunk: Chunk) -> None:
     config = current_embedding_config()
     vector = embed_text(chunk.content, config=config)
@@ -991,7 +1029,29 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
     )
     chunks_created = 0
     symbols_created = 0
+    if resource.type.lower() == "git":
+        for doc in docs:
+            path = validate_snapshot_path(str(doc.get("path") or doc.get("title") or f"document-{len(docs)}.txt"))
+            doc_hash = content_hash(doc["content"])
+            session.add(
+                SnapshotFile(
+                    workspace_id=resource.workspace_id,
+                    project_id=resource.project_id,
+                    resource_id=resource.id,
+                    source_snapshot_id=snapshot.id,
+                    path=path,
+                    content=doc["content"],
+                    content_hash=doc_hash,
+                    line_count=len(doc["content"].splitlines()),
+                    byte_size=len(doc["content"].encode("utf-8")),
+                    language=_language_for_path(path),
+                    is_binary=False,
+                    meta=doc.get("meta", {}),
+                )
+            )
+        
     for doc in docs:
+        path = str(doc.get("path") or doc.get("title") or f"document-{len(docs)}.txt")
         doc_hash = content_hash(doc["content"])
         for symbol in extract_code_symbols(doc.get("path"), doc["content"]):
             if symbols_created >= max_symbols:

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { PageHeader, Card, EmptyState, Metric, StatusChip } from '../../components/ui';
 import { usePlatform } from '../../lib/platform-context';
-import type { AgentFile, AgentFilesResponse } from '../../lib/types';
+import type { AgentFile, AgentFilesResponse, RemoteGrepResponse, RemoteReadFileResponse, Resource } from '../../lib/types';
 import { apiFetchBlob, apiFetchText, fmt } from '../../lib/api';
 
 type AgentPackArtifact = { path: string; kind: string; description: string; content: string };
@@ -45,6 +45,13 @@ export default function AgentFilesPage() {
   const [packError, setPackError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [packBusy, setPackBusy] = useState(false);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [selectedResourceId, setSelectedResourceId] = useState('');
+  const [grepPattern, setGrepPattern] = useState('');
+  const [grepResult, setGrepResult] = useState<RemoteGrepResponse | null>(null);
+  const [readResult, setReadResult] = useState<RemoteReadFileResponse | null>(null);
+  const [toolBusy, setToolBusy] = useState(false);
+  const [toolError, setToolError] = useState<string | null>(null);
   const selected: AgentFile | null = files?.files.find((file) => file.path === selectedPath) ?? files?.files[0] ?? null;
   const selectedPack: AgentPackArtifact | null = packFiles.find((file) => file.path === selectedPackPath) ?? packFiles[0] ?? null;
 
@@ -82,7 +89,43 @@ export default function AgentFilesPage() {
     finally { setPackBusy(false); }
   }
 
-  useEffect(() => { void load(false); void loadPack(); }, [settings.workspaceId, settings.projectId]);
+  async function loadResources() {
+    try {
+      const result = await client<Resource[]>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources`);
+      const gitResources = result.filter((resource) => resource.type.toLowerCase() === 'git');
+      setResources(gitResources);
+      setSelectedResourceId((previous) => gitResources.some((resource) => resource.id === previous) ? previous : gitResources.find((resource) => resource.current_snapshot_id)?.id ?? gitResources[0]?.id ?? '');
+    } catch (err) { setToolError(String(err)); }
+  }
+
+  async function runGrepExample() {
+    if (!selectedResourceId || !grepPattern.trim()) return;
+    setToolBusy(true); setToolError(null); setReadResult(null);
+    try {
+      const result = await client<RemoteGrepResponse>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/remote-code/grep_code`, {
+        method: 'POST',
+        body: JSON.stringify({ pattern: grepPattern.trim(), resource_ids: [selectedResourceId], max_matches: 5 }),
+      });
+      setGrepResult(result);
+    } catch (err) { setToolError(String(err)); }
+    finally { setToolBusy(false); }
+  }
+
+  async function readFirstMatch() {
+    const match = grepResult?.matches[0];
+    if (!match) return;
+    setToolBusy(true); setToolError(null);
+    try {
+      const result = await client<RemoteReadFileResponse>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/remote-code/read_file`, {
+        method: 'POST',
+        body: JSON.stringify({ resource_id: match.resource_id, path: match.path, start_line: Math.max(1, match.line_start - 3), end_line: match.line_end + 3 }),
+      });
+      setReadResult(result);
+    } catch (err) { setToolError(String(err)); }
+    finally { setToolBusy(false); }
+  }
+
+  useEffect(() => { void load(false); void loadPack(); void loadResources(); }, [settings.workspaceId, settings.projectId]);
 
   return <main className="page">
     <PageHeader eyebrow="Agent Files" title="Generated agent files and skills" description="Generate legacy agent files and the new remote-only Skill Pack that installs thin Hermes/Codex/Claude adapters while ContextSmith hosts the indexed repo context." actions={<button className="btn" disabled={busy} onClick={() => void load(true)}>{busy ? 'Regenerating…' : 'Regenerate agent files'}</button>} />
@@ -91,8 +134,8 @@ export default function AgentFilesPage() {
 
     <Card>
       <h2>Install remote repo agent</h2>
-      <p className="muted">Phase 1 Skill Pack is context-only and remote-first. Install the Hermes skill shim from a pinned raw GitHub URL after publishing, then configure MCP separately with a scoped token. The local runtime must not assume repo files are available for local grep/read.</p>
-      <div className="notice">Available capability: <strong>contextsmith.get_agent_context</strong>. Remote grep/read/search/symbol tools are intentionally not advertised yet.</div>
+      <p className="muted">Phase 3 Skill Pack is remote-first: install the Hermes skill shim from a pinned raw GitHub URL, configure MCP separately with a scoped token, then use ContextSmith for context plus exact remote code inspection.</p>
+      <div className="notice">Available capabilities: <strong>contextsmith.get_agent_context</strong>, <strong>grep_code</strong>, <strong>read_file</strong>, <strong>search_code</strong>, and <strong>find_symbol</strong>. Local repo checkout is not required.</div>
       <div className="actions"><button className="btn secondary" disabled={packBusy} onClick={() => void loadPack()}>{packBusy ? 'Loading…' : 'Reload Skill Pack artifacts'}</button><button className="btn" disabled={packBusy} onClick={() => void downloadPackZip()}>Download Skill Pack (.zip)</button></div>
       {packError ? <div className="notice error">{packError}</div> : null}
       <div className="grid two">
@@ -104,6 +147,19 @@ export default function AgentFilesPage() {
           {selectedPack ? <div className="grid"><StatusChip value={selectedPack.kind} /><p className="muted">{selectedPack.description}</p><div className="actions"><button className="btn secondary" onClick={() => void navigator.clipboard.writeText(selectedPack.content)}>Copy artifact</button><button className="btn secondary" onClick={() => downloadArtifact(selectedPack)}>Download file</button></div><pre className="code-block light">{selectedPack.content}</pre></div> : <EmptyState text="Select a Skill Pack artifact." />}
         </div>
       </div>
+    </Card>
+
+    <Card>
+      <h2>Remote follow-up inspection</h2>
+      <p className="muted">Smoke the same workflow the installed agents use: get context first, then run bounded remote grep and read_file against indexed snapshots. Pick a resource from the project; no UUID hand-entry or local checkout is needed.</p>
+      <div className="grid two">
+        <label>Resource<select value={selectedResourceId} onChange={(event) => setSelectedResourceId(event.target.value)}>{resources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name} · {resource.current_snapshot_id ? 'indexed' : 'not indexed'}</option>)}</select></label>
+        <label>Pattern<input value={grepPattern} onChange={(event) => setGrepPattern(event.target.value)} placeholder="e.g. reconcile_cart" /></label>
+      </div>
+      <div className="actions"><button className="btn" disabled={toolBusy || !selectedResourceId || !grepPattern.trim()} onClick={() => void runGrepExample()}>{toolBusy ? 'Running…' : 'Run remote grep'}</button><button className="btn secondary" disabled={toolBusy || !grepResult?.matches.length} onClick={() => void readFirstMatch()}>Read first match</button></div>
+      {toolError ? <div className="notice error">{toolError}</div> : null}
+      {grepResult ? <div className="notice">{grepResult.matches.length} remote grep matches{grepResult.truncated ? ' · truncated' : ''}{grepResult.matches[0] ? ` · first: ${grepResult.matches[0].path}:${grepResult.matches[0].line_start}` : ''}</div> : null}
+      {readResult ? <pre className="code-block light">{readResult.content}</pre> : <EmptyState text="Run remote grep, then read the first match to preview exact indexed source lines." />}
     </Card>
 
     <div className="grid two">

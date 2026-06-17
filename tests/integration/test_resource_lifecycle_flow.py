@@ -583,7 +583,7 @@ def test_agent_pack_phase1_context_only_remote_install_contract() -> None:
 
     required_phrases = [
         "Remote-only",
-        "context-only preview",
+        "remote grep/read/search/symbol tools",
         "contextsmith.get_agent_context",
         "MCP configuration is a separate mandatory setup step",
         "Do not run local `grep`, `rg`, `cat`",
@@ -597,10 +597,6 @@ def test_agent_pack_phase1_context_only_remote_install_contract() -> None:
     assert "not a source checkout" in responses["claude"].text
 
     forbidden = [
-        "grep_code",
-        "read_file",
-        "search_code",
-        "find_symbol",
         "/tmp",
         "/qa-fixtures",
         "/home",
