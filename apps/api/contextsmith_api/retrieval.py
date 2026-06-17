@@ -16,6 +16,95 @@ from contextsmith_shared.embeddings import (
 )
 
 
+@dataclass(frozen=True)
+class RetrievalProfile:
+    name: str
+    description: str
+    lexical_weight: float
+    vector_weight: float
+    graph_weight: float
+    rerank_weight: float
+    use_lexical: bool = True
+    use_vector: bool = True
+    use_graph: bool = True
+    use_rerank: bool = True
+
+
+RETRIEVAL_PROFILES: dict[str, RetrievalProfile] = {
+    "lexical": RetrievalProfile(
+        name="lexical",
+        description="Keyword-first retrieval for exact identifiers, errors, config keys, and literal text.",
+        lexical_weight=1.0,
+        vector_weight=0.0,
+        graph_weight=0.0,
+        rerank_weight=0.0,
+        use_vector=False,
+        use_graph=False,
+        use_rerank=False,
+    ),
+    "vector": RetrievalProfile(
+        name="vector",
+        description="Embedding-first retrieval for semantic questions when exact words may differ.",
+        lexical_weight=0.0,
+        vector_weight=0.85,
+        graph_weight=0.0,
+        rerank_weight=0.15,
+        use_lexical=False,
+        use_graph=False,
+    ),
+    "hybrid": RetrievalProfile(
+        name="hybrid",
+        description="Balanced lexical and embedding retrieval for general agent context.",
+        lexical_weight=0.45,
+        vector_weight=0.40,
+        graph_weight=0.0,
+        rerank_weight=0.15,
+        use_graph=False,
+    ),
+    "hybrid_rerank": RetrievalProfile(
+        name="hybrid_rerank",
+        description="Hybrid retrieval with stronger rerank influence for eval-backed answer quality experiments.",
+        lexical_weight=0.35,
+        vector_weight=0.35,
+        graph_weight=0.0,
+        rerank_weight=0.30,
+        use_graph=False,
+    ),
+    "graph": RetrievalProfile(
+        name="graph",
+        description="Hybrid retrieval boosted by graph/code-structure evidence for architecture and impact questions.",
+        lexical_weight=0.35,
+        vector_weight=0.30,
+        graph_weight=0.25,
+        rerank_weight=0.10,
+    ),
+}
+DEFAULT_RETRIEVAL_PROFILE = "hybrid"
+
+
+def normalize_retrieval_profile(profile: str | None) -> RetrievalProfile:
+    key = (profile or DEFAULT_RETRIEVAL_PROFILE).strip().lower().replace("-", "_")
+    if key not in RETRIEVAL_PROFILES:
+        allowed = ", ".join(sorted(RETRIEVAL_PROFILES))
+        raise ValueError(f"unsupported retrieval profile {profile!r}; allowed: {allowed}")
+    return RETRIEVAL_PROFILES[key]
+
+
+def retrieval_profile_manifest() -> dict[str, dict[str, object]]:
+    return {
+        name: {
+            "description": profile.description,
+            "weights": {
+                "lexical": profile.lexical_weight,
+                "vector": profile.vector_weight,
+                "graph": profile.graph_weight,
+                "rerank": profile.rerank_weight,
+            },
+        }
+        for name, profile in RETRIEVAL_PROFILES.items()
+    }
+
+
 @dataclass
 class RetrievalCandidate:
     chunk_id: UUID
@@ -149,8 +238,10 @@ def retrieve_context_candidates(
     query: str,
     top_k: int,
     resource_ids: list[UUID] | None = None,
+    profile: str | None = None,
 ) -> list[RetrievalCandidate]:
-    """Hybrid lexical + vector retrieval scoped to current snapshots only."""
+    """Profile-aware lexical/vector/graph retrieval scoped to current snapshots only."""
+    retrieval_profile = normalize_retrieval_profile(profile)
     candidate_limit = max(top_k * 4, 20)
     base_params: dict = {
         "ws": str(workspace_id),
@@ -193,48 +284,50 @@ def retrieve_context_candidates(
         LIMIT :limit
         """
     )
-    for row in session.execute(lexical_sql, base_params).mappings().all():
-        _upsert_candidate(candidates, row, lexical_score=float(row["score"] or 0.0))
+    if retrieval_profile.use_lexical:
+        for row in session.execute(lexical_sql, base_params).mappings().all():
+            _upsert_candidate(candidates, row, lexical_score=float(row["score"] or 0.0))
 
     embedding_config = current_embedding_config()
-    vector_params = {
-        **base_params,
-        "embedding": vector_literal(embed_text(query, config=embedding_config)),
-        "provider": embedding_config.provider,
-        "model": embedding_config.model,
-        "dimensions": embedding_config.dimensions,
-        "namespace": embedding_namespace(embedding_config),
-    }
-    vector_sql = text(
-        f"""
-        {select_columns},
-               1 - (e.embedding <=> CAST(:embedding AS vector)) AS score
-        FROM chunks c
-        JOIN source_snapshots s ON s.id = c.source_snapshot_id
-        JOIN chunk_embeddings e ON e.chunk_id = c.id
-        WHERE c.workspace_id = CAST(:ws AS uuid)
-          AND c.project_id = CAST(:proj AS uuid)
-          AND c.deleted_at IS NULL
-          AND c.source_snapshot_id IN (
-              SELECT r.current_snapshot_id FROM resources r
-              WHERE r.workspace_id = CAST(:ws AS uuid)
-                AND r.project_id = CAST(:proj AS uuid)
-                AND r.deleted_at IS NULL
-                AND r.archived_at IS NULL
-                AND r.retrieval_enabled = true
-                AND r.current_snapshot_id IS NOT NULL
-                {resource_clause}
-          )
-          AND e.provider = :provider
-          AND e.model = :model
-          AND e.dimensions = :dimensions
-          AND e.namespace = :namespace
-        ORDER BY e.embedding <=> CAST(:embedding AS vector), c.resource_id, c.ordinal ASC
-        LIMIT :limit
-        """
-    )
-    for row in session.execute(vector_sql, vector_params).mappings().all():
-        _upsert_candidate(candidates, row, vector_score=float(row["score"] or 0.0))
+    if retrieval_profile.use_vector:
+        vector_params = {
+            **base_params,
+            "embedding": vector_literal(embed_text(query, config=embedding_config)),
+            "provider": embedding_config.provider,
+            "model": embedding_config.model,
+            "dimensions": embedding_config.dimensions,
+            "namespace": embedding_namespace(embedding_config),
+        }
+        vector_sql = text(
+            f"""
+            {select_columns},
+                   1 - (e.embedding <=> CAST(:embedding AS vector)) AS score
+            FROM chunks c
+            JOIN source_snapshots s ON s.id = c.source_snapshot_id
+            JOIN chunk_embeddings e ON e.chunk_id = c.id
+            WHERE c.workspace_id = CAST(:ws AS uuid)
+              AND c.project_id = CAST(:proj AS uuid)
+              AND c.deleted_at IS NULL
+              AND c.source_snapshot_id IN (
+                  SELECT r.current_snapshot_id FROM resources r
+                  WHERE r.workspace_id = CAST(:ws AS uuid)
+                    AND r.project_id = CAST(:proj AS uuid)
+                    AND r.deleted_at IS NULL
+                    AND r.archived_at IS NULL
+                    AND r.retrieval_enabled = true
+                    AND r.current_snapshot_id IS NOT NULL
+                    {resource_clause}
+              )
+              AND e.provider = :provider
+              AND e.model = :model
+              AND e.dimensions = :dimensions
+              AND e.namespace = :namespace
+            ORDER BY e.embedding <=> CAST(:embedding AS vector), c.resource_id, c.ordinal ASC
+            LIMIT :limit
+            """
+        )
+        for row in session.execute(vector_sql, vector_params).mappings().all():
+            _upsert_candidate(candidates, row, vector_score=float(row["score"] or 0.0))
 
     graph_sql = text(
         """
@@ -265,7 +358,7 @@ def retrieve_context_candidates(
         GROUP BY c.id
         """
     )
-    if candidates:
+    if candidates and retrieval_profile.use_graph:
         graph_params = {
             **base_params,
             "chunk_ids": [str(chunk_id) for chunk_id in candidates.keys()],
@@ -278,17 +371,17 @@ def retrieve_context_candidates(
     filtered: list[RetrievalCandidate] = []
     require_text_overlap = is_dev_embedding_provider(embedding_config)
     for candidate in candidates.values():
-        candidate.rerank_score = rerank_score(query, candidate.content)
+        candidate.rerank_score = rerank_score(query, candidate.content) if retrieval_profile.use_rerank else 0.0
         # The offline hashing provider is not a true semantic model; avoid
         # returning random vector-nearest chunks that share no query terms. Real
         # embedding providers may legitimately return semantic-only matches.
-        if require_text_overlap and candidate.lexical_score <= 0 and candidate.rerank_score <= 0:
+        if require_text_overlap and candidate.lexical_score <= 0 and candidate.rerank_score <= 0 and candidate.graph_score <= 0:
             continue
         candidate.score = (
-            0.40 * candidate.lexical_score
-            + 0.35 * candidate.vector_score
-            + 0.15 * candidate.graph_score
-            + 0.10 * candidate.rerank_score
+            retrieval_profile.lexical_weight * candidate.lexical_score
+            + retrieval_profile.vector_weight * candidate.vector_score
+            + retrieval_profile.graph_weight * candidate.graph_score
+            + retrieval_profile.rerank_weight * candidate.rerank_score
         )
         filtered.append(candidate)
     return sorted(

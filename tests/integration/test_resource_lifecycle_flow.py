@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import time
 import uuid
 import zipfile
@@ -485,6 +486,7 @@ def test_agent_files_and_git_env_surface_repo_agent_outputs() -> None:
 
 def test_agent_pack_phase1_context_only_remote_install_contract() -> None:
     require_real_services()
+    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
     client = TestClient(app)
     headers, workspace_id, project_id = make_project(client, "m24-agent-pack")
     allowed_repo = client.post(

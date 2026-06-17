@@ -344,10 +344,47 @@ def test_repo_agent_brief_and_retrieval_eval_are_productized(tmp_path) -> None:
     assert brief_body["symbol_samples"]
     assert any(symbol["name"] == "reconcile_cart" for symbol in brief_body["symbol_samples"])
 
+    profiles = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-profiles",
+        headers=headers,
+    )
+    assert profiles.status_code == 200, profiles.text
+    profiles_body = profiles.json()
+    assert profiles_body["default"] == "hybrid"
+    profile_names = {profile["name"] for profile in profiles_body["profiles"]}
+    assert {"lexical", "vector", "hybrid", "hybrid_rerank", "graph"}.issubset(profile_names)
+
+    lexical_context = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "reconcile_cart", "profile": "lexical", "resource_ids": [resource_id], "top_k": 8},
+        headers=headers,
+    )
+    assert lexical_context.status_code == 200, lexical_context.text
+    lexical_body = lexical_context.json()
+    assert lexical_body["profile"] == "lexical"
+    assert lexical_body["citations"]
+
+    invalid_profile = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "reconcile_cart", "profile": "rerank everything"},
+        headers=headers,
+    )
+    assert invalid_profile.status_code == 422, invalid_profile.text
+
+    context_packet = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packets",
+        json={"query": "reconcile_cart", "profile": "lexical", "resource_ids": [resource_id], "top_k": 8},
+        headers=headers,
+    )
+    assert context_packet.status_code == 201, context_packet.text
+    assert context_packet.json()["diagnostics"]["retrieval_profile"] == "lexical"
+    assert context_packet.json()["diagnostics"]["retrieval_profile_weights"]["lexical"] == 1.0
+
     eval_response = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
         json={
             "runtime": "hermes",
+            "profile": "hybrid_rerank",
             "max_chars": 8000,
             "questions": [
                 {
@@ -368,6 +405,9 @@ def test_repo_agent_brief_and_retrieval_eval_are_productized(tmp_path) -> None:
     assert eval_response.status_code == 200, eval_response.text
     eval_body = eval_response.json()
     assert eval_body["summary"]["status"] == "passed"
+    assert eval_body["profile"] == "hybrid_rerank"
+    assert eval_body["diagnostics"]["retrieval_profile"] == "hybrid_rerank"
+    assert eval_body["diagnostics"]["retrieval_profile_weights"]["rerank"] > 0
     assert eval_body["run_id"]
     assert eval_body["summary"]["passed_count"] == 1
     assert eval_body["results"][0]["passed"] is True
@@ -378,13 +418,25 @@ def test_repo_agent_brief_and_retrieval_eval_are_productized(tmp_path) -> None:
     assert history.status_code == 200, history.text
     assert history.json()["count"] >= 1
     assert history.json()["runs"][0]["id"] == eval_body["run_id"]
+    assert history.json()["runs"][0]["profile"] == "hybrid_rerank"
     detail = client.get(
         f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals/{eval_body['run_id']}",
         headers=headers,
     )
     assert detail.status_code == 200, detail.text
+    assert detail.json()["profile"] == "hybrid_rerank"
     assert detail.json()["summary"]["status"] == "passed"
     assert detail.json()["results"][0]["hit_quality"]
+
+    mcp_tools = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        headers=headers,
+    )
+    assert mcp_tools.status_code == 200, mcp_tools.text
+    tools = {tool["name"]: tool for tool in mcp_tools.json()["result"]["tools"]}
+    assert "profile" in tools["contextsmith.get_agent_context"]["inputSchema"]["properties"]
+    assert "profile" not in tools["contextsmith.search_code"]["inputSchema"]["properties"]
 
     forbidden = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",

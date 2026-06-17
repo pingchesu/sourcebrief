@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WorkspaceCreate(BaseModel):
@@ -237,6 +237,17 @@ class RepoAgentBriefRead(BaseModel):
     quality_gates: list[str] = Field(default_factory=list)
 
 
+class RetrievalProfileRead(BaseModel):
+    name: str
+    description: str
+    weights: dict[str, float]
+
+
+class RetrievalProfilesResponse(BaseModel):
+    default: str
+    profiles: list[RetrievalProfileRead]
+
+
 class RetrievalEvalQuestion(BaseModel):
     id: str = Field(min_length=1, max_length=128)
     query: str = Field(min_length=1, max_length=4000)
@@ -253,6 +264,7 @@ class RetrievalEvalQuestion(BaseModel):
 
 class RetrievalEvalRequest(BaseModel):
     questions: list[RetrievalEvalQuestion] = Field(min_length=1, max_length=10)
+    profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph)$")
     runtime: str = Field(default="hermes", pattern=r"^(api|hermes|claude|codex|cursor)$")
     max_chars: int = Field(default=8000, ge=1000, le=12000)
 
@@ -285,6 +297,7 @@ class RetrievalEvalSummary(BaseModel):
 
 class RetrievalEvalResponse(BaseModel):
     run_id: UUID | None = None
+    profile: str
     workspace_id: UUID
     project_id: UUID
     generated_at: datetime
@@ -297,6 +310,7 @@ class RetrievalEvalResponse(BaseModel):
 
 class RetrievalEvalRunSummaryRead(BaseModel):
     id: UUID
+    profile: str
     workspace_id: UUID
     project_id: UUID
     created_at: datetime
@@ -322,6 +336,7 @@ class RetrievalEvalRunListResponse(BaseModel):
 
 class RetrievalEvalRunRead(BaseModel):
     run_id: UUID
+    profile: str
     workspace_id: UUID
     project_id: UUID
     created_at: datetime
@@ -430,6 +445,7 @@ class SearchResponse(BaseModel):
 
 class ContextPacketRequest(BaseModel):
     query: str = Field(min_length=1)
+    profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph)$")
     resource_ids: list[UUID] | None = None
     top_k: int = Field(default=8, ge=1, le=50)
     mode: str = "hybrid"
@@ -477,9 +493,10 @@ class CodeSearchRequest(BaseModel):
 
 
 class RemoteSearchCodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str = Field(min_length=1)
     resource_ids: list[UUID] | None = None
-    profile: str | None = None
     top_k: int = Field(default=10, ge=1, le=50)
     cursor: str | None = None
 
@@ -585,6 +602,7 @@ class CodeSearchResponse(BaseModel):
 
 class AgentContextRequest(BaseModel):
     query: str = Field(min_length=1)
+    profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph)$")
     resource_ids: list[UUID] | None = None
     top_k: int = Field(default=8, ge=1, le=50)
     runtime: str | None = Field(default=None, pattern=r"^(api|hermes|claude|codex|cursor)$")
@@ -608,6 +626,7 @@ class AgentContextCitation(BaseModel):
 
 class AgentContextResponse(BaseModel):
     query: str
+    profile: str
     runtime: str
     instruction: str
     context: str

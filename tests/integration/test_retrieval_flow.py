@@ -10,6 +10,7 @@ from redis import Redis
 from sqlalchemy import text
 
 import contextsmith_api.main as api_main
+import contextsmith_api.retrieval as retrieval_module
 from contextsmith_api.main import app
 from contextsmith_shared.config import get_settings
 from contextsmith_shared.db import get_engine, get_sessionmaker
@@ -357,3 +358,35 @@ def test_context_packet_failure_persists_failed_query_run(monkeypatch) -> None:
         assert "synthetic retrieval failure" in rows[0]["metadata"]["error"]
     finally:
         session.close()
+
+
+def test_lexical_profile_does_not_call_embedding_provider(monkeypatch) -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "m27-lexical")
+    resource_id = add_resource(
+        client,
+        workspace_id,
+        project_id,
+        headers,
+        {
+            "type": "markdown",
+            "name": "Lexical Doc",
+            "uri": "doc://m27-lexical",
+            "source_config": {"content": "lexical-only marker platypuslexical27"},
+        },
+    )
+    ingest_inproc(client, workspace_id, project_id, resource_id, headers)
+
+    def fail_embed(*args, **kwargs):
+        raise RuntimeError("embedding provider should not be called for lexical profile")
+
+    monkeypatch.setattr(retrieval_module, "embed_text", fail_embed)
+    response = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "platypuslexical27", "profile": "lexical", "resource_ids": [resource_id], "top_k": 5},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["profile"] == "lexical"
+    assert response.json()["citations"]

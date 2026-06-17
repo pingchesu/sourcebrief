@@ -308,6 +308,7 @@ class RetrievalEvalRun(Base):
     actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     actor_token_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("api_tokens.id"))
     runtime: Mapped[str] = mapped_column(Text, nullable=False)
+    profile: Mapped[str] = mapped_column(Text, nullable=False, default="hybrid")
     provider: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)

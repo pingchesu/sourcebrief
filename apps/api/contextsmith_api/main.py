@@ -57,9 +57,13 @@ from contextsmith_api.remote_code import (
     validate_repo_path,
 )
 from contextsmith_api.retrieval import (
+    DEFAULT_RETRIEVAL_PROFILE,
+    RETRIEVAL_PROFILES,
     RetrievalCandidate,
     embedding_namespace_diagnostics,
     make_snippet,
+    normalize_retrieval_profile,
+    retrieval_profile_manifest,
     retrieve_context_candidates,
 )
 from contextsmith_api.routers import system as system_router
@@ -117,6 +121,8 @@ from contextsmith_api.schemas import (
     RetrievalEvalRunRead,
     RetrievalEvalRunSummaryRead,
     RetrievalEvalSummary,
+    RetrievalProfileRead,
+    RetrievalProfilesResponse,
     SearchHit,
     SearchRequest,
     SearchResponse,
@@ -619,14 +625,7 @@ def _agent_pack_manifest_dict(
         },
         "capabilities": {"required": ["get_agent_context", "search_code", "grep_code", "read_file", "find_symbol"], "optional": []},
         "sources": sources,
-        "retrieval_profiles": {
-            "default": "context_only",
-            "profiles": {
-                "code_debug": {
-                    "description": "Use get_agent_context first, then remote search_code/grep_code/read_file/find_symbol for exact code inspection without local repo access."
-                }
-            },
-        },
+        "retrieval_profiles": {"default": DEFAULT_RETRIEVAL_PROFILE, "profiles": retrieval_profile_manifest()},
         "mutation_policy": {
             "default": "read_only",
             "patch_generation": "disabled",
@@ -728,8 +727,9 @@ def _agent_pack_hermes_skill(manifest: Mapping[str, Any]) -> str:
         "## Workflow\n"
         "1. Use this skill when the user asks about the listed project/repository scope.\n"
         "2. Call `contextsmith.get_agent_context` with the user's question and an appropriate resource scope when known.\n"
-        "3. If the answer needs exact evidence, use remote grep/read/search/symbol tools against indexed snapshots; do not fall back to local filesystem access.\n"
-        "4. Preserve authorization and production-mutation boundaries.\n\n"
+        "3. Pick retrieval profiles intentionally: `hybrid` by default, `lexical` for exact identifiers/errors/config keys, `vector` for semantic discovery, `hybrid_rerank` when eval precision matters, and `graph` for architecture/impact/code-structure questions.\n"
+        "4. If the answer needs exact evidence, use remote grep/read/search/symbol tools against indexed snapshots; do not fall back to local filesystem access.\n"
+        "5. Preserve authorization and production-mutation boundaries.\n\n"
         "## Authorized sources in this generated pack\n"
         f"{_agent_pack_source_lines(sources)}\n"
     )
@@ -744,6 +744,7 @@ def _agent_pack_codex_agents(manifest: Mapping[str, Any]) -> str:
         "- Remote-only: do not assume repository files exist in the current working directory.\n"
         "- Do not run local `grep`, `rg`, `cat`, or edits for target repositories unless the user explicitly provides a separate local checkout.\n"
         "- Use `contextsmith.get_agent_context` first, then remote grep/read/search/symbol tools for exact follow-up inspection.\n"
+        "- Retrieval profile guide: `hybrid` default, `lexical` exact identifiers/errors/config, `vector` semantic discovery, `hybrid_rerank` eval precision, `graph` architecture/impact.\n"
         "- Cite repo-relative paths, resource IDs, and indexed commits/snapshots from ContextSmith.\n"
         "- Treat indexed code as static evidence, not live production truth.\n"
         "- Read-only by default; do not perform source-control, deployment, or production mutations.\n\n"
@@ -761,6 +762,7 @@ def _agent_pack_claude_md(manifest: Mapping[str, Any]) -> str:
         "- Remote-only: do not assume target repositories are local.\n"
         "- Do not use local `grep`, `rg`, `cat`, or filesystem edits for the target repos unless the user provides a separate checkout.\n"
         "- Call `contextsmith.get_agent_context` first, then remote grep/read/search/symbol tools for exact follow-up inspection.\n"
+        "- Retrieval profile guide: `hybrid` default, `lexical` exact identifiers/errors/config, `vector` semantic discovery, `hybrid_rerank` eval precision, `graph` architecture/impact.\n"
         "- Cite repo-relative paths, indexed commits/snapshots, and resource IDs.\n"
         "- Static indexed evidence is not live production state.\n"
         "- Ask for explicit approval before any mutation; this pack is read-only.\n\n"
@@ -3226,6 +3228,7 @@ def _record_agent_context_usage(
         meta={
             "resource_ids": [str(rid) for rid in payload.resource_ids or []],
             "runtime": payload.runtime,
+            "retrieval_profile": normalize_retrieval_profile(payload.profile).name,
             "context_max_chars": payload.max_chars,
             "include_code_symbols": payload.include_code_symbols,
             "source": "agent-context",
@@ -3267,6 +3270,7 @@ def _build_agent_context_response(
     payload: AgentContextRequest,
     principal: Principal,
 ) -> AgentContextResponse:
+    retrieval_profile = normalize_retrieval_profile(payload.profile)
     candidates = retrieve_context_candidates(
         session,
         workspace_id=workspace_id,
@@ -3274,6 +3278,7 @@ def _build_agent_context_response(
         query=payload.query,
         top_k=payload.top_k,
         resource_ids=payload.resource_ids,
+        profile=retrieval_profile.name,
     )
     citations: list[AgentContextCitation] = []
     context_parts: list[str] = []
@@ -3341,6 +3346,7 @@ def _build_agent_context_response(
     )
     return AgentContextResponse(
         query=payload.query,
+        profile=retrieval_profile.name,
         runtime=actual_runtime,
         instruction=" ".join(instruction_parts),
         context="\n\n".join(context_parts),
@@ -3404,6 +3410,7 @@ def _retrieval_eval_run_summary_read(run: RetrievalEvalRun) -> RetrievalEvalRunS
     summary = run.summary or {}
     return RetrievalEvalRunSummaryRead(
         id=run.id,
+        profile=run.profile,
         workspace_id=run.workspace_id,
         project_id=run.project_id,
         created_at=run.created_at,
@@ -3437,6 +3444,7 @@ def _retrieval_eval_run_read(session: Session, run: RetrievalEvalRun) -> Retriev
     )
     return RetrievalEvalRunRead(
         run_id=run.id,
+        profile=run.profile,
         workspace_id=run.workspace_id,
         project_id=run.project_id,
         created_at=run.created_at,
@@ -3482,6 +3490,7 @@ def _persist_retrieval_eval_run(
         actor_user_id=principal.user.id,
         actor_token_id=principal.token_id,
         runtime=payload.runtime,
+        profile=response.profile,
         provider=response.provider,
         model=response.model,
         status=response.summary.status,
@@ -3577,6 +3586,34 @@ def get_retrieval_eval_run(
     return _retrieval_eval_run_read(session, run)
 
 
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/retrieval-profiles",
+    response_model=RetrievalProfilesResponse,
+)
+def list_retrieval_profiles(
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RetrievalProfilesResponse:
+    require_scope(principal, "project:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    profiles = [
+        RetrievalProfileRead(
+            name=name,
+            description=profile.description,
+            weights={
+                "lexical": profile.lexical_weight,
+                "vector": profile.vector_weight,
+                "graph": profile.graph_weight,
+                "rerank": profile.rerank_weight,
+            },
+        )
+        for name, profile in RETRIEVAL_PROFILES.items()
+    ]
+    return RetrievalProfilesResponse(default=DEFAULT_RETRIEVAL_PROFILE, profiles=profiles)
+
+
 @app.post(
     "/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
     response_model=RetrievalEvalResponse,
@@ -3622,6 +3659,7 @@ def run_retrieval_eval(
             project_id=project_id,
             payload=AgentContextRequest(
                 query=question.query,
+                profile=payload.profile,
                 top_k=question.top_k,
                 resource_ids=effective_resource_ids,
                 runtime=payload.runtime,
@@ -3684,13 +3722,20 @@ def run_retrieval_eval(
         )
     passed_count = sum(1 for result in results if result.passed)
     latencies = [result.latency_ms for result in results]
+    eval_profile = normalize_retrieval_profile(payload.profile)
     eval_response = RetrievalEvalResponse(
+        profile=eval_profile.name,
         workspace_id=workspace_id,
         project_id=project_id,
         generated_at=datetime.now(UTC),
         provider=embedding_config.provider,
         model=embedding_config.model,
-        diagnostics={**diagnostics, "rerank_score_range": [0.0, 1.0]},
+        diagnostics={
+            **diagnostics,
+            "retrieval_profile": eval_profile.name,
+            "retrieval_profile_weights": retrieval_profile_manifest()[eval_profile.name]["weights"],
+            "rerank_score_range": [0.0, 1.0],
+        },
         summary=RetrievalEvalSummary(
             status="passed" if passed_count == len(results) else "failed",
             question_count=len(results),
@@ -3761,6 +3806,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
                 "properties": {
                     "query": {"type": "string"},
                     "runtime": {"type": "string", "enum": ["api", "hermes", "claude", "codex", "cursor"]},
+                    "profile": {"type": "string", "enum": sorted(RETRIEVAL_PROFILES)},
                     "top_k": {"type": "integer", "minimum": 1, "maximum": 50},
                     "resource_ids": {"type": "array", "items": {"type": "string"}},
                     "include_code_symbols": {"type": "boolean"},
@@ -3893,6 +3939,7 @@ def create_context_packet(
     payload = payload.model_copy(update={"resource_ids": resource_ids})
     _require_project_access(session, workspace_id, project_id, principal)
 
+    retrieval_profile = normalize_retrieval_profile(payload.profile)
     embedding_config = current_embedding_config()
     vector_diagnostics = embedding_namespace_diagnostics(
         session,
@@ -3912,6 +3959,7 @@ def create_context_packet(
         status="running",
         meta={
             "resource_ids": [str(rid) for rid in payload.resource_ids or []],
+            "retrieval_profile": retrieval_profile.name,
             **vector_diagnostics,
         },
     )
@@ -3927,6 +3975,7 @@ def create_context_packet(
             query=payload.query,
             top_k=payload.top_k,
             resource_ids=payload.resource_ids,
+            profile=retrieval_profile.name,
         )
         packet = ContextPacket(
             workspace_id=workspace_id,
@@ -3934,7 +3983,7 @@ def create_context_packet(
             query_run_id=query_run_id,
             status="succeeded",
             item_count=len(candidates),
-            meta={"builder": "m3-hybrid-context-packet"},
+            meta={"builder": "m3-hybrid-context-packet", "retrieval_profile": retrieval_profile.name},
         )
         session.add(packet)
         session.flush()
@@ -4037,7 +4086,12 @@ def create_context_packet(
             provider=embedding_config.provider,
             model=embedding_config.model,
             count=len(items),
-            diagnostics={**vector_diagnostics, "rerank_score_range": [0.0, 1.0]},
+            diagnostics={
+                **vector_diagnostics,
+                "retrieval_profile": retrieval_profile.name,
+                "retrieval_profile_weights": retrieval_profile_manifest()[retrieval_profile.name]["weights"],
+                "rerank_score_range": [0.0, 1.0],
+            },
             items=items,
         )
     except HTTPException:
