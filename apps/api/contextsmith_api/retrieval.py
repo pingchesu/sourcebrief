@@ -44,8 +44,10 @@ def make_snippet(content: str, limit: int = 420) -> str:
 
 
 def _resource_filter_clause(resource_ids: list[UUID] | None, params: dict) -> str:
-    if not resource_ids:
+    if resource_ids is None:
         return ""
+    if not resource_ids:
+        return "AND false"
     params["rids"] = [str(resource_id) for resource_id in resource_ids]
     return "AND r.id = ANY(CAST(:rids AS uuid[]))"
 

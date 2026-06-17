@@ -349,7 +349,7 @@ def test_api_tokens_enforce_scopes_and_resource_allowlists() -> None:
         headers=bearer,
     )
     assert empty_resource_filter.status_code == 200, empty_resource_filter.text
-    assert {citation["resource_id"] for citation in empty_resource_filter.json()["citations"]} == {resource_id}
+    assert empty_resource_filter.json()["citations"] == []
 
     explicit_denied = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",

@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from redis import Redis
 from rq import Queue
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from contextsmith_api.auth import (
     Principal,
@@ -41,6 +41,20 @@ from contextsmith_api.constants import (
     RUNTIME_INSTRUCTIONS,
     UPLOAD_RESOURCE_TYPES,
     URL_RESOURCE_TYPES,
+)
+from contextsmith_api.remote_code import (
+    MAX_SCANNED_BYTES,
+    MAX_SCANNED_FILES,
+    MAX_SEARCH_LINE_CHARS,
+    RemoteCodeError,
+    check_scan_budget,
+    compile_safe_regex,
+    line_range,
+    line_window,
+    path_matches,
+    snippet_for_line,
+    validate_path_glob,
+    validate_repo_path,
 )
 from contextsmith_api.retrieval import (
     RetrievalCandidate,
@@ -77,6 +91,16 @@ from contextsmith_api.schemas import (
     ProjectCreate,
     ProjectRead,
     PurgeResourceResponse,
+    RemoteFindSymbolRequest,
+    RemoteFindSymbolResponse,
+    RemoteGrepCodeMatch,
+    RemoteGrepCodeRequest,
+    RemoteGrepCodeResponse,
+    RemoteReadFileRequest,
+    RemoteReadFileResponse,
+    RemoteSearchCodeHit,
+    RemoteSearchCodeRequest,
+    RemoteSearchCodeResponse,
     RepoAgentBriefRead,
     ResourceCreate,
     ResourceRead,
@@ -110,6 +134,7 @@ from contextsmith_shared.models import (
     AgentProfile,
     ApiToken,
     AuditEvent,
+    CodeSymbol,
     ContextPacket,
     ContextPacketItem,
     GraphEdge,
@@ -122,6 +147,7 @@ from contextsmith_shared.models import (
     RetrievalEvalItem,
     RetrievalEvalRun,
     RetrievalHit,
+    SnapshotFile,
     SourceSnapshot,
     User,
     Workspace,
@@ -135,6 +161,7 @@ from contextsmith_worker.ingestion import (
     parse_positive_int,
     sanitize_remote_url,
     validate_base64_size,
+    validate_git_url,
     validate_http_url,
 )
 
@@ -165,6 +192,14 @@ def run_migrations_if_requested() -> None:
 @app.on_event("startup")
 def on_startup() -> None:
     run_migrations_if_requested()
+
+
+def _sanitize_public_uri(uri: str) -> str:
+    return _agent_pack_public_source_uri(sanitize_remote_url(uri))
+
+
+def _sanitize_metadata_text(value: str | None) -> str:
+    return _agent_pack_public_text(value, "unknown")
 
 
 def _resolve_project(session: Session, workspace_id: UUID, project_id: UUID) -> Project:
@@ -304,10 +339,12 @@ def _agent_file_response(
     resources: list[Resource],
 ) -> AgentFilesResponse:
     repo_resources = [resource for resource in resources if resource.type.lower() == "git"]
+    safe_profile_name = _sanitize_metadata_text(profile.name)
+    safe_description = _sanitize_metadata_text(profile.description or project.description or "Generated ContextSmith project agent.")
     resource_rows = [
         {
             "id": str(resource.id),
-            "name": resource.name,
+            "name": _sanitize_metadata_text(resource.name),
             "type": resource.type,
             "uri": _agent_pack_public_source_uri(resource.uri),
             "status": resource.status,
@@ -321,7 +358,7 @@ def _agent_file_response(
         "schema": "contextsmith.agent_manifest.v1",
         "workspace_id": str(workspace_id),
         "project_id": str(project.id),
-        "agent_name": profile.name,
+        "agent_name": safe_profile_name,
         "default_runtime": profile.default_runtime,
         "mcp_endpoint": f"/mcp/{workspace_id}/{project.id}",
         "agent_context_endpoint": f"/workspaces/{workspace_id}/projects/{project.id}/agent-context",
@@ -329,24 +366,25 @@ def _agent_file_response(
         "repo_agents": [str(resource.id) for resource in repo_resources],
     }
     resources_md = "\n".join(
-        f"- `{resource.type}` **{resource.name}** (`{resource.id}`): {_agent_pack_public_source_uri(resource.uri)}; refresh={resource.update_frequency}; snapshot={resource.current_snapshot_id or 'none'}"
+        f"- `{resource.type}` **{_sanitize_metadata_text(resource.name)}** (`{resource.id}`): {_agent_pack_public_source_uri(resource.uri)}; refresh={resource.update_frequency}; snapshot={resource.current_snapshot_id or 'none'}"
         for resource in resources
     ) or "- No resources imported yet."
     repo_skill_files = []
     for resource in repo_resources:
         source_config = resource.source_config or {}
-        repo_slug = _file_slug(resource.name)
+        safe_resource_name = _sanitize_metadata_text(resource.name)
+        repo_slug = _file_slug(safe_resource_name)
         repo_skill_files.append(
             AgentFileRead(
                 path=f"skills/{repo_slug}/SKILL.md",
                 kind="repo-skill",
-                description=f"Hermes/Codex specialist skill for {resource.name}",
+                description=f"Hermes/Codex specialist skill for {safe_resource_name}",
                 content=(
                     "---\n"
                     f"name: {repo_slug}\n"
-                    f"description: Use when answering or reviewing work related to the {resource.name} repository.\n"
+                    f"description: Use when answering or reviewing work related to the {safe_resource_name} repository.\n"
                     "---\n\n"
-                    f"# {resource.name} repo agent\n\n"
+                    f"# {safe_resource_name} repo agent\n\n"
                     "## Scope\n"
                     f"- Resource ID: `{resource.id}`\n"
                     f"- URI: `{_agent_pack_public_source_uri(resource.uri)}`\n"
@@ -375,8 +413,8 @@ def _agent_file_response(
             kind="agent-instructions",
             description="Human-readable generated project agent instructions.",
             content=(
-                f"# {profile.name}\n\n"
-                f"{profile.description or project.description or 'Generated ContextSmith project agent.'}\n\n"
+                f"# {safe_profile_name}\n\n"
+                f"{safe_description}\n\n"
                 "## Runtime contract\n"
                 f"- Default runtime: `{profile.default_runtime}`\n"
                 f"- Agent context endpoint: `/workspaces/{workspace_id}/projects/{project.id}/agent-context`\n"
@@ -394,10 +432,10 @@ def _agent_file_response(
             description="Hermes/Codex project-level skill that routes to ContextSmith.",
             content=(
                 "---\n"
-                f"name: {_file_slug(profile.name)}\n"
-                f"description: Use when answering cross-resource questions for {profile.name}.\n"
+                f"name: {_file_slug(safe_profile_name)}\n"
+                f"description: Use when answering cross-resource questions for {safe_profile_name}.\n"
                 "---\n\n"
-                f"# {profile.name}\n\n"
+                f"# {safe_profile_name}\n\n"
                 "Use ContextSmith agent-context for cross-resource answers. Prefer scoped repo-resource queries when the task names a repo/service.\n\n"
                 "## Resource routing\n"
                 f"{resources_md}\n"
@@ -579,13 +617,13 @@ def _agent_pack_manifest_dict(
             "local_repo_required": False,
             "local_grep_allowed": False,
         },
-        "capabilities": {"required": ["get_agent_context"], "optional": []},
+        "capabilities": {"required": ["get_agent_context", "search_code", "grep_code", "read_file", "find_symbol"], "optional": []},
         "sources": sources,
         "retrieval_profiles": {
             "default": "context_only",
             "profiles": {
-                "context_only": {
-                    "description": "Phase 1 preview: use contextsmith.get_agent_context only. Remote code tools are not available yet."
+                "code_debug": {
+                    "description": "Use get_agent_context first, then remote search_code/grep_code/read_file/find_symbol for exact code inspection without local repo access."
                 }
             },
         },
@@ -680,7 +718,7 @@ def _agent_pack_hermes_skill(manifest: Mapping[str, Any]) -> str:
         "## Runtime contract\n"
         "- Remote-only: do not assume the target repositories exist on this machine.\n"
         "- Do not run local `grep`, `rg`, `cat`, or filesystem edits for these repositories unless the user explicitly provides a separate local checkout for the current task.\n"
-        "- Phase 1 context-only preview: use only `contextsmith.get_agent_context`. Follow-up remote code tools are not available in this pack yet.\n"
+        "- Use `contextsmith.get_agent_context` first, then `contextsmith.grep_code`, `contextsmith.read_file`, `contextsmith.search_code`, or `contextsmith.find_symbol` for exact follow-up inspection.\n"
         "- Cite repo-relative paths, resource IDs, and indexed commits/snapshots when ContextSmith returns them.\n"
         "- Treat indexed code as static evidence, not live production state.\n"
         "- Mutation policy is read-only; do not claim patch, PR, write, test execution, deployment, or production mutation capability from this skill.\n\n"
@@ -690,7 +728,7 @@ def _agent_pack_hermes_skill(manifest: Mapping[str, Any]) -> str:
         "## Workflow\n"
         "1. Use this skill when the user asks about the listed project/repository scope.\n"
         "2. Call `contextsmith.get_agent_context` with the user's question and an appropriate resource scope when known.\n"
-        "3. If the answer needs evidence not returned by ContextSmith, say the Phase 1 pack is context-only and ask whether to refresh/index or use a separate local checkout.\n"
+        "3. If the answer needs exact evidence, use remote grep/read/search/symbol tools against indexed snapshots; do not fall back to local filesystem access.\n"
         "4. Preserve authorization and production-mutation boundaries.\n\n"
         "## Authorized sources in this generated pack\n"
         f"{_agent_pack_source_lines(sources)}\n"
@@ -705,7 +743,7 @@ def _agent_pack_codex_agents(manifest: Mapping[str, Any]) -> str:
         "You are using a ContextSmith remote repo agent. The checked-out Skill Pack is not the target source repository.\n\n"
         "- Remote-only: do not assume repository files exist in the current working directory.\n"
         "- Do not run local `grep`, `rg`, `cat`, or edits for target repositories unless the user explicitly provides a separate local checkout.\n"
-        "- Phase 1 context-only preview: use only `contextsmith.get_agent_context`; follow-up remote code tools are not available yet.\n"
+        "- Use `contextsmith.get_agent_context` first, then remote grep/read/search/symbol tools for exact follow-up inspection.\n"
         "- Cite repo-relative paths, resource IDs, and indexed commits/snapshots from ContextSmith.\n"
         "- Treat indexed code as static evidence, not live production truth.\n"
         "- Read-only by default; do not perform source-control, deployment, or production mutations.\n\n"
@@ -722,7 +760,7 @@ def _agent_pack_claude_md(manifest: Mapping[str, Any]) -> str:
         "Use ContextSmith MCP for this repo agent. This instruction file is not a source checkout.\n\n"
         "- Remote-only: do not assume target repositories are local.\n"
         "- Do not use local `grep`, `rg`, `cat`, or filesystem edits for the target repos unless the user provides a separate checkout.\n"
-        "- Phase 1 context-only preview: call `contextsmith.get_agent_context` only; additional remote code inspection tools are not available yet.\n"
+        "- Call `contextsmith.get_agent_context` first, then remote grep/read/search/symbol tools for exact follow-up inspection.\n"
         "- Cite repo-relative paths, indexed commits/snapshots, and resource IDs.\n"
         "- Static indexed evidence is not live production state.\n"
         "- Ask for explicit approval before any mutation; this pack is read-only.\n\n"
@@ -866,8 +904,8 @@ def _git_env_read(resource: Resource) -> GitResourceEnvRead:
     source_config = resource.source_config or {}
     return GitResourceEnvRead(
         resource_id=resource.id,
-        name=resource.name,
-        uri=resource.uri,
+        name=_sanitize_metadata_text(resource.name),
+        uri=_sanitize_public_uri(resource.uri),
         branch=source_config.get("branch") or source_config.get("ref"),
         auth_token_env=source_config.get("auth_token_env"),
         clone_timeout=source_config.get("clone_timeout"),
@@ -938,6 +976,12 @@ def _validate_source_config(resource_type: str, uri: str, source_config: dict) -
                 config["max_redirects"] = parse_positive_int(
                     config.get("max_redirects"), default=3, hard_limit=10, name="max_redirects"
                 )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if rtype == "git":
+        try:
+            _is_local, target = validate_git_url(config.get("url") or uri, allow_local=os.getenv("CONTEXTSMITH_ALLOW_LOCAL_GIT", "false").lower() == "true")
+            config["url"] = target if _is_local else sanitize_remote_url(target)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     if rtype in UPLOAD_RESOURCE_TYPES:
@@ -1125,8 +1169,8 @@ def _repo_agent_brief_response(
     brief_lines.append("Use this repo-agent for repo-specific explanation, code navigation, cited operating briefs, and change-impact questions. Do not use it as authorization for production mutations.")
     return RepoAgentBriefRead(
         resource_id=resource.id,
-        name=resource.name,
-        uri=resource.uri,
+        name=_sanitize_metadata_text(resource.name),
+        uri=_sanitize_public_uri(resource.uri),
         readiness=readiness,
         current_snapshot_id=resource.current_snapshot_id,
         branch=branch,
@@ -1172,6 +1216,7 @@ def _purge_resource_artifacts(session: Session, resource: Resource) -> dict[str,
         ("graph_edges", "DELETE FROM graph_edges WHERE resource_id = :resource_id"),
         ("graph_nodes", "DELETE FROM graph_nodes WHERE resource_id = :resource_id"),
         ("code_symbols", "DELETE FROM code_symbols WHERE resource_id = :resource_id"),
+        ("snapshot_files", "DELETE FROM snapshot_files WHERE resource_id = :resource_id"),
         ("chunks", "DELETE FROM chunks WHERE resource_id = :resource_id"),
         ("index_runs", "DELETE FROM index_runs WHERE resource_id = :resource_id"),
         ("source_snapshots", "DELETE FROM source_snapshots WHERE resource_id = :resource_id"),
@@ -1265,7 +1310,7 @@ def _require_requested_resources_allowed(principal: Principal, resource_ids: lis
 
 def _effective_resource_ids(principal: Principal, resource_ids: list[UUID] | None) -> list[UUID] | None:
     token = principal.api_token
-    requested = resource_ids or None
+    requested = resource_ids
     if token is None or token.allowed_resource_ids is None:
         _require_requested_resources_allowed(principal, requested)
         return requested
@@ -1273,6 +1318,10 @@ def _effective_resource_ids(principal: Principal, resource_ids: list[UUID] | Non
         return list(token.allowed_resource_ids)
     _require_requested_resources_allowed(principal, requested)
     return requested
+
+
+def _is_empty_scope(resource_ids: list[UUID] | None) -> bool:
+    return resource_ids is not None and len(resource_ids) == 0
 
 
 @app.post("/workspaces", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
@@ -1625,7 +1674,7 @@ def get_agent_files(
     require_scope(principal, "project:read")
     project = _require_project_access(session, workspace_id, project_id, principal)
     profile = _ensure_agent_profile(session, workspace_id, project, principal.user.id)
-    resources = _current_project_resources(session, workspace_id, project_id)
+    resources = [resource for resource in _current_project_resources(session, workspace_id, project_id) if token_allows_resource(principal, resource.id)]
     session.commit()
     return _agent_file_response(session, workspace_id, project, profile, resources)
 
@@ -1643,7 +1692,7 @@ def regenerate_agent_files(
     require_scope(principal, "resource:refresh")
     project = _require_project_member(session, workspace_id, project_id, principal)
     profile = _ensure_agent_profile(session, workspace_id, project, principal.user.id)
-    resources = _current_project_resources(session, workspace_id, project_id)
+    resources = [resource for resource in _current_project_resources(session, workspace_id, project_id) if token_allows_resource(principal, resource.id)]
     session.add(
         AuditEvent(
             workspace_id=workspace_id,
@@ -1828,7 +1877,7 @@ def create_resource(
         raise HTTPException(status_code=403, detail="resource-scoped tokens cannot create new resources")
     _require_project_member(session, workspace_id, project_id, principal)
     source_config = _validate_source_config(payload.type, payload.uri, payload.source_config)
-    resource_uri = sanitize_remote_url(source_config["url"]) if payload.type.lower() in URL_RESOURCE_TYPES else payload.uri
+    resource_uri = sanitize_remote_url(source_config["url"]) if payload.type.lower() in URL_RESOURCE_TYPES | {"git"} else payload.uri
     resource = Resource(
         workspace_id=workspace_id,
         project_id=project_id,
@@ -2049,9 +2098,11 @@ def update_resource(
     if any(key in fields for key in ("type", "uri", "source_config")):
         effective_type = fields.get("type", resource.type)
         effective_uri = fields.get("uri", resource.uri)
-        effective_source_config = fields.get("source_config", resource.source_config or {})
+        effective_source_config = dict(fields.get("source_config", resource.source_config or {}))
+        if str(effective_type).lower() == "git" and "uri" in fields:
+            effective_source_config["url"] = str(fields["uri"])
         fields["source_config"] = _validate_source_config(effective_type, effective_uri, effective_source_config)
-        if effective_type.lower() in URL_RESOURCE_TYPES:
+        if effective_type.lower() in URL_RESOURCE_TYPES | {"git"}:
             fields["uri"] = sanitize_remote_url(fields["source_config"]["url"])
     for key, value in fields.items():
         setattr(resource, key, value)
@@ -2667,6 +2718,8 @@ def search_project(
     if resource_ids:
         resource_clause = "AND r.id = ANY(CAST(:rids AS uuid[]))"
         params["rids"] = [str(rid) for rid in resource_ids]
+    elif _is_empty_scope(resource_ids):
+        return SearchResponse(query=payload.query, count=0, hits=[])
 
     sql = text(
         f"""
@@ -2746,6 +2799,8 @@ def code_search_project(
     if resource_ids:
         resource_clause = "AND r.id = ANY(CAST(:rids AS uuid[]))"
         params["rids"] = [str(rid) for rid in resource_ids]
+    elif _is_empty_scope(resource_ids):
+        return CodeSearchResponse(query=payload.query, count=0, symbols=[])
     rows = session.execute(
         text(
             f"""
@@ -2804,6 +2859,338 @@ def code_search_project(
             )
         )
     return CodeSearchResponse(query=payload.query, count=len(symbols), symbols=symbols)
+
+
+def _remote_code_error(exc: RemoteCodeError) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message})
+
+
+def _snapshot_commit(snapshot: SourceSnapshot | None) -> str | None:
+    if snapshot is None or not isinstance(snapshot.meta, dict):
+        return None
+    return snapshot.meta.get("commit") or snapshot.meta.get("version")
+
+
+def _current_snapshot_files(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    resource_ids: list[UUID] | None,
+    path_glob: str | None = None,
+) -> list[tuple[SnapshotFile, SourceSnapshot]]:
+    effective_resource_ids = _effective_resource_ids(principal, resource_ids)
+    if _is_empty_scope(effective_resource_ids):
+        return []
+    predicates = [
+        SnapshotFile.workspace_id == workspace_id,
+        SnapshotFile.project_id == project_id,
+        SnapshotFile.deleted_at.is_(None),
+        Resource.workspace_id == workspace_id,
+        Resource.project_id == project_id,
+        Resource.id == SnapshotFile.resource_id,
+        Resource.current_snapshot_id == SnapshotFile.source_snapshot_id,
+        Resource.deleted_at.is_(None),
+        Resource.archived_at.is_(None),
+        Resource.retrieval_enabled.is_(True),
+        Resource.type == "git",
+        SourceSnapshot.id == SnapshotFile.source_snapshot_id,
+        SourceSnapshot.workspace_id == workspace_id,
+        SourceSnapshot.project_id == project_id,
+    ]
+    if effective_resource_ids is not None:
+        predicates.append(SnapshotFile.resource_id.in_(effective_resource_ids))
+    if path_glob is not None:
+        if "*" not in path_glob and "?" not in path_glob and "[" not in path_glob:
+            predicates.append(SnapshotFile.path == path_glob)
+        else:
+            predicates.append(SnapshotFile.path.like(path_glob.replace("%", "\\%").replace("_", "\\_").replace("*", "%").replace("?", "_"), escape="\\"))
+    rows = session.execute(
+        select(SnapshotFile, SourceSnapshot)
+        .options(
+            load_only(
+                SnapshotFile.id,
+                SnapshotFile.byte_size,
+                SnapshotFile.resource_id,
+                SnapshotFile.source_snapshot_id,
+            )
+        )
+        .where(*predicates)
+        .order_by(SnapshotFile.path.asc())
+        .limit(MAX_SCANNED_FILES + 1)
+    ).all()
+    selected_ids: list[UUID] = []
+    snapshots_by_file_id: dict[UUID, SourceSnapshot] = {}
+    total_bytes = 0
+    for file_row, snapshot in rows:
+        total_bytes += int(file_row.byte_size or 0)
+        if len(selected_ids) >= MAX_SCANNED_FILES or total_bytes > MAX_SCANNED_BYTES:
+            raise RemoteCodeError("scan_budget_exceeded", "remote code scan exceeds file/byte budget", status_code=422)
+        selected_ids.append(file_row.id)
+        snapshots_by_file_id[file_row.id] = snapshot
+    if not selected_ids:
+        return []
+    content_rows = session.execute(
+        select(SnapshotFile)
+        .where(SnapshotFile.id.in_(selected_ids))
+        .order_by(SnapshotFile.path.asc())
+    ).scalars().all()
+    return [(file_row, snapshots_by_file_id[file_row.id]) for file_row in content_rows]
+
+
+def _record_remote_code_audit(
+    session: Session,
+    *,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    tool_name: str,
+    status_value: str,
+    result_count: int = 0,
+    latency_ms: float = 0.0,
+    denied_reason: str | None = None,
+) -> None:
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=principal.user.id,
+            actor_token_id=principal.token_id,
+            action="remote_code_tool.invoke" if status_value == "succeeded" else "remote_code_tool.denied",
+            target_type="project",
+            target_id=project_id,
+            meta={
+                "tool_name": tool_name,
+                "status": status_value,
+                "result_count": result_count,
+                "latency_ms": round(latency_ms, 2),
+                **({"denied_reason": denied_reason} if denied_reason else {}),
+            },
+        )
+    )
+    session.commit()
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/remote-code/search_code",
+    response_model=RemoteSearchCodeResponse,
+)
+def remote_search_code(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: RemoteSearchCodeRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RemoteSearchCodeResponse:
+    started = perf_counter()
+    require_scope(principal, "project:query")
+    require_scope(principal, "code:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    try:
+        pattern = compile_safe_regex(payload.query, regex=False)
+        files = _current_snapshot_files(session, workspace_id, project_id, principal, payload.resource_ids)
+    except RemoteCodeError as exc:
+        _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="search_code", status_value="denied", denied_reason=exc.code)
+        raise _remote_code_error(exc) from exc
+    results: list[RemoteSearchCodeHit] = []
+    for file_row, snapshot in files:
+        check_scan_budget(started)
+        lines = file_row.content.splitlines()
+        for idx, line in enumerate(lines, start=1):
+            if len(line) > MAX_SEARCH_LINE_CHARS:
+                continue
+            if pattern.search(line):
+                results.append(
+                    RemoteSearchCodeHit(
+                        resource_id=file_row.resource_id,
+                        snapshot_id=file_row.source_snapshot_id,
+                        indexed_commit=_snapshot_commit(snapshot),
+                        path=file_row.path,
+                        line_start=idx,
+                        line_end=idx,
+                        snippet=snippet_for_line(line),
+                        score=1.0,
+                        score_components={"lexical": 1.0},
+                    )
+                )
+                break
+        if len(results) >= payload.top_k:
+            break
+    _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="search_code", status_value="succeeded", result_count=len(results), latency_ms=(perf_counter() - started) * 1000)
+    return RemoteSearchCodeResponse(results=results)
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/remote-code/grep_code",
+    response_model=RemoteGrepCodeResponse,
+)
+def remote_grep_code(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: RemoteGrepCodeRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RemoteGrepCodeResponse:
+    started = perf_counter()
+    require_scope(principal, "project:query")
+    require_scope(principal, "code:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    try:
+        path_glob = validate_path_glob(payload.path_glob)
+        pattern = compile_safe_regex(payload.pattern, regex=payload.regex)
+        files = _current_snapshot_files(session, workspace_id, project_id, principal, payload.resource_ids, path_glob)
+    except RemoteCodeError as exc:
+        _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="grep_code", status_value="denied", denied_reason=exc.code)
+        raise _remote_code_error(exc) from exc
+    matches: list[RemoteGrepCodeMatch] = []
+    truncated = False
+    try:
+        for file_row, snapshot in files:
+            if not path_matches(file_row.path, path_glob):
+                continue
+            lines = file_row.content.splitlines()
+            for idx, line in enumerate(lines, start=1):
+                check_scan_budget(started)
+                if len(line) > MAX_SEARCH_LINE_CHARS:
+                    continue
+                if pattern.search(line):
+                    before, after = line_window(lines, idx, payload.context_lines)
+                    matches.append(
+                        RemoteGrepCodeMatch(
+                            resource_id=file_row.resource_id,
+                            snapshot_id=file_row.source_snapshot_id,
+                            indexed_commit=_snapshot_commit(snapshot),
+                            path=file_row.path,
+                            line_start=idx,
+                            line_end=idx,
+                            line_text=snippet_for_line(line),
+                            before=[snippet_for_line(item) for item in before],
+                            after=[snippet_for_line(item) for item in after],
+                        )
+                    )
+                    if len(matches) >= payload.max_matches:
+                        truncated = True
+                        break
+            if truncated:
+                break
+    except RemoteCodeError as exc:
+        _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="grep_code", status_value="denied", denied_reason=exc.code)
+        raise _remote_code_error(exc) from exc
+    _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="grep_code", status_value="succeeded", result_count=len(matches), latency_ms=(perf_counter() - started) * 1000)
+    return RemoteGrepCodeResponse(matches=matches, truncated=truncated)
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/remote-code/read_file",
+    response_model=RemoteReadFileResponse,
+)
+def remote_read_file(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: RemoteReadFileRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RemoteReadFileResponse:
+    started = perf_counter()
+    require_scope(principal, "resource:read")
+    require_scope(principal, "code:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    try:
+        path = validate_repo_path(payload.path)
+    except RemoteCodeError as exc:
+        _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="read_file", status_value="denied", denied_reason=exc.code)
+        raise _remote_code_error(exc) from exc
+    resource = _resolve_resource(session, workspace_id, project_id, payload.resource_id, principal)
+    if resource.current_snapshot_id is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "file not found"})
+    row = session.execute(
+        select(SnapshotFile, SourceSnapshot).where(
+            SnapshotFile.workspace_id == workspace_id,
+            SnapshotFile.project_id == project_id,
+            SnapshotFile.resource_id == payload.resource_id,
+            SnapshotFile.source_snapshot_id == resource.current_snapshot_id,
+            SnapshotFile.path == path,
+            SnapshotFile.deleted_at.is_(None),
+            Resource.id == SnapshotFile.resource_id,
+            Resource.type == "git",
+            Resource.retrieval_enabled.is_(True),
+            Resource.deleted_at.is_(None),
+            Resource.archived_at.is_(None),
+            SourceSnapshot.id == SnapshotFile.source_snapshot_id,
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "file not found"})
+    file_row = row[0]
+    snapshot = row[1]
+    if file_row.is_binary:
+        raise HTTPException(status_code=422, detail={"code": "binary_unsupported", "message": "binary files are not supported"})
+    try:
+        content, start, end, total, truncated = line_range(file_row.content, payload.start_line, payload.end_line)
+    except RemoteCodeError as exc:
+        _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="read_file", status_value="denied", denied_reason=exc.code)
+        raise _remote_code_error(exc) from exc
+    _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="read_file", status_value="succeeded", result_count=1, latency_ms=(perf_counter() - started) * 1000)
+    return RemoteReadFileResponse(resource_id=file_row.resource_id, snapshot_id=file_row.source_snapshot_id, indexed_commit=_snapshot_commit(snapshot), path=file_row.path, start_line=start, end_line=end, total_lines=total, content=content, truncated=truncated)
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/remote-code/find_symbol",
+    response_model=RemoteFindSymbolResponse,
+)
+def remote_find_symbol(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: RemoteFindSymbolRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RemoteFindSymbolResponse:
+    started = perf_counter()
+    require_scope(principal, "project:query")
+    require_scope(principal, "code:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    effective_resource_ids = _effective_resource_ids(principal, payload.resource_ids)
+    if _is_empty_scope(effective_resource_ids):
+        return RemoteFindSymbolResponse(symbols=[])
+    predicates = [
+        CodeSymbol.workspace_id == workspace_id,
+        CodeSymbol.project_id == project_id,
+        CodeSymbol.deleted_at.is_(None),
+        CodeSymbol.name.ilike(f"%{payload.name}%"),
+        Resource.id == CodeSymbol.resource_id,
+        Resource.current_snapshot_id == CodeSymbol.source_snapshot_id,
+        Resource.deleted_at.is_(None),
+        Resource.archived_at.is_(None),
+        Resource.retrieval_enabled.is_(True),
+        Resource.type == "git",
+        SourceSnapshot.id == CodeSymbol.source_snapshot_id,
+    ]
+    if payload.kind:
+        predicates.append(CodeSymbol.kind == payload.kind)
+    if effective_resource_ids is not None:
+        predicates.append(CodeSymbol.resource_id.in_(effective_resource_ids))
+    rows = session.execute(select(CodeSymbol, SourceSnapshot).where(*predicates).order_by(CodeSymbol.path.asc(), CodeSymbol.line_start.asc()).limit(payload.top_k)).all()
+    symbols = []
+    for symbol, snapshot in rows:
+        symbols.append(
+            CodeSymbolHit(
+                resource_id=symbol.resource_id,
+                snapshot_id=symbol.source_snapshot_id,
+                path=symbol.path,
+                name=symbol.name,
+                kind=symbol.kind,
+                language=symbol.language,
+                line_start=symbol.line_start,
+                line_end=symbol.line_end,
+                signature=symbol.signature,
+                content_hash=symbol.content_hash,
+                version=snapshot.version,
+                version_kind=snapshot.version_kind,
+                commit=_snapshot_commit(snapshot),
+                score=1.0,
+            )
+        )
+    _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="find_symbol", status_value="succeeded", result_count=len(symbols), latency_ms=(perf_counter() - started) * 1000)
+    return RemoteFindSymbolResponse(symbols=symbols)
 
 
 
@@ -3341,6 +3728,69 @@ def _json_rpc_error(rpc_id: object | None, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": code, "message": message}}
 
 
+def _mcp_tool_result(rpc_id: object | None, result: Any) -> dict:
+    payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+    text_payload = result.model_dump_json() if hasattr(result, "model_dump_json") else json.dumps(payload)
+    return {
+        "jsonrpc": "2.0",
+        "id": rpc_id,
+        "result": {"content": [{"type": "text", "text": text_payload}], "structuredContent": payload},
+    }
+
+
+def _mcp_tool_error(rpc_id: object | None, status_code: int, detail: object) -> dict:
+    payload = {"status_code": status_code, "detail": detail}
+    return {
+        "jsonrpc": "2.0",
+        "id": rpc_id,
+        "result": {
+            "content": [{"type": "text", "text": json.dumps(payload)}],
+            "structuredContent": payload,
+            "isError": True,
+        },
+    }
+
+
+def _mcp_tools() -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "contextsmith.get_agent_context",
+            "description": "Return permission-scoped cited context for a ContextSmith project.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "runtime": {"type": "string", "enum": ["api", "hermes", "claude", "codex", "cursor"]},
+                    "top_k": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "resource_ids": {"type": "array", "items": {"type": "string"}},
+                    "include_code_symbols": {"type": "boolean"},
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "contextsmith.search_code",
+            "description": "Search indexed snapshot files without local repository access.",
+            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "minimum": 1, "maximum": 50}}, "required": ["query"]},
+        },
+        {
+            "name": "contextsmith.grep_code",
+            "description": "Run bounded grep over indexed snapshot files without local repository access.",
+            "inputSchema": {"type": "object", "properties": {"pattern": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "path_glob": {"type": "string"}, "max_matches": {"type": "integer", "minimum": 1, "maximum": 100}, "regex": {"type": "boolean"}}, "required": ["pattern"]},
+        },
+        {
+            "name": "contextsmith.read_file",
+            "description": "Read a line range from an indexed repo-relative file snapshot.",
+            "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "path": {"type": "string"}, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}}, "required": ["resource_id", "path"]},
+        },
+        {
+            "name": "contextsmith.find_symbol",
+            "description": "Find indexed code symbols by name and optional kind.",
+            "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "kind": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["name"]},
+        },
+    ]
+
+
 @app.post("/mcp/{workspace_id}/{project_id}", response_model=None)
 async def mcp_endpoint(
     workspace_id: UUID,
@@ -3382,62 +3832,43 @@ async def mcp_endpoint(
             },
         }
     if method == "tools/list":
-        return {
-            "jsonrpc": "2.0",
-            "id": rpc_id,
-            "result": {
-                "tools": [
-                    {
-                        "name": "contextsmith.get_agent_context",
-                        "description": "Return permission-scoped cited context for a ContextSmith project.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "query": {"type": "string"},
-                                "runtime": {"type": "string", "enum": ["api", "hermes", "claude", "codex", "cursor"]},
-                                "top_k": {"type": "integer", "minimum": 1, "maximum": 50},
-                                "resource_ids": {"type": "array", "items": {"type": "string"}},
-                                "include_code_symbols": {"type": "boolean"},
-                            },
-                            "required": ["query"],
-                        },
-                    }
-                ]
-            },
-        }
+        return {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": _mcp_tools()}}
     if method == "tools/call":
         params = body.get("params", {})
         if not isinstance(params, dict):
             return _json_rpc_error(rpc_id, -32602, "invalid params")
-        if params.get("name") != "contextsmith.get_agent_context":
-            return _json_rpc_error(rpc_id, -32601, "unknown tool")
+        tool_name = params.get("name")
         arguments = params.get("arguments") or {}
         if not isinstance(arguments, dict):
             return _json_rpc_error(rpc_id, -32602, "invalid params")
+        result: Any
         try:
-            payload = AgentContextRequest(**arguments)
+            if tool_name == "contextsmith.get_agent_context":
+                payload = AgentContextRequest(**arguments)
+                resource_ids = _effective_resource_ids(principal, payload.resource_ids)
+                payload = payload.model_copy(update={"resource_ids": resource_ids})
+                result = _build_agent_context_response(
+                    session,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    payload=payload,
+                    principal=principal,
+                )
+            elif tool_name == "contextsmith.search_code":
+                result = remote_search_code(workspace_id, project_id, RemoteSearchCodeRequest(**arguments), principal, session)
+            elif tool_name == "contextsmith.grep_code":
+                result = remote_grep_code(workspace_id, project_id, RemoteGrepCodeRequest(**arguments), principal, session)
+            elif tool_name == "contextsmith.read_file":
+                result = remote_read_file(workspace_id, project_id, RemoteReadFileRequest(**arguments), principal, session)
+            elif tool_name == "contextsmith.find_symbol":
+                result = remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**arguments), principal, session)
+            else:
+                return _json_rpc_error(rpc_id, -32601, "unknown tool")
         except ValidationError as exc:
             return _json_rpc_error(rpc_id, -32602, f"invalid params: {exc.errors()[0]['msg']}")
-        try:
-            resource_ids = _effective_resource_ids(principal, payload.resource_ids)
-        except HTTPException:
-            return _json_rpc_error(rpc_id, -32603, "resource not found")
-        payload = payload.model_copy(update={"resource_ids": resource_ids})
-        result = _build_agent_context_response(
-            session,
-            workspace_id=workspace_id,
-            project_id=project_id,
-            payload=payload,
-            principal=principal,
-        )
-        return {
-            "jsonrpc": "2.0",
-            "id": rpc_id,
-            "result": {
-                "content": [{"type": "text", "text": result.model_dump_json()}],
-                "structuredContent": result.model_dump(mode="json"),
-            },
-        }
+        except HTTPException as exc:
+            return _mcp_tool_error(rpc_id, exc.status_code, exc.detail)
+        return _mcp_tool_result(rpc_id, result)
     return _json_rpc_error(rpc_id, -32601, "method not found")
 
 

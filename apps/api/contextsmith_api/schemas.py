@@ -476,6 +476,90 @@ class CodeSearchRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
 
 
+class RemoteSearchCodeRequest(BaseModel):
+    query: str = Field(min_length=1)
+    resource_ids: list[UUID] | None = None
+    profile: str | None = None
+    top_k: int = Field(default=10, ge=1, le=50)
+    cursor: str | None = None
+
+
+class RemoteSearchCodeHit(BaseModel):
+    resource_id: UUID
+    snapshot_id: UUID
+    indexed_commit: str | None = None
+    path: str
+    line_start: int
+    line_end: int
+    snippet: str
+    score: float
+    score_components: dict = Field(default_factory=dict)
+
+
+class RemoteSearchCodeResponse(BaseModel):
+    results: list[RemoteSearchCodeHit]
+    next_cursor: str | None = None
+
+
+class RemoteGrepCodeRequest(BaseModel):
+    pattern: str = Field(min_length=1)
+    resource_ids: list[UUID] | None = None
+    path_glob: str | None = None
+    max_matches: int = Field(default=50, ge=1, le=100)
+    cursor: str | None = None
+    regex: bool = False
+    context_lines: int = Field(default=1, ge=0, le=5)
+
+
+class RemoteGrepCodeMatch(BaseModel):
+    resource_id: UUID
+    snapshot_id: UUID
+    indexed_commit: str | None = None
+    path: str
+    line_start: int
+    line_end: int
+    line_text: str
+    before: list[str] = Field(default_factory=list)
+    after: list[str] = Field(default_factory=list)
+
+
+class RemoteGrepCodeResponse(BaseModel):
+    matches: list[RemoteGrepCodeMatch]
+    next_cursor: str | None = None
+    truncated: bool = False
+
+
+class RemoteReadFileRequest(BaseModel):
+    resource_id: UUID
+    path: str = Field(min_length=1)
+    start_line: int = Field(default=1, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+
+
+class RemoteReadFileResponse(BaseModel):
+    resource_id: UUID
+    snapshot_id: UUID
+    indexed_commit: str | None = None
+    path: str
+    start_line: int
+    end_line: int
+    total_lines: int
+    content: str
+    truncated: bool = False
+
+
+class RemoteFindSymbolRequest(BaseModel):
+    name: str = Field(min_length=1)
+    kind: str | None = None
+    resource_ids: list[UUID] | None = None
+    top_k: int = Field(default=20, ge=1, le=100)
+
+
+class RemoteFindSymbolResponse(BaseModel):
+    symbols: list["CodeSymbolHit"]
+    next_cursor: str | None = None
+
+
 class CodeSymbolHit(BaseModel):
     resource_id: UUID
     snapshot_id: UUID
