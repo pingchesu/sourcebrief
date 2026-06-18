@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import hashlib
 import io
 import json
@@ -21,6 +22,7 @@ from pydantic import ValidationError
 from redis import Redis
 from rq import Queue
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, load_only
 
 from contextsmith_api.auth import (
@@ -89,14 +91,19 @@ from contextsmith_api.schemas import (
     ContextPacketRead,
     ContextPacketRequest,
     DueRefreshResponse,
+    GeneratePatchRequest,
     GitResourceEnvRead,
     GitResourceEnvUpdate,
     GraphEdgeRead,
     GraphNodeRead,
     GraphRead,
     IndexRunRead,
+    OpenPrRequest,
+    PatchProposalFileRead,
+    PatchProposalRead,
     ProjectCreate,
     ProjectRead,
+    PrRequestRead,
     PurgeResourceResponse,
     RemoteFindSymbolRequest,
     RemoteFindSymbolResponse,
@@ -151,8 +158,10 @@ from contextsmith_shared.models import (
     GraphEdge,
     GraphNode,
     IndexRun,
+    PatchProposal,
     Project,
     ProjectMembership,
+    PrRequest,
     QueryRun,
     Resource,
     RetrievalEvalItem,
@@ -247,6 +256,26 @@ def _ensure_agent_profile(
     session.add(profile)
     session.flush()
     return profile
+
+
+def _tool_policy_patch_generation_enabled(profile: AgentProfile | None) -> bool:
+    policy = cast(dict[str, Any], profile.tool_policy if profile is not None else {})
+    return policy.get("patch_generation") == "enabled"
+
+
+def _tool_policy_pr_enabled(profile: AgentProfile | None) -> bool:
+    policy = cast(dict[str, Any], profile.tool_policy if profile is not None else {})
+    return policy.get("open_pr") == "enabled"
+
+
+def _require_patch_generation_enabled(profile: AgentProfile | None) -> None:
+    if not _tool_policy_patch_generation_enabled(profile):
+        raise HTTPException(status_code=403, detail="patch generation is disabled for this project")
+
+
+def _require_pr_workflow_enabled(profile: AgentProfile | None) -> None:
+    if not _tool_policy_pr_enabled(profile):
+        raise HTTPException(status_code=403, detail="PR workflow is disabled for this project")
 
 
 def _agent_profile_read(session: Session, workspace_id: UUID, project: Project, profile: AgentProfile) -> AgentProfileRead:
@@ -628,14 +657,17 @@ def _agent_pack_manifest_dict(
             "local_repo_required": False,
             "local_grep_allowed": False,
         },
-        "capabilities": {"required": ["get_agent_context", "search_code", "grep_code", "read_file", "find_symbol"], "optional": []},
+        "capabilities": {
+            "required": ["get_agent_context", "search_code", "grep_code", "read_file", "find_symbol"],
+            "optional": ["generate_patch", "open_pr"],
+        },
         "sources": sources,
         "retrieval_profiles": {"default": DEFAULT_RETRIEVAL_PROFILE, "profiles": retrieval_profile_manifest()},
         "mutation_policy": {
             "default": "read_only",
-            "patch_generation": "disabled",
+            "patch_generation": "opt_in_disabled_by_default",
             "remote_write": "disabled",
-            "open_pr": "disabled",
+            "open_pr": "opt_in_approval_record_only",
         },
         "citation_policy": {
             "path_format": "repo_relative",
@@ -725,7 +757,7 @@ def _agent_pack_hermes_skill(manifest: Mapping[str, Any]) -> str:
         "- Use `contextsmith.get_agent_context` first, then `contextsmith.grep_code`, `contextsmith.read_file`, `contextsmith.search_code`, or `contextsmith.find_symbol` for exact follow-up inspection.\n"
         "- Cite repo-relative paths, resource IDs, and indexed commits/snapshots when ContextSmith returns them.\n"
         "- Treat indexed code as static evidence, not live production state.\n"
-        "- Mutation policy is read-only; do not claim patch, PR, write, test execution, deployment, or production mutation capability from this skill.\n\n"
+        "- Mutation policy is read-only by default. Patch generation and PR workflow are opt-in ContextSmith tools that require explicit project policy, scopes, and per-action approval; never claim remote write, test execution, deployment, or production mutation capability from this skill.\n\n"
         "## Required MCP setup\n"
         f"Configure the ContextSmith MCP endpoint separately: `{contextsmith['mcp_endpoint']}`.\n"
         "Use a scoped bearer token through the `CONTEXTSMITH_TOKEN` environment variable or your runtime's secret manager. Do not place plaintext tokens in this skill.\n\n"
@@ -752,7 +784,7 @@ def _agent_pack_codex_agents(manifest: Mapping[str, Any]) -> str:
         "- Retrieval profile guide: `hybrid` default, `lexical` exact identifiers/errors/config, `vector` semantic discovery, `hybrid_rerank` eval precision, `graph` architecture/impact.\n"
         "- Cite repo-relative paths, resource IDs, and indexed commits/snapshots from ContextSmith.\n"
         "- Treat indexed code as static evidence, not live production truth.\n"
-        "- Read-only by default; do not perform source-control, deployment, or production mutations.\n\n"
+        "- Read-only by default. Patch generation and PR workflow are opt-in only, require ContextSmith policy/scopes/per-action approval, and do not grant remote write/deploy/test execution by themselves.\n\n"
         "## Authorized sources\n"
         f"{_agent_pack_source_lines(sources)}\n"
     )
@@ -770,7 +802,7 @@ def _agent_pack_claude_md(manifest: Mapping[str, Any]) -> str:
         "- Retrieval profile guide: `hybrid` default, `lexical` exact identifiers/errors/config, `vector` semantic discovery, `hybrid_rerank` eval precision, `graph` architecture/impact.\n"
         "- Cite repo-relative paths, indexed commits/snapshots, and resource IDs.\n"
         "- Static indexed evidence is not live production state.\n"
-        "- Ask for explicit approval before any mutation; this pack is read-only.\n\n"
+        "- Ask for explicit approval before any mutation; patch generation and PR workflow are opt-in ContextSmith tools and do not grant remote write/deploy/test execution by themselves.\n\n"
         "## Authorized sources\n"
         f"{_agent_pack_source_lines(sources)}\n"
     )
@@ -836,7 +868,7 @@ def _agent_pack_readme(manifest: Mapping[str, Any], digest: str) -> str:
         "Mutable `main` installs are for development only. Regenerate the pack when the manifest digest changes.\n\n"
         "## Publishing boundary\n"
         "This zip is download-only. Future GitHub PR publishing must require explicit user approval, show the diff, "
-        "and keep tokens as environment placeholders only.\n"
+        "and keep tokens as environment placeholders only. Patch generation and PR workflow remain opt-in and require explicit policy plus per-action approval records.\n"
     )
 
 
@@ -1217,6 +1249,8 @@ def _purge_resource_artifacts(session: Session, resource: Resource) -> dict[str,
     params = {"resource_id": resource.id}
     statements = [
         ("resources_current_snapshot", "UPDATE resources SET current_snapshot_id = NULL WHERE id = :resource_id"),
+        ("pr_requests", "DELETE FROM pr_requests WHERE resource_id = :resource_id"),
+        ("patch_proposals", "DELETE FROM patch_proposals WHERE resource_id = :resource_id"),
         ("agent_card_summaries", "DELETE FROM agent_card_summaries WHERE resource_id = :resource_id"),
         ("context_packet_items", "DELETE FROM context_packet_items WHERE resource_id = :resource_id"),
         ("retrieval_hits", "DELETE FROM retrieval_hits WHERE resource_id = :resource_id"),
@@ -2879,6 +2913,74 @@ def _snapshot_commit(snapshot: SourceSnapshot | None) -> str | None:
     return snapshot.meta.get("commit") or snapshot.meta.get("version")
 
 
+def _safe_branch_name(value: str | None) -> str | None:
+    if value is None or value == "":
+        return None
+    if not re.match(r"^[A-Za-z0-9._/-]{1,200}$", value) or ".." in value or value.startswith("/") or value.endswith("/"):
+        raise HTTPException(status_code=422, detail="invalid branch name")
+    return value
+
+
+def _patch_policy_profile(session: Session, workspace_id: UUID, project_id: UUID) -> AgentProfile | None:
+    return session.scalar(select(AgentProfile).where(AgentProfile.workspace_id == workspace_id, AgentProfile.project_id == project_id))
+
+
+def _patch_file_hash(content: str) -> str:
+    return hashlib.sha256(content.encode()).hexdigest()
+
+
+def _build_unified_file_diff(path: str, original: str, updated: str) -> str:
+    old_lines = original.splitlines(keepends=True)
+    new_lines = updated.splitlines(keepends=True)
+    if old_lines and not old_lines[-1].endswith("\n"):
+        old_lines[-1] += "\n"
+    if new_lines and not new_lines[-1].endswith("\n"):
+        new_lines[-1] += "\n"
+    return "".join(difflib.unified_diff(old_lines, new_lines, fromfile=f"a/{path}", tofile=f"b/{path}"))
+
+
+def _patch_proposal_read(proposal: PatchProposal) -> PatchProposalRead:
+    files_payload = [PatchProposalFileRead(**dict(item)) for item in cast(list[dict[str, Any]], proposal.files or [])]
+    return PatchProposalRead(
+        id=proposal.id,
+        workspace_id=proposal.workspace_id,
+        project_id=proposal.project_id,
+        resource_id=proposal.resource_id,
+        source_snapshot_id=proposal.source_snapshot_id,
+        status=proposal.status,
+        scope=proposal.scope,
+        source_branch=proposal.source_branch,
+        target_branch=proposal.target_branch,
+        indexed_commit=proposal.indexed_commit,
+        base_commit=proposal.base_commit,
+        branch_moved=proposal.branch_moved,
+        warnings=list(proposal.warnings or []),
+        files=files_payload,
+        unified_diff=proposal.unified_diff,
+        diff_summary=proposal.diff_summary,
+        created_at=proposal.created_at,
+    )
+
+
+def _pr_request_read(pr_request: PrRequest) -> PrRequestRead:
+    return PrRequestRead(
+        id=pr_request.id,
+        workspace_id=pr_request.workspace_id,
+        project_id=pr_request.project_id,
+        resource_id=pr_request.resource_id,
+        patch_proposal_id=pr_request.patch_proposal_id,
+        status=pr_request.status,
+        source_branch=pr_request.source_branch,
+        target_branch=pr_request.target_branch,
+        scope=pr_request.scope,
+        diff_summary=pr_request.diff_summary,
+        approval_note=pr_request.approval_note,
+        github_pr_url=pr_request.github_pr_url,
+        external_ref=pr_request.external_ref,
+        created_at=pr_request.created_at,
+    )
+
+
 def _current_snapshot_files(
     session: Session,
     workspace_id: UUID,
@@ -2976,6 +3078,223 @@ def _record_remote_code_audit(
         )
     )
     session.commit()
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+    response_model=PatchProposalRead,
+)
+def remote_generate_patch(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: GeneratePatchRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> PatchProposalRead:
+    require_scope(principal, "project:query")
+    require_scope(principal, "code:read")
+    require_scope(principal, "patch:generate")
+    project = _require_project_member(session, workspace_id, project_id, principal)
+    _ = project
+    profile = _patch_policy_profile(session, workspace_id, project_id)
+    _require_patch_generation_enabled(profile)
+    source_branch = _safe_branch_name(payload.source_branch)
+    target_branch = _safe_branch_name(payload.target_branch)
+    resource = _resolve_resource(session, workspace_id, project_id, payload.resource_id, principal)
+    if (
+        resource.type.lower() != "git"
+        or resource.current_snapshot_id is None
+        or resource.deleted_at is not None
+        or resource.archived_at is not None
+        or not resource.retrieval_enabled
+    ):
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "git snapshot not found"})
+    snapshot = session.get(SourceSnapshot, resource.current_snapshot_id)
+    indexed_commit = _snapshot_commit(snapshot)
+    warnings: list[str] = []
+    base_commit_required = bool(source_branch or target_branch)
+    if base_commit_required and not payload.base_commit:
+        warnings.append("base_commit_required_for_pr_approval")
+    branch_moved = bool(payload.base_commit and indexed_commit and payload.base_commit != indexed_commit)
+    if branch_moved:
+        warnings.append("source_branch_moved_since_base_commit")
+    diffs: list[str] = []
+    files_payload: list[dict[str, Any]] = []
+    seen_paths: set[str] = set()
+    for file_change in payload.files:
+        try:
+            path = validate_repo_path(file_change.path)
+        except RemoteCodeError as exc:
+            raise _remote_code_error(exc) from exc
+        if path in seen_paths:
+            raise HTTPException(status_code=422, detail="duplicate patch path")
+        seen_paths.add(path)
+        row = session.scalar(
+            select(SnapshotFile).where(
+                SnapshotFile.workspace_id == workspace_id,
+                SnapshotFile.project_id == project_id,
+                SnapshotFile.resource_id == resource.id,
+                SnapshotFile.source_snapshot_id == resource.current_snapshot_id,
+                SnapshotFile.path == path,
+                SnapshotFile.deleted_at.is_(None),
+                SnapshotFile.is_binary.is_(False),
+            )
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail={"code": "not_found", "message": f"file not found: {path}"})
+        lines = row.content.splitlines()
+        start = file_change.start_line
+        end = file_change.end_line if file_change.end_line is not None else len(lines)
+        if start > len(lines) + 1 or end > len(lines):
+            raise HTTPException(status_code=422, detail="patch line range is outside indexed file")
+        replacement_lines = file_change.new_content.splitlines()
+        updated_lines = lines[: start - 1] + replacement_lines + lines[end:]
+        updated = "\n".join(updated_lines)
+        if row.content.endswith("\n"):
+            updated += "\n"
+        diff = _build_unified_file_diff(path, row.content, updated)
+        if not diff:
+            warnings.append(f"no_change:{path}")
+        diffs.append(diff)
+        files_payload.append(
+            {
+                "path": path,
+                "start_line": start,
+                "end_line": end,
+                "original_hash": _patch_file_hash(row.content),
+                "new_hash": _patch_file_hash(updated),
+                "rationale": file_change.rationale,
+            }
+        )
+    unified_diff = "\n".join(diff for diff in diffs if diff).strip() + "\n"
+    if not unified_diff.strip():
+        raise HTTPException(status_code=422, detail="patch has no file changes")
+    diff_summary = f"{len(files_payload)} file(s): " + ", ".join(item["path"] for item in files_payload)
+    proposal = PatchProposal(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        resource_id=resource.id,
+        source_snapshot_id=resource.current_snapshot_id,
+        actor_user_id=principal.user.id,
+        actor_token_id=principal.token_id,
+        status="draft",
+        scope=payload.scope,
+        source_branch=source_branch,
+        target_branch=target_branch,
+        indexed_commit=indexed_commit,
+        base_commit=payload.base_commit,
+        branch_moved=branch_moved,
+        warnings=warnings,
+        files=files_payload,
+        unified_diff=unified_diff,
+        diff_summary=diff_summary,
+        request={"approval_note_present": bool(payload.approval_note)},
+    )
+    session.add(proposal)
+    session.flush()
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=principal.user.id,
+            actor_token_id=principal.token_id,
+            action="patch.generate",
+            target_type="patch_proposal",
+            target_id=proposal.id,
+            meta={"resource_id": str(resource.id), "scope": payload.scope, "branch_moved": branch_moved, "diff_summary": diff_summary},
+        )
+    )
+    session.commit()
+    return _patch_proposal_read(proposal)
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr",
+    response_model=PrRequestRead,
+)
+def remote_open_pr(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: OpenPrRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> PrRequestRead:
+    require_scope(principal, "pr:write")
+    project = _require_project_member(session, workspace_id, project_id, principal)
+    _ = project
+    profile = _patch_policy_profile(session, workspace_id, project_id)
+    _require_pr_workflow_enabled(profile)
+    source_branch = _safe_branch_name(payload.source_branch)
+    target_branch = _safe_branch_name(payload.target_branch)
+    assert source_branch is not None and target_branch is not None
+    proposal = session.get(PatchProposal, payload.patch_proposal_id)
+    if proposal is None or proposal.workspace_id != workspace_id or proposal.project_id != project_id:
+        raise HTTPException(status_code=404, detail="patch proposal not found")
+    resource = _resolve_resource(session, workspace_id, project_id, proposal.resource_id, principal)
+    if (
+        resource.type.lower() != "git"
+        or resource.current_snapshot_id is None
+        or resource.deleted_at is not None
+        or resource.archived_at is not None
+        or not resource.retrieval_enabled
+    ):
+        raise HTTPException(status_code=404, detail="patch proposal not found")
+    current_snapshot = session.get(SourceSnapshot, resource.current_snapshot_id)
+    current_commit = _snapshot_commit(current_snapshot)
+    if proposal.indexed_commit and current_commit != proposal.indexed_commit:
+        raise HTTPException(status_code=409, detail="indexed commit changed; regenerate patch before PR approval")
+    if proposal.status == "pr_opened":
+        raise HTTPException(status_code=409, detail="patch proposal already has a PR approval record")
+    if proposal.source_branch and source_branch != proposal.source_branch:
+        raise HTTPException(status_code=422, detail="source branch must match patch proposal")
+    if proposal.target_branch and target_branch != proposal.target_branch:
+        raise HTTPException(status_code=422, detail="target branch must match patch proposal")
+    if proposal.branch_moved:
+        raise HTTPException(status_code=409, detail="source branch moved; regenerate patch before PR approval")
+    if proposal.indexed_commit and not proposal.base_commit:
+        raise HTTPException(status_code=409, detail="base commit required; regenerate patch with indexed commit before PR approval")
+    pr_request = PrRequest(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        resource_id=proposal.resource_id,
+        patch_proposal_id=proposal.id,
+        approver_user_id=principal.user.id,
+        approver_token_id=principal.token_id,
+        status="opened" if payload.github_pr_url else "recorded",
+        source_branch=source_branch,
+        target_branch=target_branch,
+        scope=proposal.scope,
+        diff_summary=proposal.diff_summary,
+        approval_note=payload.approval_note,
+        github_pr_url=payload.github_pr_url,
+        external_ref={"integration": "manual_record", "source": "contextsmith"},
+    )
+    proposal.status = "pr_opened"
+    session.add(pr_request)
+    session.add(proposal)
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="patch proposal already has a PR approval record") from exc
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=principal.user.id,
+            actor_token_id=principal.token_id,
+            action="pr.open_record",
+            target_type="pr_request",
+            target_id=pr_request.id,
+            meta={
+                "patch_proposal_id": str(proposal.id),
+                "resource_id": str(proposal.resource_id),
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+                "diff_summary": proposal.diff_summary,
+            },
+        )
+    )
+    session.commit()
+    return _pr_request_read(pr_request)
 
 
 @app.post(
@@ -3989,6 +4308,16 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "description": "Find indexed code symbols by name and optional kind.",
             "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "kind": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["name"]},
         },
+        {
+            "name": "contextsmith.generate_patch",
+            "description": "Generate a patch proposal from authorized indexed snapshot files. Opt-in only; does not mutate a source repo.",
+            "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "scope": {"type": "string"}, "files": {"type": "array", "items": {"type": "object"}}, "source_branch": {"type": "string"}, "target_branch": {"type": "string"}, "base_commit": {"type": "string"}}, "required": ["resource_id", "scope", "files"]},
+        },
+        {
+            "name": "contextsmith.open_pr",
+            "description": "Record explicit approval for opening a PR from a generated patch. Opt-in approval record only; source-control mutation is handled by a separate approved integration.",
+            "inputSchema": {"type": "object", "properties": {"patch_proposal_id": {"type": "string"}, "source_branch": {"type": "string"}, "target_branch": {"type": "string"}, "approval_note": {"type": "string"}, "github_pr_url": {"type": "string"}}, "required": ["patch_proposal_id", "source_branch", "target_branch", "approval_note"]},
+        },
     ]
 
 
@@ -4005,7 +4334,6 @@ async def mcp_endpoint(
     This intentionally exposes one typed operation; production/external actions
     remain outside repo agents and must use dedicated MCP tools.
     """
-    require_scope(principal, "project:query")
     _require_project_access(session, workspace_id, project_id, principal)
     try:
         body = await request.json()
@@ -4063,6 +4391,10 @@ async def mcp_endpoint(
                 result = remote_read_file(workspace_id, project_id, RemoteReadFileRequest(**arguments), principal, session)
             elif tool_name == "contextsmith.find_symbol":
                 result = remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**arguments), principal, session)
+            elif tool_name == "contextsmith.generate_patch":
+                result = remote_generate_patch(workspace_id, project_id, GeneratePatchRequest(**arguments), principal, session)
+            elif tool_name == "contextsmith.open_pr":
+                result = remote_open_pr(workspace_id, project_id, OpenPrRequest(**arguments), principal, session)
             else:
                 return _json_rpc_error(rpc_id, -32601, "unknown tool")
         except ValidationError as exc:

@@ -35,7 +35,7 @@ def validate_repo_path(path: str) -> str:
     lower = value.lower()
     if not value:
         raise RemoteCodeError("invalid_path", "path is required")
-    if "\x00" in value or "\\" in value:
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value) or "\\" in value:
         raise RemoteCodeError("invalid_path", "path must be a repo-relative POSIX path")
     if value.startswith("/") or re.match(r"^[A-Za-z]:", value) or lower.startswith(_INVALID_PATH_PREFIXES):
         raise RemoteCodeError("invalid_path", "absolute/backend paths are not allowed")
@@ -50,7 +50,7 @@ def validate_path_glob(path_glob: str | None) -> str | None:
         return None
     if len(path_glob) > MAX_GLOB_LENGTH:
         raise RemoteCodeError("invalid_path", "path_glob exceeds length budget")
-    if "\x00" in path_glob or "\\" in path_glob:
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in path_glob) or "\\" in path_glob:
         raise RemoteCodeError("invalid_path", "path_glob must use repo-relative POSIX paths")
     lower = path_glob.lower()
     if path_glob.startswith("/") or re.match(r"^[A-Za-z]:", path_glob) or lower.startswith(_INVALID_PATH_PREFIXES):

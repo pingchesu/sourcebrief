@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader, Card, Metric, StatusChip, EmptyState } from '../../components/ui';
 import { AgentContextPreview } from '../../components/AgentContextPreview';
 import { usePlatform } from '../../lib/platform-context';
-import type { AgentCardSummary, AgentCardSummaryList, AgentContextResponse, Resource, ReviewItem, RepoAgentBrief, UsageItem } from '../../lib/types';
+import type { AgentCardSummary, AgentCardSummaryList, AgentContextResponse, PatchProposal, PrRequest, Resource, ReviewItem, RepoAgentBrief, UsageItem } from '../../lib/types';
 import { short } from '../../lib/api';
 
 function readiness(resource: Resource, review?: ReviewItem) {
@@ -51,6 +51,12 @@ export default function RepoAgentsPage() {
   const [briefError, setBriefError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [patchScope, setPatchScope] = useState('Draft a minimal repo-scoped patch from indexed evidence');
+  const [patchPath, setPatchPath] = useState('README.md');
+  const [patchContent, setPatchContent] = useState('');
+  const [patchProposal, setPatchProposal] = useState<PatchProposal | null>(null);
+  const [prRecord, setPrRecord] = useState<PrRequest | null>(null);
+  const [patchBusy, setPatchBusy] = useState(false);
   const selected = repoAgents.find((resource) => resource.id === selectedId) ?? repoAgents[0] ?? null;
   const summaryByResource = useMemo(() => new Map(summaries.map((summary) => [summary.resource_id, summary])), [summaries]);
   const selectedSummary = selected ? summaryByResource.get(selected.id) : undefined;
@@ -107,6 +113,39 @@ export default function RepoAgentsPage() {
     finally { setGenerating(false); }
   }
 
+  async function generatePatchProposal() {
+    if (!selected) return;
+    setPatchBusy(true); setError(null); setPatchProposal(null); setPrRecord(null);
+    try {
+      const result = await client<PatchProposal>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/remote-code/generate_patch`, {
+        method: 'POST',
+        body: JSON.stringify({
+          resource_id: selected.id,
+          scope: patchScope,
+          source_branch: `contextsmith/${selected.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'repo'}-patch`,
+          target_branch: brief?.branch ?? 'main',
+          base_commit: brief?.commit ?? undefined,
+          files: [{ path: patchPath, start_line: 1, end_line: 1, new_content: patchContent || '# Proposed ContextSmith patch', rationale: 'Operator-entered patch proposal' }],
+        }),
+      });
+      setPatchProposal(result);
+    } catch (err) { setError(String(err)); }
+    finally { setPatchBusy(false); }
+  }
+
+  async function recordPrApproval() {
+    if (!patchProposal) return;
+    setPatchBusy(true); setError(null);
+    try {
+      const result = await client<PrRequest>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/remote-code/open_pr`, {
+        method: 'POST',
+        body: JSON.stringify({ patch_proposal_id: patchProposal.id, source_branch: patchProposal.source_branch ?? 'contextsmith/patch', target_branch: patchProposal.target_branch ?? 'main', approval_note: `Approved patch proposal ${patchProposal.id}` }),
+      });
+      setPrRecord(result);
+    } catch (err) { setError(String(err)); }
+    finally { setPatchBusy(false); }
+  }
+
   return <main className="page">
     <PageHeader eyebrow="Repo Agents" title="Git repos as sub-agents" description="Each git resource is treated as a scoped repo sub-agent with its own identity, readiness, invocation contract, generated operating brief, citations, and symbols. This is the repo-as-agent surface, not a generic index table." actions={<><button className="btn secondary" disabled={auditRunning} onClick={() => void runReadOnlyAudit()}>{auditRunning ? 'Auditing…' : 'Run read-only drift audit'}</button><button className="btn" disabled={!selected || generating} onClick={() => selected && void generateSubAgentPrompt(selected)}>{generating ? 'Generating…' : 'Generate selected sub-agent brief'}</button></>} />
     <div className="grid four"><Metric label="Repo sub-agents" value={repoAgents.length} /><Metric label="Ready" value={repoAgents.filter((resource) => readiness(resource, reviewByResource.get(resource.id)) === 'ready').length} /><Metric label="Needs review" value={repoAgents.filter((resource) => readiness(resource, reviewByResource.get(resource.id)) !== 'ready').length} /><Metric label="Drift findings" value={summaries.filter((summary) => summary.status !== 'healthy').length} /></div>
@@ -140,6 +179,19 @@ export default function RepoAgentsPage() {
       <Card>
         <h2>What to ask this sub-agent</h2>
         <div className="grid">{(brief?.suggested_questions ?? suggestedQuestions(selected)).map((question) => <button key={question} type="button" className="scope-pill" onClick={() => void generateSubAgentPrompt(selected)}><strong>{question}</strong><small>Generates a cited, repo-scoped operating brief</small></button>)}</div>
+      </Card>
+      <Card>
+        <h2>Opt-in patch / PR workflow</h2>
+        <p className="muted">Read-only remains the default. Patch generation requires project policy <code>patch_generation=enabled</code> plus <code>patch:generate</code>; PR records require <code>open_pr=enabled</code>, <code>pr:write</code>, and explicit approval.</p>
+        <div className="notice">This surface creates a patch proposal and PR approval record only. It does not mutate the source repo, push branches, run tests, deploy, or open GitHub PRs without a separate approved integration.</div>
+        <div className="grid">
+          <label className="label">Scope<input value={patchScope} onChange={(event) => setPatchScope(event.target.value)} /></label>
+          <label className="label">Repo-relative path<input value={patchPath} onChange={(event) => setPatchPath(event.target.value)} /></label>
+          <label className="label">Replacement for line 1<textarea rows={4} value={patchContent} onChange={(event) => setPatchContent(event.target.value)} placeholder="New first-line content for a patch proposal" /></label>
+          <button type="button" className="btn secondary" disabled={patchBusy} onClick={() => void generatePatchProposal()}>{patchBusy ? 'Working…' : 'Generate opt-in patch proposal'}</button>
+        </div>
+        {patchProposal ? <div><div className="label">Patch proposal</div><div className="code">{patchProposal.diff_summary}<br />indexed_commit={patchProposal.indexed_commit ?? 'unknown'}<br />branch_moved={String(patchProposal.branch_moved)}<br />warnings={patchProposal.warnings.join(', ') || 'none'}</div><pre className="code-block light">{patchProposal.unified_diff}</pre><button type="button" className="btn" disabled={patchBusy || patchProposal.branch_moved} onClick={() => void recordPrApproval()}>Record PR approval</button></div> : null}
+        {prRecord ? <div className="notice">PR approval record: {prRecord.status} · {prRecord.source_branch} → {prRecord.target_branch} · {prRecord.diff_summary}</div> : null}
       </Card>
       <Card>
         <h2>Sub-agent boundary</h2>

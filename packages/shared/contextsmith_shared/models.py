@@ -395,6 +395,50 @@ class AgentCardSummary(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PatchProposal(Base):
+    __tablename__ = "patch_proposals"
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    actor_token_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("api_tokens.id"))
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    source_branch: Mapped[str | None] = mapped_column(Text)
+    target_branch: Mapped[str | None] = mapped_column(Text)
+    indexed_commit: Mapped[str | None] = mapped_column(Text)
+    base_commit: Mapped[str | None] = mapped_column(Text)
+    branch_moved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    warnings: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
+    files: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
+    unified_diff: Mapped[str] = mapped_column(Text, nullable=False)
+    diff_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    request: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PrRequest(Base):
+    __tablename__ = "pr_requests"
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    patch_proposal_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("patch_proposals.id"), nullable=False)
+    approver_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approver_token_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("api_tokens.id"))
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="recorded")
+    source_branch: Mapped[str] = mapped_column(Text, nullable=False)
+    target_branch: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    diff_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    approval_note: Mapped[str] = mapped_column(Text, nullable=False)
+    github_pr_url: Mapped[str | None] = mapped_column(Text)
+    external_ref: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
     id = uuid_pk()

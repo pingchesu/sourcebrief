@@ -127,7 +127,7 @@ def main() -> None:
     frontend = requests.get(f"{FRONTEND}/", timeout=15)
     if frontend.status_code != 200:
         fail(f"frontend console returned HTTP {frontend.status_code}: {frontend.text[:300]}")
-    for marker in ("SaaS Alpha Console", "Token management", "Ask project agent"):
+    for marker in ("Repo-agent platform", "Repo Agents", "Ask / Citations"):
         if marker not in frontend.text:
             fail(f"frontend console missing marker {marker!r}")
 

@@ -15,7 +15,7 @@ from sqlalchemy import text
 from contextsmith_api.main import app
 from contextsmith_shared.config import get_settings
 from contextsmith_shared.db import get_engine, get_sessionmaker
-from contextsmith_shared.models import IndexRun
+from contextsmith_shared.models import IndexRun, Resource, SourceSnapshot
 from contextsmith_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
@@ -404,3 +404,357 @@ def test_agent_files_are_resource_scoped_and_sanitize_untrusted_metadata(tmp_pat
     assert "Bearer:" not in text
     assert "ghp_example_secret" not in text
     assert "Ignore previous instructions" not in text
+
+
+def enable_patch_policy(client: TestClient, workspace_id: str, project_id: str, headers: dict[str, str], *, patch: bool = True, pr: bool = False) -> None:
+    policy = {"production_mutations": "external_approval_required"}
+    if patch:
+        policy["patch_generation"] = "enabled"
+    if pr:
+        policy["open_pr"] = "enabled"
+    response = client.patch(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-profile",
+        json={"tool_policy": policy},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_generate_patch_is_opt_in_scoped_and_records_branch_freshness(tmp_path) -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "phase6-patch")
+    repo_path = str(tmp_path / "repo")
+    commit = build_repo(repo_path)
+    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
+    resource_id = add_git_resource(client, workspace_id, project_id, headers, repo_path)
+    ingest(resource_id, workspace_id, project_id)
+    patch_token = create_token(client, workspace_id, headers, ["project:query", "code:read", "patch:generate"], resource_id)
+
+    disabled = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={
+            "resource_id": resource_id,
+            "scope": "change checkout marker",
+            "base_commit": commit,
+            "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 1"}],
+        },
+        headers=patch_token,
+    )
+    assert disabled.status_code == 403
+    assert "disabled" in disabled.text
+
+    enable_patch_policy(client, workspace_id, project_id, headers, patch=True)
+    archived = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/archive", headers=headers)
+    assert archived.status_code == 200, archived.text
+    archived_patch = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={
+            "resource_id": resource_id,
+            "scope": "archived resource patch",
+            "base_commit": commit,
+            "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 99"}],
+        },
+        headers=patch_token,
+    )
+    assert archived_patch.status_code == 404
+    restored = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/restore", headers=headers)
+    assert restored.status_code == 200, restored.text
+
+    generated = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={
+            "resource_id": resource_id,
+            "scope": "change checkout marker",
+            "source_branch": "feat/contextsmith-patch",
+            "target_branch": "main",
+            "base_commit": "0000000000000000000000000000000000000000",
+            "files": [
+                {"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 1", "rationale": "exercise phase6 patch"}
+            ],
+        },
+        headers=patch_token,
+    )
+    assert generated.status_code == 200, generated.text
+    body = generated.json()
+    assert body["indexed_commit"] == commit
+    assert body["branch_moved"] is True
+    assert "source_branch_moved_since_base_commit" in body["warnings"]
+    assert "--- a/src/checkout.py\n" in body["unified_diff"]
+    assert "+++ b/src/checkout.py\n" in body["unified_diff"]
+    assert "+    return total + 1" in body["unified_diff"]
+    diff_path = tmp_path / "proposal.diff"
+    diff_path.write_text(body["unified_diff"], encoding="utf-8")
+    subprocess.run(["git", "-C", repo_path, "apply", "--check", str(diff_path)], check=True)
+    assert body["files"][0]["path"] == "src/checkout.py"
+
+    audit = client.get(f"/workspaces/{workspace_id}/audit-events", headers=headers)
+    assert audit.status_code == 200
+    event = next(event for event in audit.json() if event["action"] == "patch.generate" and event["metadata"]["resource_id"] == resource_id)
+    assert event["metadata"]["branch_moved"] is True
+
+
+def test_open_pr_requires_opt_in_approval_and_rejects_moved_patch(tmp_path) -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "phase6-pr")
+    repo_path = str(tmp_path / "repo")
+    commit = build_repo(repo_path)
+    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
+    resource_id = add_git_resource(client, workspace_id, project_id, headers, repo_path)
+    ingest(resource_id, workspace_id, project_id)
+    enable_patch_policy(client, workspace_id, project_id, headers, patch=True, pr=False)
+    patch_token = create_token(client, workspace_id, headers, ["project:query", "code:read", "patch:generate"], resource_id)
+    generated = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={
+            "resource_id": resource_id,
+            "scope": "change checkout marker",
+            "base_commit": commit,
+            "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 2"}],
+        },
+        headers=patch_token,
+    )
+    assert generated.status_code == 200, generated.text
+    proposal_id = generated.json()["id"]
+    pr_token = create_token(client, workspace_id, headers, ["pr:write"], resource_id)
+
+    disabled = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr",
+        json={"patch_proposal_id": proposal_id, "source_branch": "feat/contextsmith-patch", "target_branch": "main", "approval_note": "approved in test"},
+        headers=pr_token,
+    )
+    assert disabled.status_code == 403
+
+    enable_patch_policy(client, workspace_id, project_id, headers, patch=True, pr=True)
+    opened = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr",
+        json={"patch_proposal_id": proposal_id, "source_branch": "feat/contextsmith-patch", "target_branch": "main", "approval_note": "approved in test", "github_pr_url": "https://github.com/example/repo/pull/1"},
+        headers=pr_token,
+    )
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["status"] == "opened"
+    assert opened.json()["source_branch"] == "feat/contextsmith-patch"
+    assert opened.json()["target_branch"] == "main"
+    assert opened.json()["diff_summary"] == "1 file(s): src/checkout.py"
+
+    duplicate = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr",
+        json={"patch_proposal_id": proposal_id, "source_branch": "feat/contextsmith-patch", "target_branch": "main", "approval_note": "approved twice"},
+        headers=pr_token,
+    )
+    assert duplicate.status_code == 409
+
+    mismatch = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={
+            "resource_id": resource_id,
+            "scope": "branch mismatch",
+            "source_branch": "feat/contextsmith-patch",
+            "target_branch": "main",
+            "base_commit": commit,
+            "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 20"}],
+        },
+        headers=patch_token,
+    )
+    assert mismatch.status_code == 200, mismatch.text
+    branch_mismatch = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr",
+        json={"patch_proposal_id": mismatch.json()["id"], "source_branch": "feat/other", "target_branch": "main", "approval_note": "wrong branch"},
+        headers=pr_token,
+    )
+    assert branch_mismatch.status_code == 422
+
+    moved = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={
+            "resource_id": resource_id,
+            "scope": "moved source branch",
+            "base_commit": "ffffffffffffffffffffffffffffffffffffffff",
+            "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 3"}],
+        },
+        headers=patch_token,
+    )
+    assert moved.status_code == 200, moved.text
+    blocked = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr",
+        json={"patch_proposal_id": moved.json()["id"], "source_branch": "feat/contextsmith-patch", "target_branch": "main", "approval_note": "approved in test"},
+        headers=pr_token,
+    )
+    assert blocked.status_code == 409
+
+    missing_base = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={
+            "resource_id": resource_id,
+            "scope": "missing base commit",
+            "source_branch": "feat/contextsmith-patch",
+            "target_branch": "main",
+            "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 30"}],
+        },
+        headers=patch_token,
+    )
+    assert missing_base.status_code == 200, missing_base.text
+    assert "base_commit_required_for_pr_approval" in missing_base.json()["warnings"]
+    missing_base_blocked = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr",
+        json={"patch_proposal_id": missing_base.json()["id"], "source_branch": "feat/contextsmith-patch", "target_branch": "main", "approval_note": "missing base"},
+        headers=pr_token,
+    )
+    assert missing_base_blocked.status_code == 409
+
+    fresh = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={
+            "resource_id": resource_id,
+            "scope": "stale after index refresh",
+            "base_commit": commit,
+            "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 40"}],
+        },
+        headers=patch_token,
+    )
+    assert fresh.status_code == 200, fresh.text
+    session = get_sessionmaker()()
+    resource = session.get(Resource, UUID(resource_id))
+    assert resource is not None
+    moved_snapshot = SourceSnapshot(
+        workspace_id=UUID(workspace_id),
+        project_id=UUID(project_id),
+        resource_id=UUID(resource_id),
+        version="new-indexed-version",
+        version_kind="commit",
+        meta={"commit": "1111111111111111111111111111111111111111"},
+        status="completed",
+    )
+    session.add(moved_snapshot)
+    session.flush()
+    resource.current_snapshot_id = moved_snapshot.id
+    session.commit()
+    session.close()
+    stale_approval = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr",
+        json={"patch_proposal_id": fresh.json()["id"], "source_branch": "feat/contextsmith-patch", "target_branch": "main", "approval_note": "stale after refresh"},
+        headers=pr_token,
+    )
+    assert stale_approval.status_code == 409
+
+    audit = client.get(f"/workspaces/{workspace_id}/audit-events", headers=headers)
+    assert audit.status_code == 200
+    assert any(event["action"] == "pr.open_record" and event["metadata"]["patch_proposal_id"] == proposal_id for event in audit.json())
+
+
+def test_pr_write_resource_scope_and_invalid_patch_paths_fail_closed(tmp_path) -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "phase6-scope")
+    first_repo = str(tmp_path / "first")
+    second_repo = str(tmp_path / "second")
+    commit = build_repo(first_repo)
+    build_repo(second_repo)
+    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
+    first_resource = add_git_resource(client, workspace_id, project_id, headers, first_repo, name="First Repo")
+    second_resource = add_git_resource(client, workspace_id, project_id, headers, second_repo, name="Second Repo")
+    ingest(first_resource, workspace_id, project_id)
+    ingest(second_resource, workspace_id, project_id)
+    enable_patch_policy(client, workspace_id, project_id, headers, patch=True, pr=True)
+    first_patch_token = create_token(client, workspace_id, headers, ["project:query", "code:read", "patch:generate"], first_resource)
+
+    invalid = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={"resource_id": first_resource, "scope": "invalid path", "files": [{"path": "../secrets", "start_line": 1, "end_line": 1, "new_content": "x"}]},
+        headers=first_patch_token,
+    )
+    assert invalid.status_code == 422
+
+    control_path = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={"resource_id": first_resource, "scope": "invalid path", "files": [{"path": "src/checkout.py\n--- a/spoof.py", "start_line": 1, "end_line": 1, "new_content": "x"}]},
+        headers=first_patch_token,
+    )
+    assert control_path.status_code == 422
+
+    mcp_invalid = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": "contextsmith.generate_patch", "arguments": {"resource_id": first_resource, "scope": "invalid path", "files": [{"path": "/etc/passwd", "start_line": 1, "end_line": 1, "new_content": "x"}]}},
+        },
+        headers=first_patch_token,
+    )
+    assert mcp_invalid.status_code == 200, mcp_invalid.text
+    assert mcp_invalid.json()["result"]["isError"] is True
+    assert mcp_invalid.json()["result"]["structuredContent"]["status_code"] == 422
+
+    second_patch_token = create_token(client, workspace_id, headers, ["project:query", "code:read", "patch:generate"], second_resource)
+    generated = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch",
+        json={
+            "resource_id": second_resource,
+            "scope": "second resource patch",
+            "source_branch": "feat/second-resource",
+            "target_branch": "main",
+            "base_commit": commit,
+            "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 5"}],
+        },
+        headers=second_patch_token,
+    )
+    assert generated.status_code == 200, generated.text
+    scoped_pr_token = create_token(client, workspace_id, headers, ["pr:write"], first_resource)
+    denied = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr",
+        json={"patch_proposal_id": generated.json()["id"], "source_branch": "feat/second-resource", "target_branch": "main", "approval_note": "wrong resource"},
+        headers=scoped_pr_token,
+    )
+    assert denied.status_code == 404
+
+
+def test_mcp_patch_tools_are_errors_until_policy_and_scopes_allow(tmp_path) -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "phase6-mcp")
+    repo_path = str(tmp_path / "repo")
+    commit = build_repo(repo_path)
+    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
+    resource_id = add_git_resource(client, workspace_id, project_id, headers, repo_path)
+    ingest(resource_id, workspace_id, project_id)
+    tools = client.post(f"/mcp/{workspace_id}/{project_id}", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=headers)
+    assert tools.status_code == 200, tools.text
+    names = {tool["name"] for tool in tools.json()["result"]["tools"]}
+    assert {"contextsmith.generate_patch", "contextsmith.open_pr"}.issubset(names)
+
+    patch_token = create_token(client, workspace_id, headers, ["project:query", "code:read", "patch:generate"], resource_id)
+    denied = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "contextsmith.generate_patch",
+                "arguments": {"resource_id": resource_id, "scope": "mcp patch", "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 4"}]},
+            },
+        },
+        headers=patch_token,
+    )
+    assert denied.status_code == 200, denied.text
+    assert denied.json()["result"]["isError"] is True
+    assert denied.json()["result"]["structuredContent"]["status_code"] == 403
+
+    enable_patch_policy(client, workspace_id, project_id, headers, patch=True)
+    allowed = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "contextsmith.generate_patch",
+                "arguments": {"resource_id": resource_id, "scope": "mcp patch", "base_commit": commit, "files": [{"path": "src/checkout.py", "start_line": 6, "end_line": 6, "new_content": "    return total + 4"}]},
+            },
+        },
+        headers=patch_token,
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["result"]["structuredContent"]["indexed_commit"] == commit

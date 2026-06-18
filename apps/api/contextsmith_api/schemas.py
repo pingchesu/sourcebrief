@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class WorkspaceCreate(BaseModel):
@@ -618,6 +618,88 @@ class CodeSymbolHit(BaseModel):
     version_kind: str
     commit: str | None = None
     score: float
+
+
+class PatchFileChange(BaseModel):
+    path: str = Field(min_length=1)
+    new_content: str = Field(max_length=20000)
+    start_line: int = Field(default=1, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    rationale: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "PatchFileChange":
+        if self.end_line is not None and self.end_line < self.start_line:
+            raise ValueError("end_line must be greater than or equal to start_line")
+        return self
+
+
+class GeneratePatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resource_id: UUID
+    scope: str = Field(min_length=1, max_length=500)
+    files: list[PatchFileChange] = Field(min_length=1, max_length=5)
+    source_branch: str | None = Field(default=None, max_length=200)
+    target_branch: str | None = Field(default=None, max_length=200)
+    base_commit: str | None = Field(default=None, max_length=80)
+    approval_note: str | None = Field(default=None, max_length=1000)
+
+
+class PatchProposalFileRead(BaseModel):
+    path: str
+    start_line: int
+    end_line: int
+    original_hash: str
+    new_hash: str
+    rationale: str | None = None
+
+
+class PatchProposalRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    resource_id: UUID
+    source_snapshot_id: UUID
+    status: str
+    scope: str
+    source_branch: str | None = None
+    target_branch: str | None = None
+    indexed_commit: str | None = None
+    base_commit: str | None = None
+    branch_moved: bool = False
+    warnings: list[str] = Field(default_factory=list)
+    files: list[PatchProposalFileRead] = Field(default_factory=list)
+    unified_diff: str
+    diff_summary: str
+    created_at: datetime
+
+
+class OpenPrRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    patch_proposal_id: UUID
+    source_branch: str = Field(min_length=1, max_length=200)
+    target_branch: str = Field(min_length=1, max_length=200)
+    approval_note: str = Field(min_length=1, max_length=1000)
+    github_pr_url: str | None = Field(default=None, max_length=500)
+
+
+class PrRequestRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    resource_id: UUID
+    patch_proposal_id: UUID
+    status: str
+    source_branch: str
+    target_branch: str
+    scope: str
+    diff_summary: str
+    approval_note: str
+    github_pr_url: str | None = None
+    external_ref: dict = Field(default_factory=dict)
+    created_at: datetime
 
 
 class CodeSearchResponse(BaseModel):

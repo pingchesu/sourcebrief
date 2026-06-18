@@ -10,6 +10,8 @@ ALLOWED_TOKEN_SCOPES = {
     "review:read",
     "review:write",
     "code:read",
+    "patch:generate",
+    "pr:write",
     "token:admin",
 }
 
