@@ -6,38 +6,107 @@ import type { ReactNode } from 'react';
 import { usePlatform } from '../lib/platform-context';
 import { short } from '../lib/api';
 
-const NAV = [
-  ['/', 'Dashboard'],
-  ['/import', 'Import Resources'],
-  ['/repo-agents', 'Repo Agents'],
-  ['/evals', 'Quality Evals'],
-  ['/agent-files', 'Agent Files'],
-  ['/git-env', 'Git Env'],
-  ['/maintenance', 'Update / Reindex'],
-  ['/agent-profile', 'Project Agent'],
-  ['/resources', 'Resources'],
-  ['/review', 'Review Center'],
-  ['/ask', 'Ask / Citations'],
-  ['/login', 'Login / Logout'],
-  ['/config', 'Config'],
-  ['/users', 'User Management'],
-  ['/admin', 'Admin'],
-] as const;
+type NavItem = { href: string; label: string };
+type NavSection = { label?: string; secondary?: boolean; items: NavItem[] };
+
+// Navigation is organized around the product workflow (build context → assure
+// quality → ship the agent pack), not around backend module names. Advanced and
+// admin surfaces are kept reachable but visually demoted in a secondary group.
+const NAV_SECTIONS: NavSection[] = [
+  { items: [{ href: '/', label: 'Command Center' }] },
+  {
+    label: 'Build context',
+    items: [
+      { href: '/resources', label: 'Sources' },
+      { href: '/import', label: 'Connect source' },
+      { href: '/repo-agents', label: 'Workbench' },
+      { href: '/ask', label: 'Ask & citations' },
+    ],
+  },
+  {
+    label: 'Assure quality',
+    items: [
+      { href: '/review', label: 'Review queue' },
+      { href: '/evals', label: 'Retrieval evals' },
+    ],
+  },
+  {
+    label: 'Ship agent pack',
+    items: [
+      { href: '/agent-files', label: 'Agent files' },
+      { href: '/agent-profile', label: 'Project agent' },
+    ],
+  },
+  {
+    label: 'Operations',
+    secondary: true,
+    items: [
+      { href: '/git-env', label: 'Git environment' },
+      { href: '/maintenance', label: 'Maintenance' },
+      { href: '/config', label: 'Configuration' },
+      { href: '/users', label: 'Users & tokens' },
+      { href: '/admin', label: 'Audit & admin' },
+      { href: '/login', label: 'Session' },
+    ],
+  },
+];
+
+function isActive(pathname: string, href: string): boolean {
+  return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { agent, provider, workspace, project, settings, loading, error, reload } = usePlatform();
-  const principal = settings.bearer.trim() ? 'token session' : settings.email.trim() || 'signed out';
+
+  const signedIn = Boolean(settings.bearer.trim() || settings.email.trim());
+  const principal = settings.bearer.trim() ? 'Token session' : settings.email.trim() || 'Signed out';
+  const providerStatus = provider?.status ?? (signedIn ? 'loading' : 'signed out');
+  const providerChipClass = provider?.status === 'ok' ? 'ok' : signedIn ? 'warn' : '';
+
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-kicker">CONTEXTSMITH</div><div className="brand-title">Knowledge Agents</div></div>
-      <nav className="nav-group">{NAV.map(([href, label]) => <Link key={href} href={href} className={`nav-link ${pathname === href ? 'active' : ''}`}><span>{label}</span></Link>)}</nav>
-      <div className="sidebar-footer"><strong>{agent?.name ?? 'AngiKnowledge Agent'}</strong><br />{workspace?.name ?? 'Workspace'}<br />{project?.name ?? 'Project'}<br /><span className="code">{short(settings.workspaceId)} / {short(settings.projectId)}</span></div>
+      <div className="brand">
+        <div className="brand-kicker">CONTEXTSMITH</div>
+        <div className="brand-title">Context Console</div>
+      </div>
+      <nav className="nav" aria-label="Primary">
+        {NAV_SECTIONS.map((section, index) => (
+          <div key={section.label ?? `section-${index}`} className={`nav-section ${section.secondary ? 'secondary' : ''}`.trim()}>
+            {section.label ? <div className="nav-section-label">{section.label}</div> : null}
+            <div className="nav-group">
+              {section.items.map((item) => (
+                <Link key={item.href} href={item.href} className={`nav-link ${isActive(pathname, item.href) ? 'active' : ''}`.trim()} aria-current={isActive(pathname, item.href) ? 'page' : undefined}>
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+      <div className="sidebar-footer">
+        <strong>{agent?.name ?? 'Project agent'}</strong>
+        <span>{workspace?.name ?? 'Workspace not loaded'}</span>
+        <span>{project?.name ?? 'Project not loaded'}</span>
+        <span className="code">{short(settings.workspaceId)} / {short(settings.projectId)}</span>
+      </div>
     </aside>
     <section className="main">
       <header className="topbar">
-        <div><strong>{agent?.name ?? 'Loading agent…'}</strong><div className="code">{workspace?.name ?? short(settings.workspaceId)} · {project?.name ?? short(settings.projectId)} · signed in as {principal} · {provider ? `${provider.embedding.provider}/${provider.embedding.model}` : 'provider not loaded'} {error ? `· ${error}` : ''}</div></div>
-        <div className="toolbar"><span className={`chip ${provider?.status === 'ok' ? 'ok' : 'warn'}`}>{provider?.status ?? (principal === 'signed out' ? 'signed out' : 'loading')}</span><Link className="btn secondary" href="/login">Session</Link><button className="btn secondary" onClick={() => reload()} disabled={loading}>{loading ? 'Loading…' : 'Reload'}</button></div>
+        <div className="topbar-identity">
+          <strong>{workspace?.name ?? 'ContextSmith'}{project ? ` · ${project.name}` : ''}</strong>
+          <div className="topbar-meta">
+            <span>{agent?.name ?? (signedIn ? 'Agent loading…' : 'No active session')}</span>
+            <span>{signedIn ? `Signed in as ${principal}` : 'No active session'}</span>
+            <span>{provider ? `${provider.embedding.provider}/${provider.embedding.model}` : 'provider not loaded'}</span>
+            {error ? <span className="code" style={{ color: 'var(--risk)' }}>{error}</span> : null}
+          </div>
+        </div>
+        <div className="toolbar">
+          <span className={`chip ${providerChipClass}`.trim()}>{providerStatus}</span>
+          <Link className="btn secondary" href="/login">Session</Link>
+          <button className="btn secondary" onClick={() => reload()} disabled={loading}>{loading ? 'Loading…' : 'Reload'}</button>
+        </div>
       </header>
       {children}
     </section>
