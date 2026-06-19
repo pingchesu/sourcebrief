@@ -17,8 +17,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Build context',
     items: [
-      { href: '/resources', label: 'Sources' },
-      { href: '/import', label: 'Connect source' },
+      { href: '/sources', label: 'Sources' },
       { href: '/repo-agents', label: 'Workbench' },
       { href: '/ask', label: 'Ask & citations' },
     ],
@@ -41,7 +40,6 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Operations',
     secondary: true,
     items: [
-      { href: '/git-env', label: 'Git environment' },
       { href: '/maintenance', label: 'Maintenance' },
       { href: '/config', label: 'Configuration' },
       { href: '/users', label: 'Users & tokens' },
