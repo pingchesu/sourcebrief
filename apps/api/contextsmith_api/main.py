@@ -71,6 +71,14 @@ from contextsmith_api.context_packs import (
     next_pack_version,
     validate_pack_key,
 )
+from contextsmith_api.graph_versions import (
+    GRAPH_STATUS_ARCHIVED,
+    GRAPH_VERSION_DRAFT,
+    GRAPH_VERSION_INVALIDATED,
+    GRAPH_VERSION_PUBLISHED,
+    GRAPH_VERSION_SUPERSEDED,
+    compile_graph_version,
+)
 from contextsmith_api.remote_code import (
     MAX_SCANNED_BYTES,
     MAX_SCANNED_FILES,
@@ -157,9 +165,14 @@ from contextsmith_api.schemas import (
     GeneratePatchRequest,
     GitResourceEnvRead,
     GitResourceEnvUpdate,
+    GraphCompileRequest,
+    GraphCompileResponse,
     GraphEdgeRead,
     GraphNodeRead,
     GraphRead,
+    GraphReviewRequest,
+    GraphStreamRead,
+    GraphVersionRead,
     IndexRunRead,
     ManifestDiffRead,
     ManifestDiffRowRead,
@@ -253,8 +266,10 @@ from contextsmith_shared.models import (
     ContextPacketItem,
     ContextPackResourceCoverage,
     ContextPackVersion,
+    Graph,
     GraphEdge,
     GraphNode,
+    GraphVersion,
     IndexRun,
     PatchProposal,
     Project,
@@ -1537,6 +1552,26 @@ def _purge_resource_artifacts(session: Session, resource: Resource) -> dict[str,
             detail={
                 "message": "Resource is referenced by Repo Agent versions. Archive, invalidate, and scrub those versions before hard purge.",
                 "repo_agents": [dict(row) for row in repo_agent_refs],
+            },
+        )
+    graph_refs = session.execute(
+        text(
+            """
+            SELECT g.graph_key, COALESCE(gv.version, 0) AS version, COALESCE(gv.status, g.status) AS status
+            FROM graphs g
+            LEFT JOIN graph_versions gv ON gv.graph_id = g.id AND gv.resource_id = :resource_id
+            WHERE g.resource_id = :resource_id OR gv.resource_id = :resource_id
+            ORDER BY g.graph_key, gv.version
+            """
+        ),
+        params,
+    ).mappings().all()
+    if graph_refs:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Resource is referenced by retained graph streams or graph versions. Archive zero-version graphs, or invalidate/retain graph versions before hard purge.",
+                "graphs": [dict(row) for row in graph_refs],
             },
         )
     statements = [
@@ -5124,6 +5159,245 @@ def list_snapshots(
         )
         for snapshot in snapshots
     ]
+
+
+
+
+def _graph_version_read(version: GraphVersion) -> GraphVersionRead:
+    return GraphVersionRead(
+        id=version.id,
+        graph_id=version.graph_id,
+        resource_id=version.resource_id,
+        source_snapshot_id=version.source_snapshot_id,
+        version=version.version,
+        status=version.status,
+        version_hash=version.version_hash,
+        node_count=version.node_count,
+        edge_count=version.edge_count,
+        membership_json=version.membership_json,
+        provenance_json=version.provenance_json,
+        summary_json=version.summary_json,
+        validation_json=version.validation_json,
+        status_reason=version.status_reason,
+        published_at=version.published_at,
+        invalidated_at=version.invalidated_at,
+        created_at=version.created_at,
+    )
+
+
+def _graph_stream_read(session: Session, graph: Graph) -> GraphStreamRead:
+    versions = list(
+        session.scalars(
+            select(GraphVersion)
+            .where(GraphVersion.graph_id == graph.id)
+            .order_by(GraphVersion.version.desc())
+        )
+    )
+    current = next((version for version in versions if version.id == graph.current_version_id), None)
+    return GraphStreamRead(
+        id=graph.id,
+        workspace_id=graph.workspace_id,
+        project_id=graph.project_id,
+        resource_id=graph.resource_id,
+        graph_key=graph.graph_key,
+        title=graph.title,
+        description=graph.description,
+        graph_type=graph.graph_type,
+        status=graph.status,
+        current_version_id=graph.current_version_id,
+        current=_graph_version_read(current) if current else None,
+        versions=[_graph_version_read(version) for version in versions],
+        created_at=graph.created_at,
+        updated_at=graph.updated_at,
+    )
+
+
+def _resolve_graph(session: Session, workspace_id: UUID, project_id: UUID, graph_key: str, *, for_update: bool = False) -> Graph:
+    stmt = select(Graph).where(Graph.workspace_id == workspace_id, Graph.project_id == project_id, Graph.graph_key == graph_key)
+    if for_update:
+        stmt = stmt.with_for_update()
+    graph = session.scalar(stmt)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="graph not found")
+    return graph
+
+
+def _require_graph_read(session: Session, graph: Graph, principal: Principal) -> Resource | None:
+    require_scope(principal, "resource:read")
+    _require_project_access(session, graph.workspace_id, graph.project_id, principal)
+    if graph.resource_id is None:
+        if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
+            raise HTTPException(status_code=404, detail="graph not found")
+        return None
+    return _resolve_resource(session, graph.workspace_id, graph.project_id, graph.resource_id, principal, include_deleted=True)
+
+
+def _require_graph_review_write(session: Session, graph: Graph, principal: Principal) -> Resource | None:
+    _require_review_write(session, graph.workspace_id, graph.project_id, principal)
+    if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
+        raise HTTPException(status_code=403, detail="resource-scoped tokens cannot mutate graph lifecycle")
+    if graph.resource_id is None:
+        return None
+    return _resolve_resource(session, graph.workspace_id, graph.project_id, graph.resource_id, principal, include_deleted=True)
+
+
+def _assert_graph_active(graph: Graph) -> None:
+    if graph.status == GRAPH_STATUS_ARCHIVED:
+        raise HTTPException(status_code=422, detail="archived graphs cannot compile or publish versions")
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/graphs", response_model=list[GraphStreamRead])
+def list_graph_streams(
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> list[GraphStreamRead]:
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    graphs = list(session.scalars(select(Graph).where(Graph.workspace_id == workspace_id, Graph.project_id == project_id).order_by(Graph.created_at.desc())))
+    visible: list[GraphStreamRead] = []
+    for graph in graphs:
+        try:
+            _require_graph_read(session, graph, principal)
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                continue
+            raise
+        visible.append(_graph_stream_read(session, graph))
+    return visible
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}", response_model=GraphStreamRead)
+def get_graph_stream(
+    workspace_id: UUID,
+    project_id: UUID,
+    graph_key: str,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> GraphStreamRead:
+    graph = _resolve_graph(session, workspace_id, project_id, graph_key)
+    _require_graph_read(session, graph, principal)
+    return _graph_stream_read(session, graph)
+
+
+@app.post("/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph/versions", response_model=GraphCompileResponse)
+def compile_resource_graph_version(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    payload: GraphCompileRequest = GraphCompileRequest(),
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> GraphCompileResponse:
+    require_scope(principal, "resource:write")
+    _require_project_member(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
+    try:
+        result = compile_graph_version(session, resource, actor_id=principal.user.id, requested_graph_key=payload.graph_key, title=payload.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    session.add(AuditEvent(workspace_id=workspace_id, actor_user_id=principal.user.id, actor_token_id=principal.token_id, action="graph_version.compile", target_type="graph_version", target_id=result.version.id, meta={"graph_key": result.graph.graph_key, "version": result.version.version, "unchanged": result.unchanged}))
+    session.commit()
+    return GraphCompileResponse(graph=_graph_stream_read(session, result.graph), version=_graph_version_read(result.version), unchanged=result.unchanged)
+
+
+@app.post("/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/versions/{version_number}/publish", response_model=GraphStreamRead)
+def publish_graph_version(
+    workspace_id: UUID,
+    project_id: UUID,
+    graph_key: str,
+    version_number: int,
+    payload: GraphReviewRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> GraphStreamRead:
+    graph = _resolve_graph(session, workspace_id, project_id, graph_key, for_update=True)
+    _require_graph_review_write(session, graph, principal)
+    _assert_graph_active(graph)
+    version = session.scalar(select(GraphVersion).where(GraphVersion.graph_id == graph.id, GraphVersion.version == version_number).with_for_update())
+    if version is None:
+        raise HTTPException(status_code=404, detail="graph version not found")
+    if version.status != GRAPH_VERSION_DRAFT:
+        raise HTTPException(status_code=422, detail="only draft graph versions can be published")
+    if not version.validation_json.get("ok"):
+        raise HTTPException(status_code=422, detail="graph version validation must pass before publish")
+    locked_resource = session.scalar(
+        select(Resource)
+        .where(
+            Resource.id == version.resource_id,
+            Resource.workspace_id == workspace_id,
+            Resource.project_id == project_id,
+        )
+        .with_for_update()
+    )
+    if locked_resource is None:
+        raise HTTPException(status_code=422, detail="graph resource no longer exists")
+    if locked_resource.deleted_at is not None or locked_resource.status in {"deleted", "archived"}:
+        raise HTTPException(status_code=422, detail="cannot publish graph versions for deleted or archived resources")
+    if locked_resource.current_snapshot_id != version.source_snapshot_id:
+        raise HTTPException(status_code=422, detail="graph draft is stale; recompile against the current resource snapshot")
+    current = session.get(GraphVersion, graph.current_version_id) if graph.current_version_id else None
+    if current and current.status == GRAPH_VERSION_PUBLISHED:
+        current.status = GRAPH_VERSION_SUPERSEDED
+    version.status = GRAPH_VERSION_PUBLISHED
+    version.published_by = principal.user.id
+    version.published_at = datetime.now(UTC)
+    version.status_reason = payload.comment
+    graph.current_version_id = version.id
+    session.add(AuditEvent(workspace_id=workspace_id, actor_user_id=principal.user.id, actor_token_id=principal.token_id, action="graph_version.publish", target_type="graph_version", target_id=version.id, meta={"graph_key": graph.graph_key, "version": version.version, "comment": payload.comment}))
+    session.commit()
+    return _graph_stream_read(session, graph)
+
+
+@app.post("/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/versions/{version_number}/invalidate", response_model=GraphStreamRead)
+def invalidate_graph_version(
+    workspace_id: UUID,
+    project_id: UUID,
+    graph_key: str,
+    version_number: int,
+    payload: GraphReviewRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> GraphStreamRead:
+    graph = _resolve_graph(session, workspace_id, project_id, graph_key, for_update=True)
+    _require_graph_review_write(session, graph, principal)
+    version = session.scalar(select(GraphVersion).where(GraphVersion.graph_id == graph.id, GraphVersion.version == version_number).with_for_update())
+    if version is None:
+        raise HTTPException(status_code=404, detail="graph version not found")
+    if version.status == GRAPH_VERSION_INVALIDATED:
+        raise HTTPException(status_code=422, detail="graph version is already invalidated")
+    if graph.current_version_id == version.id and graph.status != GRAPH_STATUS_ARCHIVED:
+        raise HTTPException(status_code=422, detail="publish another version or archive graph before invalidating current graph version")
+    version.status = GRAPH_VERSION_INVALIDATED
+    version.invalidated_by = principal.user.id
+    version.invalidated_at = datetime.now(UTC)
+    version.status_reason = payload.comment
+    if graph.current_version_id == version.id:
+        graph.current_version_id = None
+    session.add(AuditEvent(workspace_id=workspace_id, actor_user_id=principal.user.id, actor_token_id=principal.token_id, action="graph_version.invalidate", target_type="graph_version", target_id=version.id, meta={"graph_key": graph.graph_key, "version": version.version, "comment": payload.comment}))
+    session.commit()
+    return _graph_stream_read(session, graph)
+
+
+@app.post("/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/archive", response_model=GraphStreamRead)
+def archive_graph_stream(
+    workspace_id: UUID,
+    project_id: UUID,
+    graph_key: str,
+    payload: GraphReviewRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> GraphStreamRead:
+    graph = _resolve_graph(session, workspace_id, project_id, graph_key, for_update=True)
+    _require_graph_review_write(session, graph, principal)
+    graph.status = GRAPH_STATUS_ARCHIVED
+    retained_versions = session.scalar(select(func.count()).select_from(GraphVersion).where(GraphVersion.graph_id == graph.id))
+    if not retained_versions:
+        graph.resource_id = None
+    session.add(AuditEvent(workspace_id=workspace_id, actor_user_id=principal.user.id, actor_token_id=principal.token_id, action="graph.archive", target_type="graph", target_id=graph.id, meta={"graph_key": graph.graph_key, "comment": payload.comment, "zero_version_tombstone": not bool(retained_versions)}))
+    session.commit()
+    return _graph_stream_read(session, graph)
 
 
 @app.get(

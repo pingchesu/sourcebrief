@@ -1027,3 +1027,119 @@ def test_repo_agent_v0_draft_publish_archive_scrub_lifecycle(monkeypatch: pytest
         headers=auth_headers(allowed_token.json()["token"]),
     )
     assert tombstone_get.status_code == 404
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_graph_version_storage_e0_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("CONTEXTSMITH_ALLOW_LOCAL_GIT", "true")
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "graph-version")
+    workspace_id, project_id = scope.split(":")
+
+    repo_dir = tmp_path / "graph-fixture"
+    repo_dir.mkdir()
+    (repo_dir / "README.md").write_text("# Graph Fixture\nInitial graph fixture.\n", encoding="utf-8")
+    (repo_dir / "src").mkdir()
+    (repo_dir / "src" / "app.py").write_text("def main():\n    return 'graph-v1'\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "graph@example.com"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "Graph Test"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+
+    created_resource = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        headers=auth_headers(token),
+        json={"type": "git", "name": "Graph Fixture", "uri": str(repo_dir), "source_config": {"url": str(repo_dir), "branch": "main"}},
+    )
+    assert created_resource.status_code == 201, created_resource.text
+    resource_id = created_resource.json()["id"]
+    index_run = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh", headers=auth_headers(token))
+    assert index_run.status_code == 202, index_run.text
+    run_index(index_run.json()["id"])
+
+    compatible_graph = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph", headers=auth_headers(token))
+    assert compatible_graph.status_code == 200, compatible_graph.text
+    compile_v1 = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph/versions",
+        headers=auth_headers(token),
+        json={"graph_key": "graph-fixture-graph", "title": "Graph Fixture Graph"},
+    )
+    assert compile_v1.status_code == 200, compile_v1.text
+    assert compile_v1.json()["version"]["status"] == "draft"
+    assert compile_v1.json()["version"]["validation_json"]["ok"] is True
+    assert compile_v1.json()["graph"]["graph_key"] == "graph-fixture-graph"
+    compile_same = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph/versions",
+        headers=auth_headers(token),
+        json={"graph_key": "graph-fixture-graph", "title": "Graph Fixture Graph"},
+    )
+    assert compile_same.status_code == 200, compile_same.text
+    assert compile_same.json()["unchanged"] is True
+
+    allowed_token = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        headers=auth_headers(token),
+        json={"name": "graph scoped reader", "scopes": ["resource:read", "review:write"], "allowed_project_ids": [project_id], "allowed_resource_ids": [resource_id]},
+    )
+    assert allowed_token.status_code == 201, allowed_token.text
+    allowed_graph = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/graphs/graph-fixture-graph", headers=auth_headers(allowed_token.json()["token"]))
+    assert allowed_graph.status_code == 200, allowed_graph.text
+    denied_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graphs/graph-fixture-graph/versions/{compile_v1.json()['version']['version']}/publish",
+        headers=auth_headers(allowed_token.json()["token"]),
+        json={"comment": "resource-scoped token must not publish"},
+    )
+    assert denied_publish.status_code == 403
+
+    published_v1 = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graphs/graph-fixture-graph/versions/{compile_v1.json()['version']['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish graph v1."},
+    )
+    assert published_v1.status_code == 200, published_v1.text
+    assert published_v1.json()["current"]["status"] == "published"
+
+    (repo_dir / "src" / "app.py").write_text("def main():\n    return 'graph-v2'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "second"], cwd=repo_dir, check=True, capture_output=True)
+    second_run = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh", headers=auth_headers(token))
+    assert second_run.status_code == 202, second_run.text
+    run_index(second_run.json()["id"])
+    compile_v2 = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph/versions", headers=auth_headers(token), json={})
+    assert compile_v2.status_code == 200, compile_v2.text
+    assert compile_v2.json()["version"]["version_hash"] != compile_v1.json()["version"]["version_hash"]
+
+    (repo_dir / "README.md").write_text("# Graph Fixture\nThird graph fixture.\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "third"], cwd=repo_dir, check=True, capture_output=True)
+    third_run = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh", headers=auth_headers(token))
+    assert third_run.status_code == 202, third_run.text
+    run_index(third_run.json()["id"])
+    stale_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graphs/graph-fixture-graph/versions/{compile_v2.json()['version']['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "This stale draft must fail."},
+    )
+    assert stale_publish.status_code == 422
+    compile_v3 = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph/versions",
+        headers=auth_headers(token),
+        json={},
+    )
+    assert compile_v3.status_code == 200, compile_v3.text
+
+    delete_resource_response = client.delete(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", headers=auth_headers(token))
+    assert delete_resource_response.status_code == 204, delete_resource_response.text
+    deleted_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graphs/graph-fixture-graph/versions/{compile_v3.json()['version']['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "This deleted-resource draft must fail."},
+    )
+    assert deleted_publish.status_code == 422
+    assert "deleted or archived" in deleted_publish.text
+    purge_blocked = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", headers=auth_headers(token))
+    assert purge_blocked.status_code == 409
+    assert "graphs" in purge_blocked.json()["detail"]

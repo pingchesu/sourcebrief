@@ -1155,3 +1155,55 @@ class GraphRead(BaseModel):
     edge_count: int
     nodes: list[GraphNodeRead]
     edges: list[GraphEdgeRead]
+
+
+class GraphVersionRead(BaseModel):
+    id: UUID
+    graph_id: UUID
+    resource_id: UUID
+    source_snapshot_id: UUID
+    version: int
+    status: str
+    version_hash: str
+    node_count: int
+    edge_count: int
+    membership_json: dict = Field(default_factory=dict)
+    provenance_json: dict = Field(default_factory=dict)
+    summary_json: dict = Field(default_factory=dict)
+    validation_json: dict = Field(default_factory=dict)
+    status_reason: str | None = None
+    published_at: datetime | None = None
+    invalidated_at: datetime | None = None
+    created_at: datetime
+
+
+class GraphStreamRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    resource_id: UUID | None = None
+    graph_key: str
+    title: str
+    description: str | None = None
+    graph_type: str
+    status: str
+    current_version_id: UUID | None = None
+    current: GraphVersionRead | None = None
+    versions: list[GraphVersionRead] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class GraphCompileRequest(BaseModel):
+    graph_key: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]{2,62}$")
+    title: str | None = None
+
+
+class GraphCompileResponse(BaseModel):
+    graph: GraphStreamRead
+    version: GraphVersionRead
+    unchanged: bool
+
+
+class GraphReviewRequest(BaseModel):
+    comment: str = Field(min_length=3, max_length=2000)

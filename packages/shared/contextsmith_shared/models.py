@@ -292,6 +292,74 @@ class GraphEdge(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Graph(Base):
+    __tablename__ = "graphs"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", "project_id", name="uq_graphs_id_scope"),
+        UniqueConstraint("id", "workspace_id", "project_id", "resource_id", name="uq_graphs_id_resource_scope"),
+        UniqueConstraint("workspace_id", "project_id", "graph_key", name="uq_graphs_key"),
+        Index("uq_graphs_resource_active", "workspace_id", "project_id", "resource_id", unique=True, postgresql_where=text("resource_id IS NOT NULL")),
+        CheckConstraint("status IN ('active', 'archived')", name="ck_graphs_status"),
+        CheckConstraint("graph_type = 'resource'", name="ck_graphs_type_e0"),
+        CheckConstraint("graph_key ~ '^[a-z0-9][a-z0-9-]{2,62}$'", name="ck_graphs_key_format"),
+        ForeignKeyConstraint(["resource_id", "workspace_id", "project_id"], ["resources.id", "resources.workspace_id", "resources.project_id"], name="fk_graphs_resource_scope"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    graph_key: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    graph_type: Mapped[str] = mapped_column(Text, nullable=False, default="resource")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class GraphVersion(Base):
+    __tablename__ = "graph_versions"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", "project_id", name="uq_graph_versions_id_scope"),
+        UniqueConstraint("graph_id", "version", name="uq_graph_versions_graph_version"),
+        Index("ix_graph_versions_graph_status", "graph_id", "status"),
+        Index("ix_graph_versions_resource_snapshot", "resource_id", "source_snapshot_id"),
+        CheckConstraint("status IN ('draft', 'published', 'superseded', 'invalidated')", name="ck_graph_versions_status"),
+        CheckConstraint("version >= 1", name="ck_graph_versions_version_positive"),
+        CheckConstraint("version_hash LIKE 'sha256:%' AND length(version_hash) = 71", name="ck_graph_versions_hash_format"),
+        CheckConstraint("node_count >= 0", name="ck_graph_versions_node_count_nonnegative"),
+        CheckConstraint("edge_count >= 0", name="ck_graph_versions_edge_count_nonnegative"),
+        ForeignKeyConstraint(["graph_id", "workspace_id", "project_id"], ["graphs.id", "graphs.workspace_id", "graphs.project_id"], name="fk_graph_versions_graph_scope"),
+        ForeignKeyConstraint(["graph_id", "workspace_id", "project_id", "resource_id"], ["graphs.id", "graphs.workspace_id", "graphs.project_id", "graphs.resource_id"], name="fk_graph_versions_graph_resource_scope"),
+        ForeignKeyConstraint(["resource_id", "workspace_id", "project_id"], ["resources.id", "resources.workspace_id", "resources.project_id"], name="fk_graph_versions_resource_scope"),
+        ForeignKeyConstraint(["source_snapshot_id", "workspace_id", "project_id", "resource_id"], ["source_snapshots.id", "source_snapshots.workspace_id", "source_snapshots.project_id", "source_snapshots.resource_id"], name="fk_graph_versions_snapshot_scope"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    graph_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    version_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    node_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    edge_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    membership_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    provenance_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    summary_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    validation_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    published_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class QueryRun(Base):
     __tablename__ = "query_runs"
     id = uuid_pk()
