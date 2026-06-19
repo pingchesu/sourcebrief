@@ -108,6 +108,7 @@ from contextsmith_api.schemas import (
     ContextPacketRead,
     ContextPacketRequest,
     CurrentUserResponse,
+    DeletedFileImpactStubRead,
     DueRefreshResponse,
     FolderBundleUploadResponse,
     GeneratePatchRequest,
@@ -117,6 +118,8 @@ from contextsmith_api.schemas import (
     GraphNodeRead,
     GraphRead,
     IndexRunRead,
+    ManifestDiffRead,
+    ManifestDiffRowRead,
     OpenPrRequest,
     PatchProposalFileRead,
     PatchProposalRead,
@@ -216,6 +219,11 @@ from contextsmith_worker.ingestion import (
     validate_base64_size,
     validate_git_url,
     validate_http_url,
+)
+from contextsmith_worker.manifest_diff import (
+    VALID_CHANGE_TYPES,
+    build_manifest_diff,
+    page_diff_rows,
 )
 
 app = FastAPI(title="ContextSmith API", version="0.1.0")
@@ -2403,6 +2411,69 @@ def _manifest_read(manifest: ResourceManifest, files: list[ResourceManifestFile]
     )
 
 
+def _source_family_id(resource: Resource) -> str:
+    config = resource.source_config or {}
+    value = config.get("source_family_id")
+    return str(value or resource.id)
+
+
+def _source_family_label(resource: Resource) -> str | None:
+    config = resource.source_config or {}
+    label = config.get("source_family_label")
+    return str(label) if isinstance(label, str) and label.strip() else (resource.name if resource.type.lower() in FOLDER_BUNDLE_RESOURCE_TYPES else None)
+
+
+def _version_label(resource: Resource) -> str | None:
+    config = resource.source_config or {}
+    label = config.get("version_label")
+    return str(label) if isinstance(label, str) and label.strip() else None
+
+
+def _family_manifest_count(session: Session, resource: Resource, principal: Principal | None = None) -> int:
+    if resource.type.lower() not in FOLDER_BUNDLE_RESOURCE_TYPES:
+        return 0
+    family_id = _source_family_id(resource)
+    candidates = list(
+        session.scalars(
+            select(Resource.id)
+            .join(ResourceManifest, ResourceManifest.resource_id == Resource.id)
+            .where(
+                Resource.workspace_id == resource.workspace_id,
+                Resource.project_id == resource.project_id,
+                Resource.deleted_at.is_(None),
+                Resource.type.in_(FOLDER_BUNDLE_RESOURCE_TYPES),
+                Resource.source_config["source_family_id"].astext == family_id,
+            )
+            .distinct()
+        )
+    )
+    if principal is not None:
+        candidates = [resource_id for resource_id in candidates if token_allows_resource(principal, resource_id)]
+    return len(candidates)
+
+
+def _resource_read(session: Session, resource: Resource, principal: Principal | None = None) -> ResourceRead:
+    data = ResourceRead.model_validate(resource)
+    if resource.type.lower() in FOLDER_BUNDLE_RESOURCE_TYPES:
+        data.source_family_label = _source_family_label(resource)
+        data.version_label = _version_label(resource)
+        data.has_manifest_diff = _family_manifest_count(session, resource, principal) >= 2
+    return data
+
+
+def _folder_bundle_version_name(session: Session, project_id: UUID, family_label: str) -> tuple[str, str]:
+    base = family_label.strip() or "Folder bundle"
+    existing = set(session.scalars(select(Resource.name).where(Resource.project_id == project_id, Resource.name.like(f"{base}%"))).all())
+    if base not in existing:
+        return base, "v1"
+    version = 2
+    while True:
+        candidate = f"{base} · v{version}"
+        if candidate not in existing:
+            return candidate, f"v{version}"
+        version += 1
+
+
 @app.post(
     "/workspaces/{workspace_id}/projects/{project_id}/resources/upload-folder-bundle",
     response_model=FolderBundleUploadResponse,
@@ -2411,8 +2482,10 @@ def _manifest_read(manifest: ResourceManifest, files: list[ResourceManifestFile]
 def upload_folder_bundle(
     workspace_id: UUID,
     project_id: UUID,
-    name: str = Form(min_length=1),
+    name: str | None = Form(default=None),
     update_frequency: str = Form(default="manual"),
+    supersedes_resource_id: UUID | None = Form(default=None),
+    source_family_id: str | None = Form(default=None),
     zip_file: UploadFile = File(...),
     principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
@@ -2425,6 +2498,25 @@ def upload_folder_bundle(
     _require_project_member(session, workspace_id, project_id, principal)
     if update_frequency != "manual":
         raise HTTPException(status_code=422, detail="folder bundle uploads are manual-only in A2; re-upload a new zip to update")
+    if source_family_id is not None:
+        raise HTTPException(status_code=422, detail="source_family_id is server-derived; upload a new version with supersedes_resource_id")
+
+    superseded: Resource | None = None
+    family_label = (name or "").strip()
+    family_id: str | None = None
+    if supersedes_resource_id is not None:
+        superseded = _resolve_resource(session, workspace_id, project_id, supersedes_resource_id, principal)
+        if superseded.type.lower() not in FOLDER_BUNDLE_RESOURCE_TYPES:
+            raise HTTPException(status_code=422, detail="superseded resource must be a folder bundle")
+        existing_label = _source_family_label(superseded) or superseded.name
+        if family_label and family_label != existing_label:
+            raise HTTPException(status_code=422, detail="family label changes are not supported in A3")
+        family_label = existing_label
+        family_id = _source_family_id(superseded)
+    elif not family_label:
+        raise HTTPException(status_code=422, detail="name is required for first folder bundle upload")
+
+    resource_name, version_label = _folder_bundle_version_name(session, project_id, family_label)
 
     work_base = _work_base()
     try:
@@ -2471,18 +2563,26 @@ def upload_folder_bundle(
         workspace_id=workspace_id,
         project_id=project_id,
         type=next(iter(FOLDER_BUNDLE_RESOURCE_TYPES)),
-        name=name,
+        name=resource_name,
         uri=f"folder-bundle://{original_filename}",
         update_frequency=update_frequency,
         source_config={
             "staged_zip_path": str(staged_path),
             "original_filename": original_filename,
             "zip_size_bytes": total_bytes,
+            "source_family_id": family_id or "pending",
+            "source_family_label": family_label,
+            "supersedes_resource_id": str(superseded.id) if superseded is not None else None,
+            "version_label": version_label,
         },
         created_by=user.id,
     )
     session.add(resource)
     session.flush()
+    if family_id is None:
+        config = dict(resource.source_config or {})
+        config["source_family_id"] = str(resource.id)
+        resource.source_config = config
     resource.next_refresh_at = compute_next_refresh_at(resource)
     run = IndexRun(
         workspace_id=workspace_id,
@@ -2524,7 +2624,7 @@ def upload_folder_bundle(
     session.add(run)
     session.commit()
     return FolderBundleUploadResponse(
-        resource=ResourceRead.model_validate(resource),
+        resource=_resource_read(session, resource, principal),
         index_run=IndexRunRead.model_validate(run),
     )
 
@@ -2539,10 +2639,10 @@ def get_resource(
     resource_id: UUID,
     principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
-) -> Resource:
+) -> ResourceRead:
     require_scope(principal, "resource:read")
     _require_project_access(session, workspace_id, project_id, principal)
-    return _resolve_resource(session, workspace_id, project_id, resource_id, principal)
+    return _resource_read(session, _resolve_resource(session, workspace_id, project_id, resource_id, principal), principal)
 
 
 @app.get(
@@ -2584,6 +2684,136 @@ def get_resource_manifest(
         )
     )
     return _manifest_read(manifest, files)
+
+
+def _manifest_files(session: Session, manifest: ResourceManifest) -> list[ResourceManifestFile]:
+    return list(
+        session.scalars(
+            select(ResourceManifestFile)
+            .where(ResourceManifestFile.resource_manifest_id == manifest.id)
+            .order_by(ResourceManifestFile.normalized_path.asc())
+        )
+    )
+
+
+def _latest_family_manifests(session: Session, resource: Resource) -> list[ResourceManifest]:
+    family_id = _source_family_id(resource)
+    family_uuid = UUID(family_id)
+    return list(
+        session.scalars(
+            select(ResourceManifest)
+            .join(Resource, ResourceManifest.resource_id == Resource.id)
+            .where(
+                ResourceManifest.workspace_id == resource.workspace_id,
+                ResourceManifest.project_id == resource.project_id,
+                Resource.deleted_at.is_(None),
+                Resource.type.in_(FOLDER_BUNDLE_RESOURCE_TYPES),
+                (Resource.source_config["source_family_id"].astext == family_id) | (Resource.id == family_uuid),
+            )
+            .order_by(ResourceManifest.created_at.desc())
+            .limit(2)
+        )
+    )
+
+
+def _manifest_diff_read(
+    session: Session,
+    *,
+    base_manifest: ResourceManifest,
+    head_manifest: ResourceManifest,
+    source_family_label: str | None,
+    limit: int,
+    cursor: str | None,
+    change_types: set[str] | None,
+) -> ManifestDiffRead:
+    result = build_manifest_diff(_manifest_files(session, base_manifest), _manifest_files(session, head_manifest))
+    page, next_cursor, filtered_count = page_diff_rows(result.rows, change_types=change_types, limit=limit, cursor=cursor)
+    return ManifestDiffRead(
+        base_manifest_id=base_manifest.id,
+        head_manifest_id=head_manifest.id,
+        base_resource_id=base_manifest.resource_id,
+        head_resource_id=head_manifest.resource_id,
+        source_family_label=source_family_label,
+        added_count=result.added_count,
+        changed_count=result.changed_count,
+        deleted_count=result.deleted_count,
+        unchanged_count=result.unchanged_count,
+        warning_changed_count=result.warning_changed_count,
+        base_file_count=result.base_file_count,
+        head_file_count=result.head_file_count,
+        total_row_count=filtered_count,
+        row_count_returned=len(page),
+        limit=limit,
+        next_cursor=next_cursor,
+        rows=[
+            ManifestDiffRowRead(
+                normalized_path=row.normalized_path,
+                change_type=row.change_type,
+                base_file_id=row.base_file_id,
+                head_file_id=row.head_file_id,
+                base_status=row.base_status,
+                head_status=row.head_status,
+                base_size_bytes=row.base_size_bytes,
+                head_size_bytes=row.head_size_bytes,
+                base_content_hash=row.base_content_hash,
+                head_content_hash=row.head_content_hash,
+                warning_changed=row.warning_changed,
+                reason=row.reason,
+            )
+            for row in page
+        ],
+        deleted_file_impact=DeletedFileImpactStubRead(
+            deleted_file_count=result.deleted_file_impact.deleted_file_count,
+            impacted_sections_known=result.deleted_file_impact.impacted_sections_known,
+            message=result.deleted_file_impact.message,
+        ),
+    )
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/manifest-diff",
+    response_model=ManifestDiffRead,
+)
+def get_resource_manifest_diff(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    change_type: list[str] | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    cursor: str | None = Query(default=None),
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> ManifestDiffRead:
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
+    if resource.type.lower() not in FOLDER_BUNDLE_RESOURCE_TYPES:
+        raise HTTPException(status_code=422, detail="manifest diff is only available for folder bundles in A3")
+    requested = set(change_type or [])
+    invalid = requested - VALID_CHANGE_TYPES
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"invalid change_type: {', '.join(sorted(invalid))}")
+    manifests = _latest_family_manifests(session, resource)
+    if len(manifests) < 2:
+        raise HTTPException(status_code=409, detail="not enough manifests to diff")
+    head_manifest, base_manifest = manifests[0], manifests[1]
+    for compared_resource_id in (head_manifest.resource_id, base_manifest.resource_id):
+        if not token_allows_resource(principal, compared_resource_id):
+            raise HTTPException(status_code=404, detail="manifest diff not found")
+    try:
+        return _manifest_diff_read(
+            session,
+            base_manifest=base_manifest,
+            head_manifest=head_manifest,
+            source_family_label=_source_family_label(resource),
+            limit=limit,
+            cursor=cursor,
+            change_types=requested or None,
+        )
+    except Exception as exc:
+        if cursor:
+            raise HTTPException(status_code=422, detail="invalid diff cursor") from exc
+        raise
 
 
 @app.post(
@@ -3194,7 +3424,7 @@ def list_resources(
     project_id: UUID,
     principal: Principal = Depends(require_principal),
     session: Session = Depends(get_session),
-) -> list[Resource]:
+) -> list[ResourceRead]:
     require_scope(principal, "resource:read")
     _require_project_access(session, workspace_id, project_id, principal)
     predicates = [
@@ -3204,13 +3434,14 @@ def list_resources(
     ]
     if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
         predicates.append(Resource.id.in_(principal.api_token.allowed_resource_ids))
-    return list(
+    resources = list(
         session.scalars(
             select(Resource)
             .where(*predicates)
             .order_by(Resource.created_at.asc())
         )
     )
+    return [_resource_read(session, resource, principal) for resource in resources]
 
 
 @app.get(
