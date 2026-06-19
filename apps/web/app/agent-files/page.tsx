@@ -128,7 +128,7 @@ export default function AgentFilesPage() {
   useEffect(() => { void load(false); void loadPack(); void loadResources(); }, [settings.workspaceId, settings.projectId]);
 
   return <main className="page">
-    <PageHeader eyebrow="Agent Files" title="Generated agent files and skills" description="Generate legacy agent files and the new remote-only Skill Pack that installs thin Hermes/Codex/Claude adapters while ContextSmith hosts the indexed repo context." actions={<button className="btn" disabled={busy} onClick={() => void load(true)}>{busy ? 'Regenerating…' : 'Regenerate agent files'}</button>} />
+    <PageHeader eyebrow="Agent Files" title="Ship the agent pack" description="Hand this project agent off to a runtime: download the remote-only Skill Pack — thin Hermes/Codex/Claude adapters plus MCP config — while ContextSmith keeps hosting the indexed repo context. Legacy generated files remain below for older integrations." actions={<button className="btn" disabled={busy} onClick={() => void load(true)}>{busy ? 'Regenerating…' : 'Regenerate agent files'}</button>} />
     {error ? <div className="notice error">{error}</div> : null}
     <div className="grid four"><Metric label="Files" value={files?.files.length ?? 0} /><Metric label="Resources" value={files?.resource_count ?? 0} /><Metric label="Repo skills" value={files?.repo_agent_count ?? 0} /><Metric label="Generated" value={fmt(files?.generated_at)} /></div>
 
@@ -165,6 +165,7 @@ export default function AgentFilesPage() {
     <div className="grid two">
       <Card>
         <h2>Legacy generated files</h2>
+        <p className="muted">Kept for older integrations. For new handoffs use the Skill Pack above.</p>
         {!files ? <EmptyState text="Agent files are loading." /> : <div className="grid">{files.files.map((file) => <button type="button" key={file.path} className={`scope-pill ${selected?.path === file.path ? 'active' : ''}`} onClick={() => setSelectedPath(file.path)}><strong>{file.path}</strong><small>{file.kind} · {file.description}</small></button>)}</div>}
       </Card>
       <Card>

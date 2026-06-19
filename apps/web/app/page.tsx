@@ -59,12 +59,12 @@ export default function CommandCenterPage() {
     }
     if (!workspace || !project) items.push({ key: 'scope', tone: 'risk', title: 'Workspace or project not loaded', detail: 'Confirm the workspace and project identifiers in configuration.', href: '/config', action: 'Open config' });
     if (!agent) items.push({ key: 'agent', tone: 'warn', title: 'Project agent not generated', detail: 'Generate the project agent once sources are indexed.', href: '/agent-profile', action: 'Project agent' });
-    if (!hasActiveSource) items.push({ key: 'sources', tone: 'warn', title: 'No active sources connected', detail: 'Connect a git repo, URL, or document to start building context.', href: '/import', action: 'Connect' });
+    if (!hasActiveSource) items.push({ key: 'sources', tone: 'warn', title: 'No active sources connected', detail: 'Connect a git repo, URL, or document to start building context.', href: '/sources', action: 'Connect' });
     if (provider && !providerOk) items.push({ key: 'provider', tone: 'warn', title: `Embedding provider ${provider.status}`, detail: `${provider.embedding.provider}/${provider.embedding.model} · ${provider.embedding.namespace}`, href: '/config', action: 'Diagnose' });
     if (failedResources.length > 0) items.push({ key: 'failed', tone: 'risk', title: `${failedResources.length} source${failedResources.length > 1 ? 's' : ''} failed to index`, detail: failedResources.map((r) => r.name).slice(0, 3).join(', '), href: '/maintenance', action: 'Reindex' });
     for (const item of reviewRisks.slice(0, 4)) {
       const reason = item.stale_reasons[0] ?? `${item.freshness_status}${item.freshness_age_days != null ? ` · ${item.freshness_age_days}d old` : ''}`;
-      items.push({ key: `review-${item.resource.id}`, tone: 'warn', title: item.resource.name, detail: reason, meta: `${item.usage_count} uses`, href: '/review', action: 'Review' });
+      items.push({ key: `review-${item.resource.id}`, tone: 'warn', title: item.resource.name, detail: reason, meta: `${item.usage_count} uses`, href: '/quality', action: 'Open quality' });
     }
     return items;
   }, [initialLoading, signedIn, workspace, project, agent, hasActiveSource, provider, providerOk, failedResources, reviewRisks]);
@@ -73,10 +73,10 @@ export default function CommandCenterPage() {
     if (initialLoading) return { label: 'Loading workspace…', href: '/config' };
     if (!signedIn) return { label: 'Sign in', href: '/login' };
     if (!workspace || !project) return { label: 'Open configuration', href: '/config' };
-    if (!hasActiveSource) return { label: 'Connect a source', href: '/import' };
+    if (!hasActiveSource) return { label: 'Connect a source', href: '/sources' };
     if (!agent) return { label: 'Generate project agent', href: '/agent-profile' };
-    if (readiness === 'attention') return { label: 'Open review queue', href: '/review' };
-    return { label: 'Open Workbench', href: '/repo-agents' };
+    if (readiness === 'attention') return { label: 'Open quality gate', href: '/quality' };
+    return { label: 'Open Workbench', href: '/workbench' };
   }, [initialLoading, signedIn, workspace, project, hasActiveSource, agent, readiness]);
 
   // --- Source map preview: stale first, then by usage. ---
@@ -161,7 +161,7 @@ export default function CommandCenterPage() {
       <SectionCard
         title="Source coverage"
         description="Lifecycle of connected context sources."
-        action={<Link className="btn secondary" href="/resources">All sources</Link>}
+        action={<Link className="btn secondary" href="/sources">All sources</Link>}
       >
         {hasActiveSource ? <>
           <div className="grid three">
@@ -181,7 +181,7 @@ export default function CommandCenterPage() {
     <SectionCard
       title="Attention queue"
       description="What needs action right now, derived from live source and review state."
-      action={<Link className="btn secondary" href="/review">Review center</Link>}
+      action={<Link className="btn secondary" href="/quality">Quality gate</Link>}
     >
       {attention.length === 0
         ? <EmptyState text="Nothing needs attention. Provider healthy, sources active, no open review risks." />
@@ -203,7 +203,7 @@ export default function CommandCenterPage() {
       <SectionCard
         title="Source map"
         description="Top sources by attention priority (stale first, then most used)."
-        action={<Link className="btn secondary" href="/resources">Open sources</Link>}
+        action={<Link className="btn secondary" href="/sources">Open sources</Link>}
       >
         {sourcePreview.length === 0
           ? <EmptyState text={signedIn ? 'No sources to map yet.' : 'Sign in to load the source map.'} />
@@ -225,7 +225,7 @@ export default function CommandCenterPage() {
       <SectionCard
         title="Retrieval usage"
         description="Real query activity served from indexed context."
-        action={<Link className="btn secondary" href="/ask">Ask & citations</Link>}
+        action={<Link className="btn secondary" href="/workbench">Open Workbench</Link>}
       >
         {usageItems.length === 0
           ? <EmptyState text="No retrieval usage recorded yet. Usage appears here once the agent answers queries." />
@@ -236,7 +236,7 @@ export default function CommandCenterPage() {
               <Metric label="Packets" value={contextPackets} />
             </div>
             <div className="action-grid">
-              <ActionLink href="/ask" label="Ask a question" description="Preview the cited context packet for a query." tone="primary" />
+              <ActionLink href="/workbench" label="Try a query in Workbench" description="Preview the cited context packet for a query." tone="primary" />
               <ActionLink href="/agent-files" label="Ship agent pack" description="Generate Hermes/Codex/Claude files and MCP config." />
             </div>
           </>}
