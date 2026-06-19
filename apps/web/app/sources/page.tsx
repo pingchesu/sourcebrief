@@ -6,7 +6,7 @@ import { AgentContextPreview } from '../../components/AgentContextPreview';
 import { usePlatform } from '../../lib/platform-context';
 import { ApiError, fmt, short } from '../../lib/api';
 import { freshnessLabel, isActive, isIndexFailed, isVisible, lifecycleStages, readiness } from '../../lib/lifecycle';
-import type { AgentContextResponse, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, ReviewItem } from '../../lib/types';
+import type { AgentContextResponse, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, SectionImpact, SnapshotSections, ReviewItem } from '../../lib/types';
 
 type ResourceType = 'git' | 'url' | 'markdown' | 'upload' | 'folder_bundle';
 type GitDraft = { branch: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
@@ -102,6 +102,11 @@ export default function SourcesPage() {
   const [manifestDiff, setManifestDiff] = useState<ManifestDiff | null>(null);
   const [manifestDiffError, setManifestDiffError] = useState<string | null>(null);
   const [manifestDiffLimit, setManifestDiffLimit] = useState(25);
+  const [snapshotSections, setSnapshotSections] = useState<SnapshotSections | null>(null);
+  const [snapshotSectionsError, setSnapshotSectionsError] = useState<string | null>(null);
+  const [sectionImpact, setSectionImpact] = useState<SectionImpact | null>(null);
+  const [sectionImpactError, setSectionImpactError] = useState<string | null>(null);
+  const [snapshotSectionsLimit, setSnapshotSectionsLimit] = useState(8);
 
   // Git environment state.
   const [gitEnv, setGitEnv] = useState<GitResourceEnv | null>(null);
@@ -117,7 +122,7 @@ export default function SourcesPage() {
   const isFolderBundle = selectedResource?.type === 'folder_bundle';
 
   // Reset detail-scoped state when selection changes.
-  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); }, [selectedResourceId]);
+  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); setSnapshotSections(null); setSnapshotSectionsError(null); setSnapshotSectionsLimit(8); setSectionImpact(null); setSectionImpactError(null); }, [selectedResourceId]);
 
   // Load git env for the selected git source.
   useEffect(() => {
@@ -155,6 +160,20 @@ export default function SourcesPage() {
       });
     return () => { cancelled = true; };
   }, [client, selectedResource, settings.workspaceId, settings.projectId, manifestDiffLimit]);
+
+  useEffect(() => {
+    if (!selectedResource || selectedResource.type !== 'folder_bundle' || !selectedResource.current_snapshot_id) { setSnapshotSections(null); setSectionImpact(null); return; }
+    let cancelled = false;
+    setSnapshotSectionsError(null);
+    setSectionImpactError(null);
+    client<SnapshotSections>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources/${selectedResource.id}/snapshot-sections?limit=${snapshotSectionsLimit}`)
+      .then((value) => { if (!cancelled) setSnapshotSections(value); })
+      .catch((err) => { if (!cancelled) { setSnapshotSections(null); setSnapshotSectionsError(String(err)); } });
+    client<SectionImpact>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources/${selectedResource.id}/section-impact`)
+      .then((value) => { if (!cancelled) setSectionImpact(value); })
+      .catch((err) => { if (!cancelled) { setSectionImpact(null); setSectionImpactError(String(err)); } });
+    return () => { cancelled = true; };
+  }, [client, selectedResource, settings.workspaceId, settings.projectId, snapshotSectionsLimit]);
 
   function changeType(next: ResourceType) {
     setType(next);
@@ -324,7 +343,7 @@ export default function SourcesPage() {
           {type === 'upload' ? <Field label="Filename"><input className="input" value={filename} onChange={(event) => setFilename(event.target.value)} /></Field> : null}
           {type === 'markdown' || type === 'upload' ? <Field label="Content"><textarea className="input" rows={8} value={content} onChange={(event) => setContent(event.target.value)} /></Field> : null}
           {type === 'folder_bundle'
-            ? <div className="notice">Folder bundles are manual in this milestone. Upload a new zip when the folder changes.</div>
+            ? <div className="notice">Folder bundles are updated manually. Upload a new zip when the folder changes.</div>
             : <div className="grid two"><Field label="Update frequency"><select className="input" value={frequency} onChange={(event) => setFrequency(event.target.value)}><option value="manual">manual</option><option value="hourly">hourly</option><option value="daily">daily</option><option value="weekly">weekly</option></select></Field><label className={`scope-pill ${refreshNow ? 'active' : ''}`}><input type="checkbox" checked={refreshNow} onChange={(event) => setRefreshNow(event.target.checked)} /> Create index immediately</label></div>}
           <button className="btn" disabled={connectBusy}>{connectBusy ? 'Connecting…' : 'Connect source'}</button>
         </div>
@@ -381,7 +400,7 @@ export default function SourcesPage() {
               <strong>Folder manifest</strong>
               {manifest ? <div className="grid three" style={{ marginTop: 8 }}>
                 <Metric label="Files" value={manifest.file_count} />
-                <Metric label="Unsupported" value={manifest.unsupported_file_count} />
+                <Metric label="Sections" value={manifest.section_count} hint={`${manifest.sections_reused_count} reused / ${manifest.sections_extracted_count} extracted`} />
                 <Metric label="Warnings" value={manifest.parser_warning_count} />
               </div> : <div className="muted" style={{ marginTop: 8 }}>{manifestError ? `Manifest unavailable: ${manifestError}` : 'Manifest will appear after indexing completes.'}</div>}
               {manifest ? <div className="muted" style={{ marginTop: 6 }}>{manifest.total_bytes.toLocaleString()} bytes scanned from the uploaded zip.</div> : null}
@@ -402,6 +421,20 @@ export default function SourcesPage() {
                 <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>Path</th><th>Change</th><th>Size delta</th><th>Base</th><th>Head</th><th>Reason</th></tr></thead><tbody>{manifestDiff.rows.map((row) => <tr key={`${row.change_type}-${row.normalized_path}`}><td><span className="code">{row.normalized_path}</span></td><td><StatusChip value={row.change_type} /></td><td>{sizeDelta(row.base_size_bytes, row.head_size_bytes)}</td><td>{row.base_status ?? <span className="muted">—</span>}</td><td>{row.head_status ?? <span className="muted">—</span>}</td><td>{row.reason}</td></tr>)}</tbody></table></div>
                 {manifestDiff.next_cursor ? <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => setManifestDiffLimit((value) => value + 25)}>Show more diff rows</button> : null}
               </> : manifestDiffError ? <div className="notice error" style={{ marginTop: 8 }}>Manifest diff unavailable: {manifestDiffError}</div> : <div className="muted" style={{ marginTop: 8 }}>Manifest diff will appear after a second uploaded version.</div>}
+            </div> : null}
+            {selectedResource.type === 'folder_bundle' ? <div className="notice">
+              <strong>Section reuse and impact</strong>
+              {sectionImpact ? <div className="grid three" style={{ marginTop: 8 }}>
+                <Metric label="Deleted-file sections" value={sectionImpact.sections_from_deleted_files_count} />
+                <Metric label="Absent sections" value={sectionImpact.sections_absent_count} />
+                <Metric label="Artifact impact" value={sectionImpact.impacted_artifacts_known ? 'known' : 'not calculated'} />
+              </div> : <div className="muted" style={{ marginTop: 8 }}>{sectionImpactError ? `Section impact unavailable: ${sectionImpactError}` : 'Section impact will appear after indexing.'}</div>}
+              {sectionImpact ? <div className="muted" style={{ marginTop: 6 }}>{sectionImpact.message}</div> : null}
+              {snapshotSections ? <>
+                <div className="muted" style={{ marginTop: 6 }}>Showing {snapshotSections.row_count_returned.toLocaleString()} of {snapshotSections.total_row_count.toLocaleString()} extracted/reused sections.</div>
+                <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>Path</th><th>Title</th><th>Reuse</th><th>Preview</th></tr></thead><tbody>{snapshotSections.rows.map((row) => <tr key={row.id}><td><span className="code">{row.normalized_path}</span><div className="muted">L{row.start_line ?? '—'}-{row.end_line ?? '—'}</div></td><td>{row.title || <span className="muted">Untitled</span>}</td><td><StatusChip value={row.reuse_status} /></td><td>{row.content_preview}</td></tr>)}</tbody></table></div>
+                {snapshotSections.next_cursor ? <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => setSnapshotSectionsLimit((value) => value + 25)}>Show more sections</button> : null}
+              </> : snapshotSectionsError ? <div className="notice error" style={{ marginTop: 8 }}>Snapshot sections unavailable: {snapshotSectionsError}</div> : <div className="muted" style={{ marginTop: 8 }}>Sections will appear after indexing.</div>}
             </div> : null}
             <div><div className="label">Last refresh</div><div className="muted">{fmt(selectedResource.last_refresh_finished_at)}</div></div>
             {actionError ? <div className="notice error">{actionError}</div> : null}

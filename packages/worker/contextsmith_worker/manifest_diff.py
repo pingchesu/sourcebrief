@@ -142,7 +142,7 @@ def build_manifest_diff(base_files: Sequence[ResourceManifestFile], head_files: 
         deleted_file_impact=DeletedFileImpactStub(
             deleted_file_count=deleted_count,
             impacted_sections_known=False,
-            message="Section/citation impact will be computed after A4 section extraction.",
+            message="Section impact is available in the Section reuse and impact panel; artifact citation impact is not available yet.",
         ),
     )
 

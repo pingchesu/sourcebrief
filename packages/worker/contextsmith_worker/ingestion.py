@@ -60,6 +60,7 @@ from contextsmith_worker.manifest import (
     HARD_MAX_MANIFEST_TOTAL_BYTES,
 )
 from contextsmith_worker.manifest_store import ManifestFileInput, create_resource_manifest
+from contextsmith_worker.section_store import build_snapshot_sections
 
 # --- configuration ---------------------------------------------------------
 
@@ -1188,13 +1189,19 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
     snapshot.indexed_at = datetime.now(UTC)
     graph_stats = build_graph_index(session, resource, snapshot, docs)
     if rtype in FOLDER_BUNDLE_TYPES:
-        create_resource_manifest(
+        manifest = create_resource_manifest(
             session,
             workspace_id=resource.workspace_id,
             project_id=resource.project_id,
             resource_id=resource.id,
             source_snapshot_id=snapshot.id,
             files=[ManifestFileInput(**_manifest_input(row)) for row in manifest_file_rows],
+        )
+        build_snapshot_sections(
+            session,
+            resource=resource,
+            manifest=manifest,
+            redacted_docs=docs,
         )
     run.documents_seen = len(docs)
     run.chunks_created = chunks_created
