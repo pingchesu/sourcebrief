@@ -38,7 +38,7 @@ test: venv
 	$(BIN)/pytest tests/unit -q
 
 test-integration: venv
-	$(BIN)/pytest tests/integration -q
+	CONTEXTSMITH_DEV_AUTH=true $(BIN)/pytest tests/integration -q
 
 prepare-qa-fixtures:
 	mkdir -p tmp/qa-git-fixtures
