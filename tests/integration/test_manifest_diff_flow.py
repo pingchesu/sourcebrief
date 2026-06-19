@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import subprocess
 import time
@@ -1349,3 +1350,135 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     purge_blocked = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_a}/purge", headers=auth_headers(token))
     assert purge_blocked.status_code == 409
     assert "graph_merges" in purge_blocked.json()["detail"]
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_expanded_mcp_runtime_tools_f(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "mcp-f")
+    workspace_id, project_id = scope.split(":")
+
+    upload = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        "F MCP Runtime bundle",
+        {
+            "README.md": b"# Runtime MCP\nExpanded MCP tools read pinned runtime evidence.\n# Architecture\nGraph tools expose provenance.",
+            "docs/runbook.md": b"# Runbook\nAgents should call get_context_pack then search then read_section.",
+        },
+    )
+    resource_id = upload["resource"]["id"]
+
+    artifact = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+    )
+    assert artifact.status_code == 200, artifact.text
+    artifact_id = artifact.json()["id"]
+    approved = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}/approve",
+        headers=auth_headers(token),
+        json={"acknowledge_warnings": True, "comment": "Approve for F MCP runtime."},
+    )
+    assert approved.status_code == 200, approved.text
+    draft_pack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions",
+        headers=auth_headers(token),
+        json={"title": "Default pack", "description": "F MCP", "artifact_ids": [artifact_id]},
+    )
+    assert draft_pack.status_code == 201, draft_pack.text
+    published_pack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{draft_pack.json()['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish for F MCP."},
+    )
+    assert published_pack.status_code == 200, published_pack.text
+
+    graph_draft = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph/versions",
+        headers=auth_headers(token),
+        json={"graph_key": "runtime-mcp-graph", "title": "Runtime MCP Graph"},
+    )
+    assert graph_draft.status_code == 200, graph_draft.text
+    graph_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graphs/runtime-mcp-graph/versions/{graph_draft.json()['version']['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish F MCP graph."},
+    )
+    assert graph_publish.status_code == 200, graph_publish.text
+
+    def mcp(method: str, params: dict | None = None, *, bearer: str = token) -> dict:
+        response = client.post(
+            f"/mcp/{workspace_id}/{project_id}",
+            headers=auth_headers(bearer),
+            json={"jsonrpc": "2.0", "id": method, "method": method, "params": params or {}},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def call(name: str, arguments: dict | None = None, *, bearer: str = token) -> dict:
+        body = mcp("tools/call", {"name": name, "arguments": arguments or {}}, bearer=bearer)
+        assert "error" not in body, body
+        structured = body["result"]["structuredContent"]
+        assert not body["result"].get("isError"), body
+        return structured
+
+    tools = mcp("tools/list")["result"]["tools"]
+    tool_names = {tool["name"] for tool in tools}
+    assert {
+        "contextsmith.get_context_pack",
+        "contextsmith.list_sources",
+        "contextsmith.get_resource_map",
+        "contextsmith.search",
+        "contextsmith.read_section",
+        "contextsmith.get_graph_inventory",
+        "contextsmith.graph_query",
+        "contextsmith.graph_path",
+    }.issubset(tool_names)
+
+    sources = call("contextsmith.list_sources", {"query": "F MCP", "limit": 10})
+    assert sources["sources"]
+    assert sources["sources"][0]["resource_id"] == resource_id
+
+    pack = call("contextsmith.get_context_pack", {"pack_key": "default", "include_graph_inventory": True})
+    assert pack["pack"]["status"] == "published"
+    assert pack["freshness"]["resources"]
+    assert pack["artifacts"][0]["citation_locators"]
+
+    resource_map = call("contextsmith.get_resource_map", {"resource_ref": "F MCP Runtime", "limit": 10})
+    assert resource_map["artifact"]["id"] == artifact_id
+    locator = resource_map["citations"][0]["locator"]
+    assert locator["context_artifact_citation_id"]
+
+    search = call("contextsmith.search", {"query": "pinned runtime evidence", "context_pack_key": "default", "top_k": 3})
+    assert search["hits"]
+    assert search["hits"][0]["source_snapshot_id"]
+
+    section = call("contextsmith.read_section", {"resource_id": resource_id, "context_artifact_citation_id": locator["context_artifact_citation_id"], "context_pack_key": "default", "context_pack_version": 1})
+    assert "get_context_pack" in section["content"] or "runtime" in section["content"].lower()
+    assert section["locator"]["context_artifact_citation_id"] == locator["context_artifact_citation_id"]
+    assert section["freshness"]["resources"]
+
+    malformed = mcp("tools/call", {"name": "contextsmith.read_section", "arguments": {"resource_id": "not-a-uuid"}})
+    assert malformed["result"].get("isError") is True
+    assert malformed["result"]["structuredContent"]["status_code"] == 422
+
+    graph_inventory = call("contextsmith.get_graph_inventory", {"query": "runtime", "kind": "all"})
+    assert any(graph["graph_key"] == "runtime-mcp-graph" for graph in graph_inventory["resource_graphs"])
+    graph_query = call("contextsmith.graph_query", {"graph_key": "runtime-mcp-graph", "graph_kind": "resource", "query": "README", "limit": 10})
+    assert graph_query["graph"]["status"] == "published"
+    assert graph_query["freshness"]["resources"]
+
+    denied_token = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        headers=auth_headers(token),
+        json={"name": "mcp f denied", "scopes": ["resource:read", "project:query"], "allowed_project_ids": [project_id], "allowed_resource_ids": []},
+    )
+    assert denied_token.status_code == 201, denied_token.text
+    denied = mcp("tools/call", {"name": "contextsmith.get_context_pack", "arguments": {"pack_key": "default"}}, bearer=denied_token.json()["token"])
+    assert denied["result"].get("isError") is True
+    assert "not found" in json.dumps(denied["result"]["structuredContent"]).lower()

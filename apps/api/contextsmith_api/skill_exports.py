@@ -135,7 +135,13 @@ POST /workspaces/{{workspace_id}}/projects/{{project_id}}/agent-context
 }}
 ```
 
-If MCP is available, use the stable tool `contextsmith.get_agent_context` with the same `context_pack_key` and `context_pack_version` arguments. Do not call future/unadvertised tools such as `get_context_pack`, `search`, or `read_section` unless live tool discovery exposes them.
+If MCP is available, first call `tools/list` and prefer the artifact-aware runtime flow when these tools are advertised:
+
+1. `contextsmith.get_context_pack` with `pack_key` / `version` to inspect the pinned pack, freshness, sources, and graph inventory.
+2. `contextsmith.search` with `context_pack_key` / `context_pack_version` to find cited section evidence.
+3. `contextsmith.read_section` using the canonical locator returned by `search`, `get_context_pack`, or `get_resource_map` before making source-specific claims.
+4. `contextsmith.get_graph_inventory`, `contextsmith.graph_query`, or `contextsmith.graph_path` for architecture and impact questions.
+5. Fall back to stable `contextsmith.get_agent_context` with the same selector when expanded MCP tools are not advertised. Use `search_code`, `grep_code`, `read_file`, and `find_symbol` only for exact repo file/symbol evidence.
 
 2. Before answering, verify the response contains:
    - `context_pack_key == "{version.pack_key}"`

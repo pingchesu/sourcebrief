@@ -27,6 +27,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
@@ -3097,7 +3098,7 @@ def _section_cursor(cursor: str | None) -> int:
     if cursor is None:
         return 0
     try:
-        value = int(cursor)
+        value = int(str(cursor))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="invalid section cursor") from exc
     if value < 0:
@@ -7477,7 +7478,7 @@ def _json_rpc_error(rpc_id: object | None, code: int, message: str) -> dict:
 
 
 def _mcp_tool_result(rpc_id: object | None, result: Any) -> dict:
-    payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+    payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else jsonable_encoder(result)
     text_payload = result.model_dump_json() if hasattr(result, "model_dump_json") else json.dumps(payload)
     return {
         "jsonrpc": "2.0",
@@ -7499,8 +7500,527 @@ def _mcp_tool_error(rpc_id: object | None, status_code: int, detail: object) -> 
     }
 
 
+
+
+def _runtime_cursor(cursor: str | None) -> int:
+    if cursor in (None, ""):
+        return 0
+    try:
+        value = int(str(cursor))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "invalid_cursor", "message": "cursor must be an integer offset"}) from exc
+    if value < 0:
+        raise HTTPException(status_code=422, detail={"code": "invalid_cursor", "message": "cursor must be non-negative"})
+    return value
+
+
+def _runtime_limit(value: object, *, default: int = 100, max_value: int = 500) -> int:
+    try:
+        parsed = int(str(value)) if value is not None else default
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail={"code": "invalid_limit", "message": "limit must be an integer"}) from exc
+    return max(1, min(parsed, max_value))
+
+
+def _runtime_resource_allowed_or_404(principal: Principal, resource_id: UUID) -> None:
+    if not token_allows_resource(principal, resource_id):
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "resource not found"})
+
+
+def _runtime_resource_rows_allowed(principal: Principal, resource_ids: list[UUID]) -> bool:
+    return all(token_allows_resource(principal, resource_id) for resource_id in resource_ids)
+
+
+def _runtime_resource_freshness(session: Session, resource: Resource, snapshot_id: UUID | None = None) -> dict[str, Any]:
+    effective_snapshot_id = snapshot_id or resource.current_snapshot_id
+    status = "current" if effective_snapshot_id is not None and effective_snapshot_id == resource.current_snapshot_id else "stale"
+    warnings: list[str] = []
+    if resource.deleted_at is not None:
+        status = "deleted"
+        warnings.append("resource is deleted")
+    elif resource.archived_at is not None:
+        status = "archived"
+        warnings.append("resource is archived")
+    elif status == "stale":
+        warnings.append("artifact is based on a non-current source snapshot")
+    return {
+        "resource_id": str(resource.id),
+        "name": resource.name,
+        "artifact_snapshot_id": str(effective_snapshot_id) if effective_snapshot_id else None,
+        "current_snapshot_id": str(resource.current_snapshot_id) if resource.current_snapshot_id else None,
+        "status": status,
+        "warning": "; ".join(warnings) if warnings else None,
+    }
+
+
+def _runtime_freshness(status: str = "current", *, warnings: list[str] | None = None, resources: list[dict[str, Any]] | None = None, pack: dict[str, Any] | None = None, artifact: dict[str, Any] | None = None, graph: dict[str, Any] | None = None) -> dict[str, Any]:
+    computed_warnings = list(warnings or [])
+    if resources:
+        for resource in resources:
+            warning = resource.get("warning")
+            if warning:
+                computed_warnings.append(str(warning))
+        if any(resource.get("status") not in {"current", None} for resource in resources) and status == "current":
+            status = "partial" if len(resources) > 1 else "stale"
+    return {"status": status, "warnings": sorted(set(computed_warnings)), "generated_at": datetime.now(UTC), "pack": pack, "artifact": artifact, "graph": graph, "resources": resources or [], "coverage_complete": True}
+
+
+def _runtime_citation_locator(citation: ContextArtifactCitation) -> dict[str, Any]:
+    return {
+        "resource_id": str(citation.resource_id),
+        "source_snapshot_id": str(citation.source_snapshot_id),
+        "snapshot_section_id": str(citation.snapshot_section_id),
+        "context_artifact_id": str(citation.context_artifact_id),
+        "context_artifact_citation_id": str(citation.id),
+        "path": citation.normalized_path,
+        "title": citation.title,
+        "start_line": citation.line_start,
+        "end_line": citation.line_end,
+        "content_hash": citation.content_hash,
+    }
+
+
+def _runtime_snapshot_section_locator(snapshot_section: SnapshotSection, section: Section, file_row: SnapshotFile | None = None) -> dict[str, Any]:
+    return {
+        "resource_id": str(snapshot_section.version_resource_id),
+        "source_snapshot_id": str(snapshot_section.source_snapshot_id),
+        "snapshot_section_id": str(snapshot_section.id),
+        "path": snapshot_section.normalized_path,
+        "title": section.title,
+        "start_line": 1,
+        "end_line": file_row.line_count if file_row else None,
+        "content_hash": file_row.content_hash if file_row else None,
+    }
+
+
+def _runtime_require_pack_covers_locator(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any], *, resource_id: UUID, source_snapshot_id: UUID) -> None:
+    if not args.get("context_pack_key"):
+        return
+    pack_args = {"pack_key": args.get("context_pack_key"), "version": args.get("context_pack_version")}
+    version = _runtime_resolve_pack(session, workspace_id, project_id, principal, pack_args)
+    covered = session.scalar(
+        select(ContextPackResourceCoverage.id).where(
+            ContextPackResourceCoverage.context_pack_version_id == version.id,
+            ContextPackResourceCoverage.resource_id == resource_id,
+            ContextPackResourceCoverage.source_snapshot_id == source_snapshot_id,
+        )
+    )
+    if covered is None:
+        raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found in context pack"})
+
+
+def _runtime_resolve_resource_ref(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> Resource:
+    resource_id = args.get("resource_id")
+    artifact_id = args.get("artifact_id")
+    if artifact_id:
+        artifact = session.scalar(select(ContextArtifact).where(ContextArtifact.id == UUID(str(artifact_id)), ContextArtifact.workspace_id == workspace_id, ContextArtifact.project_id == project_id))
+        if artifact is None:
+            raise HTTPException(status_code=404, detail={"code": "not_found", "message": "resource not found"})
+        _runtime_resource_allowed_or_404(principal, artifact.resource_id)
+        resource_id = artifact.resource_id
+    if resource_id:
+        resource = session.scalar(select(Resource).where(Resource.id == UUID(str(resource_id)), Resource.workspace_id == workspace_id, Resource.project_id == project_id, Resource.deleted_at.is_(None), Resource.archived_at.is_(None)))
+        if resource is None:
+            raise HTTPException(status_code=404, detail={"code": "not_found", "message": "resource not found"})
+        _runtime_resource_allowed_or_404(principal, resource.id)
+        return resource
+    ref = str(args.get("resource_ref") or "").strip()
+    if not ref:
+        raise HTTPException(status_code=422, detail={"code": "missing_resource", "message": "resource_id, resource_ref, or artifact_id is required"})
+    predicates = [Resource.workspace_id == workspace_id, Resource.project_id == project_id, Resource.deleted_at.is_(None), Resource.archived_at.is_(None)]
+    try:
+        ref_uuid = UUID(ref)
+    except ValueError:
+        ref_uuid = None
+    if ref_uuid:
+        predicates.append(Resource.id == ref_uuid)
+    else:
+        predicates.append(Resource.name.ilike(f"%{ref}%"))
+    rows = [row for row in session.scalars(select(Resource).where(*predicates).order_by(Resource.name.asc()).limit(11)) if token_allows_resource(principal, row.id)]
+    if len(rows) == 1:
+        return rows[0]
+    if len(rows) > 1:
+        raise HTTPException(status_code=409, detail={"code": "ambiguous_resource", "candidates": [{"resource_id": str(row.id), "name": row.name, "type": row.type} for row in rows[:10]]})
+    raise HTTPException(status_code=404, detail={"code": "not_found", "message": "resource not found"})
+
+
+def _runtime_resolve_pack(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> ContextPackVersion:
+    pack_key = args.get("pack_key")
+    version_arg = args.get("version")
+    if pack_key:
+        version = _resolve_pack_version(session, workspace_id, project_id, str(pack_key), int(version_arg) if version_arg is not None else "current")
+    else:
+        version = session.scalar(select(ContextPackVersion).where(ContextPackVersion.workspace_id == workspace_id, ContextPackVersion.project_id == project_id, ContextPackVersion.status == PACK_STATUS_PUBLISHED).order_by(ContextPackVersion.created_at.desc()))
+        if version is None:
+            raise HTTPException(status_code=404, detail={"code": "pack_not_found", "message": "published context pack not found; call list_sources"})
+    _require_pack_read(session, workspace_id, project_id, principal, version)
+    return version
+
+
+def _runtime_get_graph_inventory(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    require_scope(principal, "project:query")
+    require_scope(principal, "resource:read")
+    kind = str(args.get("kind") or "all")
+    query = str(args.get("query") or "").strip().lower()
+    limit = _runtime_limit(args.get("limit"), default=100, max_value=100)
+    offset = _runtime_cursor(args.get("cursor"))
+    resource_graphs: list[dict[str, Any]] = []
+    merge_graphs: list[dict[str, Any]] = []
+    if kind in {"all", "resource"}:
+        rows = session.execute(select(Graph, GraphVersion, Resource).join(GraphVersion, Graph.current_version_id == GraphVersion.id).join(Resource, Graph.resource_id == Resource.id).where(Graph.workspace_id == workspace_id, Graph.project_id == project_id, Graph.status == "active", GraphVersion.status == GRAPH_VERSION_PUBLISHED, Resource.deleted_at.is_(None), Resource.archived_at.is_(None)).order_by(Graph.graph_key.asc()).offset(offset).limit(limit)).all()
+        for graph, version, resource in rows:
+            if not token_allows_resource(principal, resource.id):
+                continue
+            if query and query not in graph.graph_key.lower() and query not in graph.title.lower() and query not in resource.name.lower():
+                continue
+            resource_graphs.append({"graph_key": graph.graph_key, "title": graph.title, "resource_id": str(resource.id), "resource_name": resource.name, "current_version": version.version, "node_count": version.node_count, "edge_count": version.edge_count})
+    if kind in {"all", "merge"}:
+        rows = session.execute(select(GraphMerge, GraphMergeVersion).join(GraphMergeVersion, GraphMerge.current_version_id == GraphMergeVersion.id).where(GraphMerge.workspace_id == workspace_id, GraphMerge.project_id == project_id, GraphMerge.status == "active", GraphMergeVersion.status == GRAPH_MERGE_VERSION_PUBLISHED).order_by(GraphMerge.merge_key.asc()).offset(offset).limit(limit)).all()
+        for merge, version in rows:
+            inputs = session.execute(select(GraphMergeInput, Resource).join(Resource, GraphMergeInput.input_resource_id == Resource.id).where(GraphMergeInput.graph_merge_version_id == version.id).order_by(GraphMergeInput.ordinal.asc())).all()
+            resources = [resource for _input, resource in inputs]
+            if not _runtime_resource_rows_allowed(principal, [resource.id for resource in resources]):
+                continue
+            if query and query not in merge.merge_key.lower() and query not in merge.title.lower():
+                continue
+            merge_graphs.append({"merge_key": merge.merge_key, "title": merge.title, "current_version": version.version, "node_count": version.node_count, "edge_count": version.edge_count, "input_sources": [resource.name for resource in resources]})
+    returned = len(resource_graphs) + len(merge_graphs)
+    return {"resource_graphs": resource_graphs, "merge_graphs": merge_graphs, "next_cursor": str(offset + limit) if returned >= limit else None}
+
+
+def _runtime_list_sources(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    require_scope(principal, "project:query")
+    require_scope(principal, "resource:read")
+    limit = _runtime_limit(args.get("limit"), default=100, max_value=100)
+    offset = _runtime_cursor(args.get("cursor"))
+    query = str(args.get("query") or "").strip().lower()
+    resource_type = args.get("resource_type")
+    predicates = [Resource.workspace_id == workspace_id, Resource.project_id == project_id, Resource.deleted_at.is_(None), Resource.archived_at.is_(None)]
+    if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
+        allowed_resource_ids = list(principal.api_token.allowed_resource_ids)
+        if not allowed_resource_ids:
+            return {"sources": [], "next_cursor": None}
+        predicates.append(Resource.id.in_(allowed_resource_ids))
+    if resource_type:
+        predicates.append(Resource.type == str(resource_type))
+    rows = list(session.scalars(select(Resource).where(*predicates).order_by(Resource.name.asc()).offset(offset).limit(limit + 1)))
+    sources: list[dict[str, Any]] = []
+    for resource in rows[:limit]:
+        if not token_allows_resource(principal, resource.id):
+            continue
+        if query and query not in resource.name.lower() and query not in resource.uri.lower():
+            continue
+        maps = list(session.scalars(select(ContextArtifact).where(ContextArtifact.resource_id == resource.id, ContextArtifact.artifact_type == ARTIFACT_TYPE_RESOURCE_MAP, ContextArtifact.status == "approved").order_by(ContextArtifact.created_at.desc()).limit(3)))
+        graph = session.execute(select(Graph, GraphVersion).join(GraphVersion, Graph.current_version_id == GraphVersion.id).where(Graph.resource_id == resource.id, Graph.status == "active", GraphVersion.status == GRAPH_VERSION_PUBLISHED)).first()
+        sources.append({"resource_id": str(resource.id), "name": resource.name, "type": resource.type, "status": resource.status, "current_snapshot_id": str(resource.current_snapshot_id) if resource.current_snapshot_id else None, "resource_maps": [{"artifact_id": str(artifact.id), "status": artifact.status, "artifact_hash": artifact.artifact_hash} for artifact in maps], "graphs": [{"graph_key": graph[0].graph_key, "current_version": graph[1].version}] if graph else []})
+    return {"sources": sources, "next_cursor": str(offset + limit) if len(rows) > limit else None}
+
+
+def _runtime_get_context_pack(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    require_scope(principal, "project:query")
+    require_scope(principal, "resource:read")
+    version = _runtime_resolve_pack(session, workspace_id, project_id, principal, args)
+    limit = _runtime_limit(args.get("limit"), default=100, max_value=200)
+    offset = _runtime_cursor(args.get("cursor"))
+    coverage_rows = list(session.execute(select(ContextPackResourceCoverage, Resource).join(Resource, ContextPackResourceCoverage.resource_id == Resource.id).where(ContextPackResourceCoverage.context_pack_version_id == version.id).order_by(Resource.name.asc()).offset(offset).limit(limit + 1)).all())
+    resources = [resource for _coverage, resource in coverage_rows[:limit]]
+    if not _runtime_resource_rows_allowed(principal, [resource.id for resource in resources]):
+        raise HTTPException(status_code=404, detail={"code": "pack_not_found", "message": "context pack not found"})
+    artifact_rows = list(session.execute(select(ContextPackArtifact, ContextArtifact).join(ContextArtifact, ContextPackArtifact.context_artifact_id == ContextArtifact.id).where(ContextPackArtifact.context_pack_version_id == version.id).order_by(ContextPackArtifact.ordinal.asc()).offset(offset).limit(limit)).all()) if args.get("include_artifacts", True) else []
+    artifacts = []
+    for pack_artifact, artifact in artifact_rows:
+        citations = list(session.scalars(select(ContextArtifactCitation).where(ContextArtifactCitation.context_artifact_id == artifact.id).order_by(ContextArtifactCitation.ordinal.asc()).limit(5)))
+        artifacts.append({"id": str(artifact.id), "pack_artifact_id": str(pack_artifact.id), "artifact_type": artifact.artifact_type, "resource_id": str(artifact.resource_id), "source_snapshot_id": str(artifact.source_snapshot_id), "status": artifact.status, "artifact_hash": artifact.artifact_hash, "title": artifact.title, "citation_locators": [_runtime_citation_locator(citation) for citation in citations]})
+    sources = [{"resource_id": str(resource.id), "name": resource.name, "type": resource.type, "current_snapshot_id": str(resource.current_snapshot_id) if resource.current_snapshot_id else None} for _coverage, resource in coverage_rows[:limit]]
+    coverage = [{"resource_id": str(coverage.resource_id), "source_snapshot_id": str(coverage.source_snapshot_id), "resource_manifest_id": str(coverage.resource_manifest_id), "artifact_count": coverage.artifact_count, "citation_count": coverage.citation_count} for coverage, _resource in coverage_rows[:limit]] if args.get("include_coverage", True) else []
+    freshness_resources = [_runtime_resource_freshness(session, resource, coverage.source_snapshot_id) for coverage, resource in coverage_rows[:limit]]
+    return {"pack": {"id": str(version.id), "pack_key": version.pack_key, "version": version.version, "status": version.status, "title": version.title, "pack_hash": version.pack_hash}, "freshness": _runtime_freshness(version.status if version.status != PACK_STATUS_PUBLISHED else "current", resources=freshness_resources, pack={"pack_key": version.pack_key, "version": version.version, "status": version.status}), "sources": sources, "artifacts": artifacts, "coverage": coverage, "graph_inventory": _runtime_get_graph_inventory(session, workspace_id, project_id, principal, {"limit": 50}) if args.get("include_graph_inventory", True) else {"resource_graphs": [], "merge_graphs": []}, "runtime_guidance": "Start with search, then read_section using the returned locator. Use graph tools for architecture/impact questions.", "next_cursor": str(offset + limit) if len(coverage_rows) > limit else None, "truncated": len(coverage_rows) > limit}
+
+
+def _runtime_get_resource_map(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    require_scope(principal, "project:query")
+    require_scope(principal, "resource:read")
+    resource = _runtime_resolve_resource_ref(session, workspace_id, project_id, principal, args)
+    artifact_id = args.get("artifact_id")
+    stmt = select(ContextArtifact).where(ContextArtifact.workspace_id == workspace_id, ContextArtifact.project_id == project_id, ContextArtifact.resource_id == resource.id, ContextArtifact.artifact_type == ARTIFACT_TYPE_RESOURCE_MAP, ContextArtifact.status == "approved")
+    if artifact_id:
+        stmt = stmt.where(ContextArtifact.id == UUID(str(artifact_id)))
+    elif args.get("source_snapshot_id"):
+        stmt = stmt.where(ContextArtifact.source_snapshot_id == UUID(str(args["source_snapshot_id"])))
+    elif resource.current_snapshot_id:
+        stmt = stmt.where(ContextArtifact.source_snapshot_id == resource.current_snapshot_id)
+    artifact = session.scalar(stmt.order_by(ContextArtifact.created_at.desc()))
+    if artifact is None:
+        raise HTTPException(status_code=404, detail={"code": "resource_map_not_found", "message": "approved resource map not found"})
+    limit = _runtime_limit(args.get("limit"), default=200, max_value=200)
+    offset = _runtime_cursor(args.get("cursor"))
+    citations = list(session.scalars(select(ContextArtifactCitation).where(ContextArtifactCitation.context_artifact_id == artifact.id).order_by(ContextArtifactCitation.normalized_path.asc(), ContextArtifactCitation.ordinal.asc()).offset(offset).limit(limit + 1)))
+    entries = [{"title": citation.title, "path": citation.normalized_path, "summary": None, "locator": _runtime_citation_locator(citation)} for citation in citations[:limit]]
+    sources = list(session.scalars(select(ContextArtifactSource).where(ContextArtifactSource.context_artifact_id == artifact.id).order_by(ContextArtifactSource.normalized_path.asc()).limit(limit))) if args.get("include_sources", True) else []
+    freshness_resource = _runtime_resource_freshness(session, resource, artifact.source_snapshot_id)
+    raw_resource_map = artifact.content_json
+    resource_map_text = json.dumps(jsonable_encoder(raw_resource_map), sort_keys=True)
+    map_truncated = len(resource_map_text) > 20_000
+    resource_map_payload = raw_resource_map if not map_truncated else {"truncated": True, "top_level_keys": sorted(raw_resource_map.keys()) if isinstance(raw_resource_map, dict) else [], "entry_count": len(raw_resource_map) if isinstance(raw_resource_map, list) else None}
+    return {"artifact": {"id": str(artifact.id), "artifact_type": artifact.artifact_type, "status": artifact.status, "artifact_hash": artifact.artifact_hash, "artifact_revision": artifact.artifact_revision, "resource_id": str(artifact.resource_id), "source_snapshot_id": str(artifact.source_snapshot_id), "title": artifact.title, "approved_at": artifact.approved_at}, "freshness": _runtime_freshness("current", resources=[freshness_resource], artifact={"id": str(artifact.id), "status": artifact.status, "artifact_hash": artifact.artifact_hash}), "resource_map": resource_map_payload, "entries": entries, "sources": [{"path": source.normalized_path, "status": source.status, "coverage_status": source.coverage_status} for source in sources], "citations": [{"locator": _runtime_citation_locator(citation), "snippet": None} for citation in citations[:limit]] if args.get("include_citations", True) else [], "next_cursor": str(offset + limit) if len(citations) > limit else None, "truncated": len(citations) > limit or map_truncated}
+
+
+def _runtime_search(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    require_scope(principal, "project:query")
+    require_scope(principal, "resource:read")
+    query = str(args.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=422, detail={"code": "invalid_query", "message": "query is required"})
+    top_k = _runtime_limit(args.get("top_k"), default=8, max_value=50)
+    requested_resource_ids = [UUID(str(value)) for value in args.get("resource_ids") or []]
+    pack_version = None
+    snapshot_ids: list[UUID] = []
+    if args.get("context_pack_key"):
+        pack_args = {"pack_key": args.get("context_pack_key"), "version": args.get("context_pack_version")}
+        pack_version = _runtime_resolve_pack(session, workspace_id, project_id, principal, pack_args)
+        coverage = list(session.scalars(select(ContextPackResourceCoverage).where(ContextPackResourceCoverage.context_pack_version_id == pack_version.id)))
+        requested_resource_ids = [row.resource_id for row in coverage]
+        snapshot_ids = [row.source_snapshot_id for row in coverage]
+    effective_resource_ids = _effective_resource_ids(principal, requested_resource_ids or None)
+    if _is_empty_scope(effective_resource_ids):
+        return {"query": query, "profile": args.get("profile") or "hybrid", "hits": [], "freshness": _runtime_freshness("current")}
+    resource_clause = ""
+    snapshot_clause = ""
+    params: dict[str, Any] = {"ws": str(workspace_id), "proj": str(project_id), "q": query, "k": top_k}
+    if effective_resource_ids:
+        resource_clause = "AND c.resource_id = ANY(CAST(:rids AS uuid[]))"
+        params["rids"] = [str(rid) for rid in effective_resource_ids]
+    if snapshot_ids:
+        snapshot_clause = "AND c.source_snapshot_id = ANY(CAST(:sids AS uuid[]))"
+        params["sids"] = [str(sid) for sid in snapshot_ids]
+    rows = session.execute(text(f"""
+        SELECT c.resource_id, c.source_snapshot_id, c.path, c.title, c.ordinal, c.content_hash, c.content,
+               s.version, s.version_kind, s.metadata AS snap_meta,
+               ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', :q)) AS score
+        FROM chunks c
+        JOIN source_snapshots s ON s.id = c.source_snapshot_id
+        JOIN resources r ON r.id = c.resource_id
+        WHERE c.workspace_id = CAST(:ws AS uuid)
+          AND c.project_id = CAST(:proj AS uuid)
+          AND c.deleted_at IS NULL
+          AND r.deleted_at IS NULL
+          AND r.archived_at IS NULL
+          AND r.retrieval_enabled = true
+          {resource_clause}
+          {snapshot_clause}
+          AND to_tsvector('english', c.content) @@ plainto_tsquery('english', :q)
+        ORDER BY score DESC, c.resource_id, c.ordinal ASC
+        LIMIT :k
+        """), params).mappings().all()
+    hits: list[dict[str, Any]] = []
+    for row in rows:
+        resource = session.scalar(select(Resource).where(Resource.id == row["resource_id"]))
+        if resource is None or not token_allows_resource(principal, resource.id):
+            continue
+        section_row = session.execute(select(SnapshotSection, Section).join(Section, SnapshotSection.section_id == Section.id).where(SnapshotSection.source_snapshot_id == row["source_snapshot_id"], SnapshotSection.version_resource_id == row["resource_id"], SnapshotSection.normalized_path == row["path"]).order_by(SnapshotSection.ordinal.asc()).limit(1)).first()
+        snapshot_section_id = section_row[0].id if section_row else None
+        snap_meta = row["snap_meta"] if isinstance(row["snap_meta"], dict) else {}
+        locator = {"resource_id": str(row["resource_id"]), "source_snapshot_id": str(row["source_snapshot_id"]), "snapshot_section_id": str(snapshot_section_id) if snapshot_section_id else None, "context_pack_key": pack_version.pack_key if pack_version else None, "context_pack_version": pack_version.version if pack_version else None, "path": row["path"], "title": row["title"], "start_line": 1, "end_line": None, "content_hash": row["content_hash"]}
+        hits.append({**locator, "snippet": _make_snippet(row["content"]), "score": float(row["score"]), "version": row["version"], "version_kind": row["version_kind"], "commit": snap_meta.get("commit"), "freshness": _runtime_freshness("current", resources=[_runtime_resource_freshness(session, resource, row["source_snapshot_id"])])})
+    return {"query": query, "profile": args.get("profile") or "hybrid", "hits": hits, "freshness": _runtime_freshness("current")}
+
+
+def _runtime_read_section(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    require_scope(principal, "project:query")
+    require_scope(principal, "resource:read")
+    resource_id = UUID(str(args.get("resource_id")))
+    resource = session.scalar(select(Resource).where(Resource.id == resource_id, Resource.workspace_id == workspace_id, Resource.project_id == project_id))
+    if resource is None:
+        raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
+    _runtime_resource_allowed_or_404(principal, resource.id)
+    citation = None
+    snapshot_section = None
+    section = None
+    if args.get("context_artifact_citation_id"):
+        citation = session.scalar(select(ContextArtifactCitation).where(ContextArtifactCitation.id == UUID(str(args["context_artifact_citation_id"])), ContextArtifactCitation.workspace_id == workspace_id, ContextArtifactCitation.project_id == project_id, ContextArtifactCitation.resource_id == resource.id))
+        if citation is None:
+            raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
+        snapshot_section = session.scalar(select(SnapshotSection).where(SnapshotSection.id == citation.snapshot_section_id))
+    elif args.get("snapshot_section_id") and args.get("source_snapshot_id"):
+        snapshot_section = session.scalar(select(SnapshotSection).where(SnapshotSection.id == UUID(str(args["snapshot_section_id"])), SnapshotSection.source_snapshot_id == UUID(str(args["source_snapshot_id"])), SnapshotSection.version_resource_id == resource.id, SnapshotSection.workspace_id == workspace_id, SnapshotSection.project_id == project_id))
+    elif args.get("source_snapshot_id") and args.get("path") and args.get("content_hash"):
+        path = validate_repo_path(str(args["path"]))
+        file_row = session.scalar(select(SnapshotFile).where(SnapshotFile.resource_id == resource.id, SnapshotFile.source_snapshot_id == UUID(str(args["source_snapshot_id"])), SnapshotFile.path == path, SnapshotFile.content_hash == str(args["content_hash"]), SnapshotFile.deleted_at.is_(None)))
+        if file_row is None:
+            raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
+        _runtime_require_pack_covers_locator(session, workspace_id, project_id, principal, args, resource_id=resource.id, source_snapshot_id=file_row.source_snapshot_id)
+        content, start, end, total, truncated = line_range(file_row.content, int(args.get("start_line") or 1), int(args.get("end_line") or min(file_row.line_count, 500)))
+        return {"locator": {"resource_id": str(resource.id), "source_snapshot_id": str(file_row.source_snapshot_id), "path": file_row.path, "start_line": start, "end_line": end, "content_hash": file_row.content_hash}, "resource": {"resource_id": str(resource.id), "name": resource.name, "type": resource.type}, "section": {"title": args.get("heading"), "path": file_row.path, "start_line": start, "end_line": end, "total_lines": total}, "content": content[:20000], "freshness": _runtime_freshness("current", resources=[_runtime_resource_freshness(session, resource, file_row.source_snapshot_id)]), "truncated": truncated or len(content) > 20000}
+    elif args.get("allow_current_fallback") and args.get("path") and resource.current_snapshot_id:
+        path = validate_repo_path(str(args["path"]))
+        file_row = session.scalar(select(SnapshotFile).where(SnapshotFile.resource_id == resource.id, SnapshotFile.source_snapshot_id == resource.current_snapshot_id, SnapshotFile.path == path, SnapshotFile.deleted_at.is_(None)))
+        if file_row is None:
+            raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
+        _runtime_require_pack_covers_locator(session, workspace_id, project_id, principal, args, resource_id=resource.id, source_snapshot_id=file_row.source_snapshot_id)
+        content, start, end, total, truncated = line_range(file_row.content, int(args.get("start_line") or 1), int(args.get("end_line") or min(file_row.line_count, 500)))
+        return {"locator": {"resource_id": str(resource.id), "source_snapshot_id": str(file_row.source_snapshot_id), "path": file_row.path, "start_line": start, "end_line": end, "content_hash": file_row.content_hash}, "resource": {"resource_id": str(resource.id), "name": resource.name, "type": resource.type}, "section": {"title": args.get("heading"), "path": file_row.path, "start_line": start, "end_line": end, "total_lines": total}, "content": content[:20000], "freshness": _runtime_freshness("current", resources=[_runtime_resource_freshness(session, resource, file_row.source_snapshot_id)]), "truncated": truncated or len(content) > 20000}
+    else:
+        raise HTTPException(status_code=422, detail={"code": "ambiguous_section", "message": "provide a pinned snapshot_section_id, context_artifact_citation_id, or exact source_snapshot/path/content_hash locator"})
+    if snapshot_section is None:
+        raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
+    section = session.scalar(select(Section).where(Section.id == snapshot_section.section_id))
+    file_row = session.scalar(select(SnapshotFile).where(SnapshotFile.resource_id == resource.id, SnapshotFile.source_snapshot_id == snapshot_section.source_snapshot_id, SnapshotFile.path == snapshot_section.normalized_path, SnapshotFile.deleted_at.is_(None)))
+    if file_row is None or file_row.is_binary:
+        raise HTTPException(status_code=404, detail={"code": "section_content_unavailable", "message": "retained section content is unavailable"})
+    _runtime_require_pack_covers_locator(session, workspace_id, project_id, principal, args, resource_id=resource.id, source_snapshot_id=snapshot_section.source_snapshot_id)
+    content, start, end, total, truncated = line_range(file_row.content, int(args.get("start_line") or citation.line_start if citation and citation.line_start else 1), int(args.get("end_line") or citation.line_end if citation and citation.line_end else min(file_row.line_count, 500)))
+    locator = _runtime_citation_locator(citation) if citation else _runtime_snapshot_section_locator(snapshot_section, section, file_row)  # type: ignore[arg-type]
+    locator.update({"start_line": start, "end_line": end})
+    return {"locator": locator, "resource": {"resource_id": str(resource.id), "name": resource.name, "type": resource.type}, "section": {"title": section.title if section else citation.title if citation else None, "path": file_row.path, "start_line": start, "end_line": end, "total_lines": total}, "content": content[:20000], "freshness": _runtime_freshness("current", resources=[_runtime_resource_freshness(session, resource, snapshot_section.source_snapshot_id)]), "truncated": truncated or len(content) > 20000}
+
+
+def _runtime_resolve_graph_target(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> tuple[str, Graph | GraphMerge, GraphVersion | GraphMergeVersion]:
+    key = str(args.get("graph_key") or "").strip()
+    if not key:
+        raise HTTPException(status_code=422, detail={"code": "missing_graph_key", "message": "graph_key is required"})
+    kind = str(args.get("graph_kind") or "auto")
+    version_number = args.get("version")
+    if kind in {"auto", "resource"}:
+        graph = session.scalar(select(Graph).where(Graph.workspace_id == workspace_id, Graph.project_id == project_id, Graph.graph_key == key, Graph.status == "active"))
+        if graph is not None:
+            _runtime_resource_allowed_or_404(principal, graph.resource_id)  # type: ignore[arg-type]
+            if version_number is None:
+                version = session.scalar(select(GraphVersion).where(GraphVersion.id == graph.current_version_id, GraphVersion.status == GRAPH_VERSION_PUBLISHED))
+            else:
+                version = session.scalar(select(GraphVersion).where(GraphVersion.graph_id == graph.id, GraphVersion.version == int(version_number), GraphVersion.status == GRAPH_VERSION_PUBLISHED))
+            if version is None:
+                raise HTTPException(status_code=404, detail={"code": "graph_not_found", "message": "published graph version not found"})
+            return "resource", graph, version
+    if kind in {"auto", "merge"}:
+        merge = session.scalar(select(GraphMerge).where(GraphMerge.workspace_id == workspace_id, GraphMerge.project_id == project_id, GraphMerge.merge_key == key, GraphMerge.status == "active"))
+        if merge is not None:
+            if version_number is None:
+                version = session.scalar(select(GraphMergeVersion).where(GraphMergeVersion.id == merge.current_version_id, GraphMergeVersion.status == GRAPH_MERGE_VERSION_PUBLISHED))
+            else:
+                version = session.scalar(select(GraphMergeVersion).where(GraphMergeVersion.graph_merge_id == merge.id, GraphMergeVersion.version == int(version_number), GraphMergeVersion.status == GRAPH_MERGE_VERSION_PUBLISHED))
+            if version is None:
+                raise HTTPException(status_code=404, detail={"code": "graph_not_found", "message": "published merge graph version not found"})
+            inputs = list(session.scalars(select(GraphMergeInput.input_resource_id).where(GraphMergeInput.graph_merge_version_id == version.id)))
+            if not _runtime_resource_rows_allowed(principal, inputs):
+                raise HTTPException(status_code=404, detail={"code": "graph_not_found", "message": "published graph not found"})
+            return "merge", merge, version
+    raise HTTPException(status_code=404, detail={"code": "graph_not_found", "message": "published graph not found"})
+
+
+def _runtime_graph_query(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    require_scope(principal, "project:query")
+    require_scope(principal, "resource:read")
+    kind, graph, version = _runtime_resolve_graph_target(session, workspace_id, project_id, principal, args)
+    limit = _runtime_limit(args.get("limit"), default=50, max_value=100)
+    offset = _runtime_cursor(args.get("cursor"))
+    query = str(args.get("query") or "").strip().lower()
+    node_type = args.get("node_type")
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    freshness_resources: list[dict[str, Any]] = []
+    if kind == "resource":
+        predicates = [GraphNode.workspace_id == workspace_id, GraphNode.project_id == project_id, GraphNode.resource_id == version.resource_id, GraphNode.source_snapshot_id == version.source_snapshot_id]
+        if node_type:
+            predicates.append(GraphNode.node_type == str(node_type))
+        node_rows = list(session.scalars(select(GraphNode).where(*predicates).order_by(GraphNode.label.asc()).offset(offset).limit(limit + 1)))
+        for node in node_rows[:limit]:
+            if query and query not in node.label.lower() and query not in node.node_key.lower() and query not in (node.path or "").lower():
+                continue
+            nodes.append({"key": node.node_key, "label": node.label, "node_type": node.node_type, "path": node.path, "origin": {"resource_id": str(node.resource_id), "source_snapshot_id": str(node.source_snapshot_id), "path": node.path}})
+        node_ids = [node.id for node in node_rows[:limit]]
+        edge_rows = list(session.scalars(select(GraphEdge).where(GraphEdge.source_node_id.in_(node_ids)).limit(limit))) if node_ids else []
+        for edge in edge_rows:
+            edges.append({"source": str(edge.source_node_id), "target": str(edge.target_node_id), "edge_type": edge.edge_type, "origin": {"resource_id": str(edge.resource_id), "source_snapshot_id": str(edge.source_snapshot_id)}})
+        resource = session.scalar(select(Resource).where(Resource.id == version.resource_id))
+        if resource:
+            freshness_resources.append(_runtime_resource_freshness(session, resource, version.source_snapshot_id))
+        next_cursor = str(offset + limit) if len(node_rows) > limit else None
+    else:
+        predicates = [GraphMergeNode.graph_merge_version_id == version.id]
+        if node_type:
+            predicates.append(GraphMergeNode.node_type == str(node_type))
+        node_rows = list(session.scalars(select(GraphMergeNode).where(*predicates).order_by(GraphMergeNode.display_label.asc()).offset(offset).limit(limit + 1)))
+        for node in node_rows[:limit]:
+            if query and query not in node.display_label.lower() and query not in node.merged_node_key.lower() and query not in (node.path or "").lower():
+                continue
+            origin = (node.origin_json or [{}])[0] if isinstance(node.origin_json, list) and node.origin_json else {}
+            nodes.append({"key": node.merged_node_key, "label": node.display_label, "node_type": node.node_type, "path": node.path, "origin": origin})
+        edge_rows = list(session.scalars(select(GraphMergeEdge).where(GraphMergeEdge.graph_merge_version_id == version.id).order_by(GraphMergeEdge.edge_type.asc()).limit(limit)))
+        for edge in edge_rows:
+            origin = (edge.origin_json or [{}])[0] if isinstance(edge.origin_json, list) and edge.origin_json else {}
+            edges.append({"source": edge.source_merged_node_key, "target": edge.target_merged_node_key, "edge_type": edge.edge_type, "origin": origin})
+        inputs = session.execute(select(GraphMergeInput, Resource).join(Resource, GraphMergeInput.input_resource_id == Resource.id).where(GraphMergeInput.graph_merge_version_id == version.id)).all()
+        freshness_resources = [_runtime_resource_freshness(session, resource, input_row.input_source_snapshot_id) for input_row, resource in inputs]
+        next_cursor = str(offset + limit) if len(node_rows) > limit else None
+    return {"graph": {"key": graph.graph_key if kind == "resource" else graph.merge_key, "kind": kind, "version": version.version, "status": version.status, "title": graph.title}, "freshness": _runtime_freshness("current", resources=freshness_resources, graph={"graph_key": graph.graph_key if kind == "resource" else graph.merge_key, "kind": kind, "version": version.version, "status": version.status}), "nodes": nodes, "edges": edges, "next_cursor": next_cursor, "truncated": next_cursor is not None}
+
+
+def _runtime_graph_path(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    require_scope(principal, "project:query")
+    require_scope(principal, "resource:read")
+    kind, graph, version = _runtime_resolve_graph_target(session, workspace_id, project_id, principal, args)
+    if kind != "merge":
+        raise HTTPException(status_code=422, detail={"code": "unsupported_graph_path", "message": "resource graph paths are not supported by MCP F; use graph_query"})
+    from_key = args.get("from_node_key")
+    to_key = args.get("to_node_key")
+    if not from_key and args.get("from_label"):
+        matches = list(session.scalars(select(GraphMergeNode).where(GraphMergeNode.graph_merge_version_id == version.id, GraphMergeNode.display_label.ilike(f"%{args['from_label']}%")).limit(11)))
+        if len(matches) != 1:
+            raise HTTPException(status_code=409, detail={"code": "ambiguous_node", "candidates": [{"key": row.merged_node_key, "label": row.display_label, "path": row.path} for row in matches[:10]]})
+        from_key = matches[0].merged_node_key
+    if not to_key and args.get("to_label"):
+        matches = list(session.scalars(select(GraphMergeNode).where(GraphMergeNode.graph_merge_version_id == version.id, GraphMergeNode.display_label.ilike(f"%{args['to_label']}%")).limit(11)))
+        if len(matches) != 1:
+            raise HTTPException(status_code=409, detail={"code": "ambiguous_node", "candidates": [{"key": row.merged_node_key, "label": row.display_label, "path": row.path} for row in matches[:10]]})
+        to_key = matches[0].merged_node_key
+    if not from_key or not to_key:
+        raise HTTPException(status_code=422, detail={"code": "missing_nodes", "message": "from/to node key or label are required"})
+    path_result = find_path(session, version, str(from_key), str(to_key), min(int(args.get("max_depth") or 4), 8))
+    return {"graph": {"key": graph.merge_key, "kind": "merge", "version": version.version, "status": version.status}, "freshness": _runtime_freshness("current", graph={"graph_key": graph.merge_key, "kind": "merge", "version": version.version, "status": version.status}), **path_result, "truncated": False}
+
+
 def _mcp_tools() -> list[dict[str, Any]]:
     return [
+        {
+            "name": "contextsmith.get_context_pack",
+            "description": "Fetch a published ContextSmith context pack with bounded source/artifact/graph inventory and freshness metadata.",
+            "inputSchema": {"type": "object", "properties": {"pack_key": {"type": "string"}, "version": {"type": "integer", "minimum": 1}, "include_artifacts": {"type": "boolean"}, "include_coverage": {"type": "boolean"}, "include_graph_inventory": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}, "cursor": {"type": "string"}}},
+        },
+        {
+            "name": "contextsmith.list_sources",
+            "description": "List authorized human source names/resources so agents do not need UUID-first workflows.",
+            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "resource_type": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}, "cursor": {"type": "string"}}},
+        },
+        {
+            "name": "contextsmith.get_resource_map",
+            "description": "Fetch an approved resource-map artifact by resource id, human resource reference, or artifact id with canonical read_section locators.",
+            "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "resource_ref": {"type": "string"}, "artifact_id": {"type": "string"}, "source_snapshot_id": {"type": "string"}, "include_sources": {"type": "boolean"}, "include_citations": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}, "cursor": {"type": "string"}}},
+        },
+        {
+            "name": "contextsmith.search",
+            "description": "Search indexed sections/artifacts with cited canonical locators for read_section.",
+            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "context_pack_key": {"type": "string"}, "context_pack_version": {"type": "integer", "minimum": 1}, "profile": {"type": "string", "enum": sorted(RETRIEVAL_PROFILES)}, "top_k": {"type": "integer", "minimum": 1, "maximum": 50}, "include_code_symbols": {"type": "boolean"}}, "required": ["query"]},
+        },
+        {
+            "name": "contextsmith.read_section",
+            "description": "Read exact retained section evidence from a canonical locator returned by search/resource-map/context-pack tools.",
+            "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "source_snapshot_id": {"type": "string"}, "snapshot_section_id": {"type": "string"}, "context_artifact_id": {"type": "string"}, "context_artifact_citation_id": {"type": "string"}, "context_pack_key": {"type": "string"}, "context_pack_version": {"type": "integer"}, "path": {"type": "string"}, "heading": {"type": "string"}, "content_hash": {"type": "string"}, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}, "allow_current_fallback": {"type": "boolean"}}, "required": ["resource_id"]},
+        },
+        {
+            "name": "contextsmith.get_graph_inventory",
+            "description": "Discover authorized published resource graphs and merge graphs by human key/title.",
+            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "kind": {"type": "string", "enum": ["resource", "merge", "all"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}, "cursor": {"type": "string"}}},
+        },
+        {
+            "name": "contextsmith.graph_query",
+            "description": "Inspect a published resource or merge graph by human graph key with provenance/freshness.",
+            "inputSchema": {"type": "object", "properties": {"graph_key": {"type": "string"}, "graph_kind": {"type": "string", "enum": ["resource", "merge", "auto"]}, "version": {"type": "integer", "minimum": 1}, "query": {"type": "string"}, "node_type": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}, "cursor": {"type": "string"}}, "required": ["graph_key"]},
+        },
+        {
+            "name": "contextsmith.graph_path",
+            "description": "Find a bounded path through a published merge graph by node keys or human labels.",
+            "inputSchema": {"type": "object", "properties": {"graph_key": {"type": "string"}, "graph_kind": {"type": "string", "enum": ["merge", "auto"]}, "version": {"type": "integer", "minimum": 1}, "from_node_key": {"type": "string"}, "to_node_key": {"type": "string"}, "from_label": {"type": "string"}, "to_label": {"type": "string"}, "max_depth": {"type": "integer", "minimum": 1, "maximum": 8}}, "required": ["graph_key"]},
+        },
         {
             "name": "contextsmith.get_agent_context",
             "description": "Return permission-scoped cited context for a ContextSmith project.",
@@ -7601,17 +8121,25 @@ async def mcp_endpoint(
             return _json_rpc_error(rpc_id, -32602, "invalid params")
         result: Any
         try:
-            if tool_name == "contextsmith.get_agent_context":
+            if tool_name == "contextsmith.get_context_pack":
+                result = _runtime_get_context_pack(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "contextsmith.list_sources":
+                result = _runtime_list_sources(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "contextsmith.get_resource_map":
+                result = _runtime_get_resource_map(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "contextsmith.search":
+                result = _runtime_search(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "contextsmith.read_section":
+                result = _runtime_read_section(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "contextsmith.get_graph_inventory":
+                result = _runtime_get_graph_inventory(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "contextsmith.graph_query":
+                result = _runtime_graph_query(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "contextsmith.graph_path":
+                result = _runtime_graph_path(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "contextsmith.get_agent_context":
                 payload = AgentContextRequest(**arguments)
-                resource_ids = _effective_resource_ids(principal, payload.resource_ids)
-                payload = payload.model_copy(update={"resource_ids": resource_ids})
-                result = _build_agent_context_response(
-                    session,
-                    workspace_id=workspace_id,
-                    project_id=project_id,
-                    payload=payload,
-                    principal=principal,
-                )
+                result = agent_context(workspace_id, project_id, payload, principal, session)
             elif tool_name == "contextsmith.search_code":
                 result = remote_search_code(workspace_id, project_id, RemoteSearchCodeRequest(**arguments), principal, session)
             elif tool_name == "contextsmith.grep_code":
@@ -7630,6 +8158,8 @@ async def mcp_endpoint(
             return _json_rpc_error(rpc_id, -32602, f"invalid params: {exc.errors()[0]['msg']}")
         except HTTPException as exc:
             return _mcp_tool_error(rpc_id, exc.status_code, exc.detail)
+        except (TypeError, ValueError) as exc:
+            return _mcp_tool_error(rpc_id, 422, {"code": "invalid_params", "message": str(exc)})
         return _mcp_tool_result(rpc_id, result)
     return _json_rpc_error(rpc_id, -32601, "method not found")
 
