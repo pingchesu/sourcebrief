@@ -3,7 +3,18 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -131,6 +142,15 @@ class Resource(Base):
 
 class SourceSnapshot(Base):
     __tablename__ = "source_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "workspace_id",
+            "project_id",
+            "resource_id",
+            name="uq_source_snapshots_id_scope",
+        ),
+    )
     id = uuid_pk()
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
@@ -454,4 +474,111 @@ class AuditEvent(Base):
     target_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     target_ref: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResourceManifest(Base):
+    __tablename__ = "resource_manifests"
+    __table_args__ = (
+        UniqueConstraint("source_snapshot_id", name="uq_resource_manifests_snapshot"),
+        UniqueConstraint(
+            "id",
+            "workspace_id",
+            "project_id",
+            "resource_id",
+            name="uq_resource_manifests_id_scope",
+        ),
+        ForeignKeyConstraint(
+            ["source_snapshot_id", "workspace_id", "project_id", "resource_id"],
+            [
+                "source_snapshots.id",
+                "source_snapshots.workspace_id",
+                "source_snapshots.project_id",
+                "source_snapshots.resource_id",
+            ],
+            name="fk_resource_manifests_snapshot_scope",
+        ),
+        CheckConstraint("file_count >= 0", name="ck_resource_manifests_file_count_nonnegative"),
+        CheckConstraint("total_bytes >= 0", name="ck_resource_manifests_total_bytes_nonnegative"),
+        CheckConstraint(
+            "parser_warning_count >= 0 AND parser_warning_count <= file_count",
+            name="ck_resource_manifests_warning_count_bounds",
+        ),
+        CheckConstraint(
+            "unsupported_file_count >= 0 AND unsupported_file_count <= file_count",
+            name="ck_resource_manifests_unsupported_count_bounds",
+        ),
+        CheckConstraint(
+            "manifest_hash LIKE 'sha256:%' AND length(manifest_hash) = 71",
+            name="ck_resource_manifests_manifest_hash_format",
+        ),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    manifest_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    file_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    parser_warning_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unsupported_file_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResourceManifestFile(Base):
+    __tablename__ = "resource_manifest_files"
+    __table_args__ = (
+        UniqueConstraint(
+            "resource_manifest_id",
+            "normalized_path",
+            name="uq_resource_manifest_files_manifest_path",
+        ),
+        ForeignKeyConstraint(
+            ["resource_manifest_id", "workspace_id", "project_id", "resource_id"],
+            [
+                "resource_manifests.id",
+                "resource_manifests.workspace_id",
+                "resource_manifests.project_id",
+                "resource_manifests.resource_id",
+            ],
+            name="fk_resource_manifest_files_manifest_scope",
+        ),
+        CheckConstraint("size_bytes >= 0", name="ck_resource_manifest_files_size_nonnegative"),
+        CheckConstraint("section_count >= 0", name="ck_resource_manifest_files_section_count_nonnegative"),
+        CheckConstraint(
+            "status IN ('pending', 'parsed', 'failed', 'unsupported', 'skipped')",
+            name="ck_resource_manifest_files_status",
+        ),
+        CheckConstraint(
+            "path_hash LIKE 'sha256:%' AND length(path_hash) = 71",
+            name="ck_resource_manifest_files_path_hash_format",
+        ),
+        CheckConstraint(
+            "content_hash LIKE 'sha256:%' AND length(content_hash) = 71",
+            name="ck_resource_manifest_files_content_hash_format",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(warnings_json) = 'array'",
+            name="ck_resource_manifest_files_warnings_array",
+        ),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    resource_manifest_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resource_manifests.id"), nullable=False)
+    normalized_path: Mapped[str] = mapped_column(Text, nullable=False)
+    display_path: Mapped[str | None] = mapped_column(Text)
+    path_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    mime_type: Mapped[str | None] = mapped_column(Text)
+    mtime_client: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    parser: Mapped[str | None] = mapped_column(Text)
+    parser_version: Mapped[str | None] = mapped_column(Text)
+    extraction_policy_hash: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    section_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    warnings_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
