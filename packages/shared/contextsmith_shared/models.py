@@ -1079,3 +1079,70 @@ class SkillExport(Base):
     review_comment: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class RepoAgent(Base):
+    __tablename__ = "repo_agents"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", "project_id", name="uq_repo_agents_id_scope"),
+        UniqueConstraint("workspace_id", "project_id", "agent_key", name="uq_repo_agents_key"),
+        Index("uq_repo_agents_resource_pack_active", "workspace_id", "project_id", "resource_id", "pack_key", unique=True, postgresql_where=text("resource_id IS NOT NULL")),
+        CheckConstraint("status IN ('active', 'archived')", name="ck_repo_agents_status"),
+        CheckConstraint("agent_key ~ '^[a-z0-9][a-z0-9-]{2,62}$'", name="ck_repo_agents_key_format"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("resources.id"))
+    agent_key: Mapped[str] = mapped_column(Text, nullable=False)
+    pack_key: Mapped[str] = mapped_column(Text, nullable=False, default="default")
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    update_policy_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class RepoAgentVersion(Base):
+    __tablename__ = "repo_agent_versions"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", "project_id", name="uq_repo_agent_versions_id_scope"),
+        UniqueConstraint("repo_agent_id", "version", name="uq_repo_agent_versions_agent_version"),
+        Index("ix_repo_agent_versions_agent_status", "repo_agent_id", "status"),
+        Index("ix_repo_agent_versions_active_draft_hash", "repo_agent_id", "version_hash", unique=True, postgresql_where=text("status = 'draft'")),
+        ForeignKeyConstraint(["repo_agent_id", "workspace_id", "project_id"], ["repo_agents.id", "repo_agents.workspace_id", "repo_agents.project_id"], name="fk_repo_agent_versions_agent_scope"),
+        ForeignKeyConstraint(["resource_id", "workspace_id", "project_id"], ["resources.id", "resources.workspace_id", "resources.project_id"], name="fk_repo_agent_versions_resource_scope"),
+        ForeignKeyConstraint(["source_snapshot_id", "workspace_id", "project_id", "resource_id"], ["source_snapshots.id", "source_snapshots.workspace_id", "source_snapshots.project_id", "source_snapshots.resource_id"], name="fk_repo_agent_versions_snapshot_scope"),
+        ForeignKeyConstraint(["resource_manifest_id", "workspace_id", "project_id", "resource_id"], ["resource_manifests.id", "resource_manifests.workspace_id", "resource_manifests.project_id", "resource_manifests.resource_id"], name="fk_repo_agent_versions_manifest_scope"),
+        ForeignKeyConstraint(["context_pack_version_id", "workspace_id", "project_id"], ["context_pack_versions.id", "context_pack_versions.workspace_id", "context_pack_versions.project_id"], name="fk_repo_agent_versions_pack_scope"),
+        ForeignKeyConstraint(["skill_export_id", "workspace_id", "project_id"], ["skill_exports.id", "skill_exports.workspace_id", "skill_exports.project_id"], name="fk_repo_agent_versions_skill_export_scope"),
+        CheckConstraint("status IN ('draft', 'published', 'superseded', 'invalidated', 'failed')", name="ck_repo_agent_versions_status"),
+        CheckConstraint("version >= 1", name="ck_repo_agent_versions_version_positive"),
+        CheckConstraint("version_hash LIKE 'sha256:%' AND length(version_hash) = 71", name="ck_repo_agent_versions_hash_format"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    repo_agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("repo_agents.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("resources.id"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    source_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("source_snapshots.id"))
+    resource_manifest_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("resource_manifests.id"))
+    context_pack_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("context_pack_versions.id"))
+    skill_export_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("skill_exports.id"))
+    version_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    summary_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    diff_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    validation_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    install_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    rollback_from_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    published_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scrubbed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

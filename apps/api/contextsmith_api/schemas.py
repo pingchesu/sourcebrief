@@ -688,6 +688,63 @@ class SkillExportRead(BaseModel):
     created_at: datetime
 
 
+class RepoAgentCreateRequest(BaseModel):
+    agent_key: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]{2,62}$")
+    pack_key: str = Field(default="default", pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")
+    title: str | None = None
+    description: str | None = None
+
+
+class RepoAgentActionRequest(BaseModel):
+    comment: str = Field(min_length=1)
+
+
+class RepoAgentVersionRead(BaseModel):
+    id: UUID
+    repo_agent_id: UUID
+    resource_id: UUID | None = None
+    version: int
+    status: str
+    source_snapshot_id: UUID | None = None
+    resource_manifest_id: UUID | None = None
+    context_pack_version_id: UUID | None = None
+    skill_export_id: UUID | None = None
+    version_hash: str
+    summary_json: dict = Field(default_factory=dict)
+    diff_json: dict = Field(default_factory=dict)
+    validation_json: dict = Field(default_factory=dict)
+    install_json: dict = Field(default_factory=dict)
+    rollback_from_version_id: UUID | None = None
+    status_reason: str | None = None
+    created_at: datetime
+    published_at: datetime | None = None
+    scrubbed_at: datetime | None = None
+
+
+class RepoAgentRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    resource_id: UUID | None = None
+    agent_key: str
+    pack_key: str
+    title: str
+    description: str | None = None
+    status: str
+    update_policy_json: dict = Field(default_factory=dict)
+    current_version_id: UUID | None = None
+    current: RepoAgentVersionRead | None = None
+    versions: list[RepoAgentVersionRead] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class RepoAgentRefreshResponse(BaseModel):
+    status: str
+    unchanged: bool = False
+    version: RepoAgentVersionRead
+
+
 class ManifestDiffRowRead(BaseModel):
     normalized_path: str
     change_type: str

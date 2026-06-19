@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
 import time
 import zipfile
 from pathlib import Path
@@ -780,3 +781,249 @@ def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: 
     assert invalidated_export.json()["files"] == []
     purged = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", headers=auth_headers(token))
     assert purged.status_code == 200, purged.text
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_repo_agent_v0_draft_publish_archive_scrub_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "repo-agent")
+    workspace_id, project_id = scope.split(":")
+    monkeypatch.setenv("CONTEXTSMITH_ALLOW_LOCAL_GIT", "true")
+    repo_dir = tmp_path / "repo-agent-fixture"
+    repo_dir.mkdir()
+    (repo_dir / "README.md").write_text("# Repo Agent\nThis repo has runtime instructions.\n", encoding="utf-8")
+    (repo_dir / "src").mkdir()
+    (repo_dir / "src" / "app.py").write_text("print('hello repo agent')\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "agent@example.com"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "Agent Test"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+    created_resource = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        headers=auth_headers(token),
+        json={"type": "git", "name": "D Repo Agent bundle", "uri": str(repo_dir), "source_config": {"url": str(repo_dir), "branch": "main"}},
+    )
+    assert created_resource.status_code == 201, created_resource.text
+    resource_id = created_resource.json()["id"]
+    zero_resource = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        headers=auth_headers(token),
+        json={"type": "git", "name": "D zero-version repo agent", "uri": str(repo_dir), "source_config": {"url": str(repo_dir), "branch": "main"}},
+    )
+    assert zero_resource.status_code == 201, zero_resource.text
+    zero_resource_id = zero_resource.json()["id"]
+    zero_agent = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{zero_resource_id}/repo-agent",
+        headers=auth_headers(token),
+        json={"agent_key": "zero-version-fixture", "pack_key": "default", "title": "Zero Version Agent"},
+    )
+    assert zero_agent.status_code == 200, zero_agent.text
+    zero_delete = client.delete(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{zero_resource_id}",
+        headers=auth_headers(token),
+    )
+    assert zero_delete.status_code == 204, zero_delete.text
+    zero_purge_blocked = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{zero_resource_id}/purge",
+        headers=auth_headers(token),
+    )
+    assert zero_purge_blocked.status_code == 409
+    zero_archive = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/zero-version-fixture/archive",
+        headers=auth_headers(token),
+        json={"comment": "Archive zero-version agent before purge."},
+    )
+    assert zero_archive.status_code == 200, zero_archive.text
+    assert zero_archive.json()["resource_id"] is None
+    zero_purge = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{zero_resource_id}/purge",
+        headers=auth_headers(token),
+    )
+    assert zero_purge.status_code == 200, zero_purge.text
+    index_run = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh",
+        headers=auth_headers(token),
+    )
+    assert index_run.status_code == 202, index_run.text
+    run_index(index_run.json()["id"])
+    artifact = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+    )
+    assert artifact.status_code == 200, artifact.text
+    artifact_id = artifact.json()["id"]
+    approved_artifact = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}/approve",
+        headers=auth_headers(token),
+        json={"acknowledge_warnings": True, "comment": "Approve for D repo agent."},
+    )
+    assert approved_artifact.status_code == 200, approved_artifact.text
+    draft_pack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions",
+        headers=auth_headers(token),
+        json={"title": "Default repo-agent pack", "description": "D test", "artifact_ids": [artifact_id]},
+    )
+    assert draft_pack.status_code == 201, draft_pack.text
+    published_pack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{draft_pack.json()['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish for D repo agent."},
+    )
+    assert published_pack.status_code == 200, published_pack.text
+
+    created = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/repo-agent",
+        headers=auth_headers(token),
+        json={"agent_key": "repo-agent-fixture", "pack_key": "default", "title": "Repo Agent Fixture"},
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["agent_key"] == "repo-agent-fixture"
+    reserved_key = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/repo-agent",
+        headers=auth_headers(token),
+        json={"agent_key": "new", "pack_key": "default", "title": "Reserved"},
+    )
+    assert reserved_key.status_code == 422
+    duplicate = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/repo-agent",
+        headers=auth_headers(token),
+        json={"agent_key": "repo-agent-fixture", "pack_key": "default", "title": "Duplicate"},
+    )
+    assert duplicate.status_code == 409
+    refresh = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/refresh",
+        headers=auth_headers(token),
+    )
+    assert refresh.status_code == 200, refresh.text
+    assert refresh.json()["version"]["status"] == "draft"
+    assert refresh.json()["version"]["validation_json"]["ok"] is True
+    assert refresh.json()["version"]["skill_export_id"] is None
+    repeated_refresh = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/refresh",
+        headers=auth_headers(token),
+    )
+    assert repeated_refresh.status_code == 200, repeated_refresh.text
+    assert repeated_refresh.json()["unchanged"] is True
+
+    allowed_token = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        headers=auth_headers(token),
+        json={"name": "repo agent reader", "scopes": ["resource:read", "review:write"], "allowed_project_ids": [project_id], "allowed_resource_ids": [resource_id]},
+    )
+    assert allowed_token.status_code == 201, allowed_token.text
+    allowed_get = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture",
+        headers=auth_headers(allowed_token.json()["token"]),
+    )
+    assert allowed_get.status_code == 200, allowed_get.text
+    denied_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{refresh.json()['version']['version']}/publish",
+        headers=auth_headers(allowed_token.json()["token"]),
+        json={"comment": "resource scoped tokens must not publish"},
+    )
+    assert denied_publish.status_code == 403
+
+    invalidate_pack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{published_pack.json()['version']}/invalidate",
+        headers=auth_headers(token),
+        json={"reason": "Invalidate dependency before stale draft publish."},
+    )
+    assert invalidate_pack.status_code == 200, invalidate_pack.text
+    stale_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{refresh.json()['version']['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "This stale draft must not publish."},
+    )
+    assert stale_publish.status_code == 422
+    replacement_pack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions",
+        headers=auth_headers(token),
+        json={"title": "Replacement repo-agent pack", "description": "D test", "artifact_ids": [artifact_id]},
+    )
+    assert replacement_pack.status_code == 201, replacement_pack.text
+    replacement_published = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{replacement_pack.json()['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Replacement publish for D repo agent."},
+    )
+    assert replacement_published.status_code == 200, replacement_published.text
+    refresh = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/refresh",
+        headers=auth_headers(token),
+    )
+    assert refresh.status_code == 200, refresh.text
+    assert refresh.json()["version"]["validation_json"]["ok"] is True
+
+    published = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{refresh.json()['version']['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish D repo agent."},
+    )
+    assert published.status_code == 200, published.text
+    current = published.json()["current"]
+    assert current["status"] == "published"
+    assert current["install_json"]["mode"] == "pack_only"
+
+    rollback = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{current['version']}/rollback-draft",
+        headers=auth_headers(token),
+        json={"comment": "Create rollback draft."},
+    )
+    assert rollback.status_code == 200, rollback.text
+    assert rollback.json()["version"]["rollback_from_version_id"] == current["id"]
+
+    archive = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/archive",
+        headers=auth_headers(token),
+        json={"comment": "Archive for purge."},
+    )
+    assert archive.status_code == 200, archive.text
+    assert archive.json()["status"] == "archived"
+    refresh_archived = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/refresh",
+        headers=auth_headers(token),
+    )
+    assert refresh_archived.status_code == 422
+    invalidate_current = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{current['version']}/invalidate",
+        headers=auth_headers(token),
+        json={"comment": "Invalidate archived current."},
+    )
+    assert invalidate_current.status_code == 200, invalidate_current.text
+    assert invalidate_current.json()["current_version_id"] is None
+    scrub = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{current['version']}/scrub",
+        headers=auth_headers(token),
+        json={"comment": "Scrub archived current."},
+    )
+    assert scrub.status_code == 200, scrub.text
+    scrubbed_version = next(version for version in scrub.json()["versions"] if version["version"] == current["version"])
+    assert scrubbed_version["resource_id"] is None
+    assert scrubbed_version["summary_json"]["scrubbed"] is True
+    latest_agent = scrub.json()
+    for retained in list(latest_agent["versions"]):
+        if retained["resource_id"] is None:
+            continue
+        if retained["status"] != "invalidated":
+            invalidate_retained = client.post(
+                f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{retained['version']}/invalidate",
+                headers=auth_headers(token),
+                json={"comment": f"Invalidate retained v{retained['version']} before tombstone."},
+            )
+            assert invalidate_retained.status_code == 200, invalidate_retained.text
+        scrub_retained = client.post(
+            f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{retained['version']}/scrub",
+            headers=auth_headers(token),
+            json={"comment": f"Scrub retained v{retained['version']}."},
+        )
+        assert scrub_retained.status_code == 200, scrub_retained.text
+        latest_agent = scrub_retained.json()
+    assert latest_agent["resource_id"] is None
+    tombstone_get = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture",
+        headers=auth_headers(allowed_token.json()["token"]),
+    )
+    assert tombstone_get.status_code == 404

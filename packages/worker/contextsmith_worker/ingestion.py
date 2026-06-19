@@ -1188,14 +1188,31 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
     snapshot.status = "succeeded"
     snapshot.indexed_at = datetime.now(UTC)
     graph_stats = build_graph_index(session, resource, snapshot, docs)
-    if rtype in FOLDER_BUNDLE_TYPES:
+    if rtype in FOLDER_BUNDLE_TYPES | GIT_TYPES:
+        if rtype in FOLDER_BUNDLE_TYPES:
+            manifest_inputs = [ManifestFileInput(**_manifest_input(row)) for row in manifest_file_rows]
+        else:
+            manifest_inputs = [
+                ManifestFileInput(
+                    normalized_path=str(doc.get("path") or doc.get("title") or f"document-{idx}.txt"),
+                    content_hash=f"sha256:{content_hash(doc['content'])}",
+                    size_bytes=len(doc["content"].encode("utf-8")),
+                    display_path=str(doc.get("path") or doc.get("title") or f"document-{idx}.txt"),
+                    mime_type="text/plain",
+                    parser="git_text",
+                    parser_version="v1",
+                    status="pending",
+                    section_count=0,
+                )
+                for idx, doc in enumerate(docs)
+            ]
         manifest = create_resource_manifest(
             session,
             workspace_id=resource.workspace_id,
             project_id=resource.project_id,
             resource_id=resource.id,
             source_snapshot_id=snapshot.id,
-            files=[ManifestFileInput(**_manifest_input(row)) for row in manifest_file_rows],
+            files=manifest_inputs,
         )
         build_snapshot_sections(
             session,
