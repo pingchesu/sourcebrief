@@ -123,6 +123,36 @@ def test_folder_bundle_manifest_diff_v1_v2(monkeypatch: pytest.MonkeyPatch, tmp_
     assert by_path["delete.txt"] == "deleted"
     assert by_path["keep.txt"] == "unchanged"
 
+    manifest = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{v2['resource']['id']}/manifest",
+        headers=auth_headers(token),
+    )
+    assert manifest.status_code == 200, manifest.text
+    manifest_body = manifest.json()
+    assert manifest_body["section_count"] >= 3
+    assert manifest_body["sections_reused_count"] >= 1
+    assert manifest_body["sections_extracted_count"] >= 1
+    assert manifest_body["sections_from_deleted_files_count"] >= 1
+    assert manifest_body["sections_absent_count"] >= 1
+
+    sections = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{v2['resource']['id']}/snapshot-sections",
+        headers=auth_headers(token),
+    )
+    assert sections.status_code == 200, sections.text
+    sections_body = sections.json()
+    assert sections_body["section_count"] == manifest_body["section_count"]
+    assert sections_body["rows"]
+    assert {row["reuse_status"] for row in sections_body["rows"]} >= {"reused", "extracted"}
+
+    impact = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{v2['resource']['id']}/section-impact",
+        headers=auth_headers(token),
+    )
+    assert impact.status_code == 200, impact.text
+    assert impact.json()["sections_from_deleted_files_count"] == manifest_body["sections_from_deleted_files_count"]
+    assert impact.json()["impacted_artifacts_known"] is False
+
     added = client.get(
         f"/workspaces/{workspace_id}/projects/{project_id}/resources/{v2['resource']['id']}/manifest-diff",
         headers=auth_headers(token),
@@ -161,6 +191,80 @@ def test_folder_bundle_manifest_diff_v1_v2(monkeypatch: pytest.MonkeyPatch, tmp_
         headers=scoped_headers,
     )
     assert denied_diff.status_code == 404
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_section_absence_is_not_position_sensitive(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "section-shift")
+    workspace_id, project_id = scope.split(":")
+
+    v1 = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        "Shifted section bundle",
+        {"README.md": b"# A\nalpha\n# B\nbravo\n# C\ncharlie"},
+    )
+    v2 = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        None,
+        {"README.md": b"# A\nalpha\n# C\ncharlie"},
+        supersedes_resource_id=v1["resource"]["id"],
+    )
+    manifest = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{v2['resource']['id']}/manifest",
+        headers=auth_headers(token),
+    )
+    assert manifest.status_code == 200, manifest.text
+    body = manifest.json()
+    assert body["section_count"] == 2
+    assert body["sections_absent_count"] == 1
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_section_absence_hash_fallback_is_path_scoped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "section-path-scope")
+    workspace_id, project_id = scope.split(":")
+
+    v1 = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        "Path scoped section bundle",
+        {
+            "AAA.md": b"# C\ncharlie",
+            "README.md": b"# A\nalpha\n# B\nbravo\n# C\ncharlie",
+        },
+    )
+    v2 = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        None,
+        {"README.md": b"# A\nalpha\n# C\ncharlie"},
+        supersedes_resource_id=v1["resource"]["id"],
+    )
+    manifest = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{v2['resource']['id']}/manifest",
+        headers=auth_headers(token),
+    )
+    assert manifest.status_code == 200, manifest.text
+    body = manifest.json()
+    assert body["section_count"] == 2
+    assert body["sections_from_deleted_files_count"] == 1
+    assert body["sections_absent_count"] == 2
 
 
 @pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")

@@ -160,7 +160,10 @@ from contextsmith_api.schemas import (
     SearchHit,
     SearchRequest,
     SearchResponse,
+    SectionImpactRead,
     SnapshotRead,
+    SnapshotSectionRead,
+    SnapshotSectionsRead,
     UserRead,
     WorkspaceCreate,
     WorkspaceMemberCreate,
@@ -195,7 +198,9 @@ from contextsmith_shared.models import (
     RetrievalEvalItem,
     RetrievalEvalRun,
     RetrievalHit,
+    Section,
     SnapshotFile,
+    SnapshotSection,
     SourceSnapshot,
     User,
     Workspace,
@@ -2394,6 +2399,11 @@ def _manifest_read(manifest: ResourceManifest, files: list[ResourceManifestFile]
         total_bytes=manifest.total_bytes,
         parser_warning_count=manifest.parser_warning_count,
         unsupported_file_count=manifest.unsupported_file_count,
+        section_count=manifest.section_count,
+        sections_reused_count=manifest.sections_reused_count,
+        sections_extracted_count=manifest.sections_extracted_count,
+        sections_from_deleted_files_count=manifest.sections_from_deleted_files_count,
+        sections_absent_count=manifest.sections_absent_count,
         created_at=manifest.created_at,
         files=[
             ResourceManifestFileRead(
@@ -2814,6 +2824,133 @@ def get_resource_manifest_diff(
         if cursor:
             raise HTTPException(status_code=422, detail="invalid diff cursor") from exc
         raise
+
+
+def _section_cursor(cursor: str | None) -> int:
+    if cursor is None:
+        return 0
+    try:
+        value = int(cursor)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid section cursor") from exc
+    if value < 0:
+        raise HTTPException(status_code=422, detail="invalid section cursor")
+    return value
+
+
+def _section_preview(text: str, limit: int = 240) -> str:
+    compact = " ".join(text.split())
+    return compact if len(compact) <= limit else compact[: limit - 1] + "…"
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/snapshot-sections",
+    response_model=SnapshotSectionsRead,
+)
+def get_resource_snapshot_sections(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    version_resource_id: UUID | None = Query(default=None),
+    source_snapshot_id: UUID | None = Query(default=None),
+    reuse_status: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    cursor: str | None = Query(default=None),
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> SnapshotSectionsRead:
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, version_resource_id or resource_id, principal)
+    if resource.type.lower() not in FOLDER_BUNDLE_RESOURCE_TYPES:
+        raise HTTPException(status_code=422, detail="snapshot sections are only available for folder bundles")
+    if source_snapshot_id is None:
+        source_snapshot_id = resource.current_snapshot_id
+    if source_snapshot_id is None:
+        raise HTTPException(status_code=404, detail="snapshot sections not found")
+    if not token_allows_resource(principal, resource.id):
+        raise HTTPException(status_code=404, detail="snapshot sections not found")
+    if reuse_status is not None and reuse_status not in {"reused", "extracted"}:
+        raise HTTPException(status_code=422, detail="invalid reuse_status")
+    predicates = [
+        SnapshotSection.workspace_id == workspace_id,
+        SnapshotSection.project_id == project_id,
+        SnapshotSection.version_resource_id == resource.id,
+        SnapshotSection.source_snapshot_id == source_snapshot_id,
+    ]
+    if reuse_status:
+        predicates.append(SnapshotSection.reuse_status == reuse_status)
+    offset = _section_cursor(cursor)
+    total = int(session.scalar(select(func.count(SnapshotSection.id)).where(*predicates)) or 0)
+    rows = list(
+        session.execute(
+            select(SnapshotSection, Section)
+            .join(Section, SnapshotSection.section_id == Section.id)
+            .where(*predicates)
+            .order_by(SnapshotSection.normalized_path.asc(), SnapshotSection.ordinal.asc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+    )
+    next_cursor = str(offset + len(rows)) if offset + len(rows) < total else None
+    return SnapshotSectionsRead(
+        source_snapshot_id=source_snapshot_id,
+        version_resource_id=resource.id,
+        section_count=total,
+        total_row_count=total,
+        row_count_returned=len(rows),
+        limit=limit,
+        next_cursor=next_cursor,
+        rows=[
+            SnapshotSectionRead(
+                id=snapshot_section.id,
+                normalized_path=snapshot_section.normalized_path,
+                ordinal=snapshot_section.ordinal,
+                title=section.title,
+                reuse_status=snapshot_section.reuse_status,
+                start_line=section.start_line,
+                end_line=section.end_line,
+                content_preview=_section_preview(section.content_text),
+            )
+            for snapshot_section, section in rows
+        ],
+    )
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/section-impact",
+    response_model=SectionImpactRead,
+)
+def get_resource_section_impact(
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> SectionImpactRead:
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
+    if resource.current_snapshot_id is None:
+        raise HTTPException(status_code=404, detail="section impact not found")
+    manifest = session.scalar(
+        select(ResourceManifest).where(
+            ResourceManifest.workspace_id == workspace_id,
+            ResourceManifest.project_id == project_id,
+            ResourceManifest.resource_id == resource.id,
+            ResourceManifest.source_snapshot_id == resource.current_snapshot_id,
+        )
+    )
+    if manifest is None:
+        raise HTTPException(status_code=404, detail="section impact not found")
+    return SectionImpactRead(
+        sections_from_deleted_files_count=manifest.sections_from_deleted_files_count,
+        sections_absent_count=manifest.sections_absent_count,
+        impacted_artifacts_known=False,
+        message="Section-level absence is known. Artifact citation impact is not available yet.",
+        deleted_paths=[],
+        changed_paths_with_absent_sections=[],
+    )
 
 
 @app.post(

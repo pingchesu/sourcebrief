@@ -482,8 +482,44 @@ class ResourceManifestRead(BaseModel):
     total_bytes: int
     parser_warning_count: int
     unsupported_file_count: int
+    section_count: int = 0
+    sections_reused_count: int = 0
+    sections_extracted_count: int = 0
+    sections_from_deleted_files_count: int = 0
+    sections_absent_count: int = 0
     created_at: datetime
     files: list[ResourceManifestFileRead]
+
+
+class SnapshotSectionRead(BaseModel):
+    id: UUID
+    normalized_path: str
+    ordinal: int
+    title: str | None = None
+    reuse_status: str
+    start_line: int | None = None
+    end_line: int | None = None
+    content_preview: str
+
+
+class SnapshotSectionsRead(BaseModel):
+    source_snapshot_id: UUID
+    version_resource_id: UUID
+    section_count: int
+    total_row_count: int
+    row_count_returned: int
+    limit: int
+    next_cursor: str | None = None
+    rows: list[SnapshotSectionRead]
+
+
+class SectionImpactRead(BaseModel):
+    sections_from_deleted_files_count: int
+    sections_absent_count: int
+    impacted_artifacts_known: bool = False
+    message: str
+    deleted_paths: list[dict] = Field(default_factory=list)
+    changed_paths_with_absent_sections: list[dict] = Field(default_factory=list)
 
 
 class ManifestDiffRowRead(BaseModel):
