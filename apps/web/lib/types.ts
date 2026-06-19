@@ -49,6 +49,9 @@ export type Resource = {
   last_refresh_started_at?: string | null;
   last_refresh_finished_at: string | null;
   stale_after_days: number;
+  source_family_label?: string | null;
+  version_label?: string | null;
+  has_manifest_diff?: boolean;
 };
 
 export type ReviewItem = { resource: Resource; freshness_status: string; freshness_age_days: number | null; usage_count: number; last_used_at: string | null; last_index_status: string | null; last_index_finished_at: string | null; stale_reasons: string[] };
@@ -76,6 +79,8 @@ export type Snapshot = { id: string; workspace_id?: string; project_id?: string;
 export type IndexRun = { id: string; resource_id: string; snapshot_id: string | null; status: string; trigger: string; documents_seen: number; chunks_created: number; chunks_reused: number; symbols_created: number; embeddings_created: number; graph_nodes_created: number; graph_edges_created: number; error_message: string | null; finished_at: string | null; started_at?: string | null; created_at?: string | null };
 export type ResourceManifestFile = { id: string; normalized_path: string; display_path: string | null; size_bytes: number; content_hash: string; mime_type: string | null; status: string; warnings_json: string[] };
 export type ResourceManifest = { id: string; resource_id: string; source_snapshot_id: string; manifest_hash: string; file_count: number; total_bytes: number; parser_warning_count: number; unsupported_file_count: number; created_at: string; files: ResourceManifestFile[] };
+export type ManifestDiffRow = { normalized_path: string; change_type: string; base_file_id: string | null; head_file_id: string | null; base_status: string | null; head_status: string | null; base_size_bytes: number | null; head_size_bytes: number | null; base_content_hash: string | null; head_content_hash: string | null; warning_changed: boolean; reason: string };
+export type ManifestDiff = { base_manifest_id: string; head_manifest_id: string; base_resource_id: string; head_resource_id: string; source_family_label: string | null; added_count: number; changed_count: number; deleted_count: number; unchanged_count: number; warning_changed_count: number; base_file_count: number; head_file_count: number; total_row_count: number; row_count_returned: number; limit: number; next_cursor: string | null; rows: ManifestDiffRow[]; deleted_file_impact: { deleted_file_count: number; impacted_sections_known: boolean; message: string } };
 export type FolderBundleUploadResponse = { resource: Resource; index_run: IndexRun };
 export type GraphRead = { node_count: number; edge_count: number; nodes: Array<{ id: string; resource_id: string; snapshot_id: string; node_key: string; node_type: string; label: string; path: string | null; metadata: Record<string, unknown> }>; edges: Array<{ id: string; resource_id: string; snapshot_id: string; source_node_id: string; target_node_id: string; edge_type: string; weight: number; metadata: Record<string, unknown> }> };
 export type CodeSymbol = { resource_id: string; snapshot_id: string; path: string; name: string; kind: string; language: string; line_start: number; line_end: number; signature: string; content_hash: string; version: string; version_kind: string; commit: string | null; score: number };

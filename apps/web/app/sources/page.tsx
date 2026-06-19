@@ -4,9 +4,9 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { PageHeader, Card, SectionCard, Metric, Chip, StatusChip, EmptyState, Field, LifecyclePipeline, ReadinessBadge } from '../../components/ui';
 import { AgentContextPreview } from '../../components/AgentContextPreview';
 import { usePlatform } from '../../lib/platform-context';
-import { fmt, short } from '../../lib/api';
+import { ApiError, fmt, short } from '../../lib/api';
 import { freshnessLabel, isActive, isIndexFailed, isVisible, lifecycleStages, readiness } from '../../lib/lifecycle';
-import type { AgentContextResponse, FolderBundleUploadResponse, GitResourceEnv, IndexRun, Resource, ResourceManifest, ReviewItem } from '../../lib/types';
+import type { AgentContextResponse, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, ReviewItem } from '../../lib/types';
 
 type ResourceType = 'git' | 'url' | 'markdown' | 'upload' | 'folder_bundle';
 type GitDraft = { branch: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
@@ -35,6 +35,13 @@ function toGitDraft(env: GitResourceEnv | null): GitDraft {
 }
 
 function optionalNumber(value: string) { return value.trim() ? Number(value.trim()) : null; }
+function sizeDelta(base: number | null, head: number | null) {
+  if (base == null && head == null) return '—';
+  if (base == null && head != null) return `+${head.toLocaleString()}`;
+  if (base != null && head == null) return `-${base.toLocaleString()}`;
+  const delta = (head ?? 0) - (base ?? 0);
+  return delta > 0 ? `+${delta.toLocaleString()}` : delta.toLocaleString();
+}
 
 // Attention-first ordering: failed → stale → not indexed → needs review → rest, then by name.
 function attentionRank(resource: Resource, review?: ReviewItem): number {
@@ -78,6 +85,7 @@ export default function SourcesPage() {
   const [content, setContent] = useState('');
   const [filename, setFilename] = useState('notes.txt');
   const [zipFile, setZipFile] = useState<File | null>(null);
+  const [supersedesResourceId, setSupersedesResourceId] = useState<string | null>(null);
   const [refreshNow, setRefreshNow] = useState(true);
   const [connectBusy, setConnectBusy] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -91,6 +99,9 @@ export default function SourcesPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [manifest, setManifest] = useState<ResourceManifest | null>(null);
   const [manifestError, setManifestError] = useState<string | null>(null);
+  const [manifestDiff, setManifestDiff] = useState<ManifestDiff | null>(null);
+  const [manifestDiffError, setManifestDiffError] = useState<string | null>(null);
+  const [manifestDiffLimit, setManifestDiffLimit] = useState(25);
 
   // Git environment state.
   const [gitEnv, setGitEnv] = useState<GitResourceEnv | null>(null);
@@ -106,7 +117,7 @@ export default function SourcesPage() {
   const isFolderBundle = selectedResource?.type === 'folder_bundle';
 
   // Reset detail-scoped state when selection changes.
-  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); }, [selectedResourceId]);
+  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); }, [selectedResourceId]);
 
   // Load git env for the selected git source.
   useEffect(() => {
@@ -130,11 +141,50 @@ export default function SourcesPage() {
     return () => { cancelled = true; };
   }, [client, selectedResource, settings.workspaceId, settings.projectId]);
 
+  useEffect(() => {
+    if (!selectedResource || selectedResource.type !== 'folder_bundle' || !selectedResource.current_snapshot_id) { setManifestDiff(null); return; }
+    let cancelled = false;
+    setManifestDiffError(null);
+    client<ManifestDiff>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources/${selectedResource.id}/manifest-diff?limit=${manifestDiffLimit}`)
+      .then((value) => { if (!cancelled) setManifestDiff(value); })
+      .catch((err) => {
+        if (cancelled) return;
+        setManifestDiff(null);
+        if (err instanceof ApiError && err.status === 409) setManifestDiffError(null);
+        else setManifestDiffError(String(err));
+      });
+    return () => { cancelled = true; };
+  }, [client, selectedResource, settings.workspaceId, settings.projectId, manifestDiffLimit]);
+
   function changeType(next: ResourceType) {
     setType(next);
     setUri(defaultUri(next));
     setName(defaultName(next));
+    setSupersedesResourceId(null);
     if (next === 'folder_bundle') setFrequency('manual');
+  }
+
+  function openConnectSource() {
+    setConnectOpen((open) => !open);
+    setType('git');
+    setName(defaultName('git'));
+    setUri(defaultUri('git'));
+    setFrequency('daily');
+    setZipFile(null);
+    setSupersedesResourceId(null);
+    setConnectResult(null);
+    setConnectError(null);
+  }
+
+  function startFolderBundleVersion(resource: Resource) {
+    setConnectOpen(true);
+    setType('folder_bundle');
+    setFrequency('manual');
+    setName(resource.source_family_label || resource.name);
+    setSupersedesResourceId(resource.id);
+    setZipFile(null);
+    setConnectResult(null);
+    setConnectError(null);
   }
 
   async function submitConnect(event: FormEvent) {
@@ -144,8 +194,9 @@ export default function SourcesPage() {
       if (type === 'folder_bundle') {
         if (!zipFile) throw new Error('Choose a .zip folder bundle first.');
         const formData = new FormData();
-        formData.append('name', name);
+        if (!supersedesResourceId) formData.append('name', name);
         formData.append('update_frequency', frequency);
+        if (supersedesResourceId) formData.append('supersedes_resource_id', supersedesResourceId);
         formData.append('zip_file', zipFile);
         const response = await fetch(`${settings.apiBaseUrl}/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources/upload-folder-bundle`, {
           method: 'POST',
@@ -158,6 +209,8 @@ export default function SourcesPage() {
         }
         const data = await response.json() as FolderBundleUploadResponse;
         setConnectResult(data.resource);
+        setSupersedesResourceId(null);
+        setZipFile(null);
         await reload();
         await selectResource(data.resource.id);
         return;
@@ -240,7 +293,7 @@ export default function SourcesPage() {
       title="Connected sources and lifecycle"
       description="Every context source from connect through indexing, review, and retrieval. Select a source to inspect its evidence and run maintenance in place."
       actions={<>
-        <button className="btn" onClick={() => { setConnectOpen((open) => !open); setConnectResult(null); setConnectError(null); }}>{connectOpen ? 'Close connect' : 'Connect source'}</button>
+        <button className="btn" onClick={openConnectSource}>{connectOpen ? 'Close connect' : 'Connect source'}</button>
         <button className="btn secondary" onClick={() => reload()} disabled={loading}>{loading ? 'Loading…' : 'Reload'}</button>
       </>}
     />
@@ -264,7 +317,7 @@ export default function SourcesPage() {
       <form className="grid two" onSubmit={submitConnect}>
         <div className="grid">
           <Field label="Source type"><select className="input" value={type} onChange={(event) => changeType(event.target.value as ResourceType)}><option value="git">Git repository</option><option value="folder_bundle">Folder bundle (.zip)</option><option value="url">URL / web page</option><option value="markdown">Markdown / inline doc</option><option value="upload">Upload text</option></select></Field>
-          <Field label="Name"><input className="input" value={name} onChange={(event) => setName(event.target.value)} /></Field>
+          {supersedesResourceId ? <div className="notice">Uploading a new version of {name}. ContextSmith keeps the same family label and compares it to the previous manifest.</div> : <Field label="Name"><input className="input" value={name} onChange={(event) => setName(event.target.value)} /></Field>}
           {type !== 'folder_bundle' ? <Field label={type === 'git' ? 'Git URL' : type === 'url' ? 'URL' : 'URI / path'}><input className="input" value={uri} onChange={(event) => setUri(event.target.value)} /></Field> : null}
           {type === 'git' ? <div className="grid two"><Field label="Branch"><input className="input" value={branch} onChange={(event) => setBranch(event.target.value)} /></Field></div> : null}
           {type === 'folder_bundle' ? <Field label="Folder bundle zip"><input className="input" type="file" accept=".zip,application/zip" onChange={(event) => setZipFile(event.target.files?.[0] ?? null)} /><div className="muted">Upload a zipped folder. ContextSmith validates paths and archives before indexing.</div></Field> : null}
@@ -285,9 +338,9 @@ export default function SourcesPage() {
     <div className="grid two">
       <SectionCard title="Sources" description="Attention-first: failed, stale, not indexed, and unreviewed sources lead.">
         {sortedResources.length === 0
-          ? <div className="grid"><EmptyState text="No sources connected yet. Connect a git repo, URL, or document to start building context." /><button className="btn" onClick={() => setConnectOpen(true)}>Connect source</button></div>
+          ? <div className="grid"><EmptyState text="No sources connected yet. Connect a git repo, URL, or document to start building context." /><button className="btn" onClick={openConnectSource}>Connect source</button></div>
           : <div className="table-wrap"><table>
-            <thead><tr><th>Source</th><th>Readiness</th><th>Freshness</th><th>Index</th><th>Review</th><th>Uses</th></tr></thead>
+            <thead><tr><th>Source</th><th>Readiness</th><th>Freshness</th><th>Index</th><th>Review</th><th>Uses</th><th>Action</th></tr></thead>
             <tbody>
               {sortedResources.map((resource) => {
                 const review = reviewByResource.get(resource.id);
@@ -296,19 +349,20 @@ export default function SourcesPage() {
                 const lastIndex = review?.last_index_status ?? null;
                 const uses = usage ? (usage.hit_count || usage.query_count) : null;
                 return <tr key={resource.id} className={`clickable ${resource.id === selectedResourceId ? 'selected' : ''}`} onClick={() => void selectResource(resource.id)}>
-                  <td><strong>{resource.name}</strong><div className="toolbar" style={{ gap: 6, marginTop: 4 }}><Chip>{resource.type}</Chip>{resource.status !== 'active' ? <StatusChip value={resource.status} /> : null}</div></td>
+                  <td><strong>{resource.source_family_label || resource.name}</strong>{resource.version_label ? <div className="muted">{resource.version_label}</div> : null}<div className="toolbar" style={{ gap: 6, marginTop: 4 }}><Chip>{resource.type}</Chip>{resource.status !== 'active' ? <StatusChip value={resource.status} /> : null}</div></td>
                   <td><ReadinessBadge state={readiness(resource, review)} lastIndexStatus={lastIndex} /></td>
                   <td>{fresh.label === '—' ? <span className="muted">—</span> : <span><StatusChip value={fresh.label} />{fresh.ageDays != null ? <div className="code">{fresh.ageDays}d</div> : null}</span>}</td>
                   <td>{lastIndex ? <StatusChip value={lastIndex} /> : <span className="muted">not indexed</span>}</td>
                   <td><StatusChip value={resource.review_status} /></td>
                   <td>{uses != null ? uses : <span className="muted">—</span>}</td>
+                  <td><button className="btn secondary" onClick={(event) => { event.stopPropagation(); void selectResource(resource.id); }}>Inspect</button></td>
                 </tr>;
               })}
             </tbody>
           </table></div>}
       </SectionCard>
 
-      <SectionCard title="Source detail" description="Evidence and in-place maintenance for the selected source." action={selectedResource ? <button className="btn" disabled={refreshing || loading || isFolderBundle} onClick={() => void reindexSelected()}>{refreshing ? 'Working…' : reindexLabel}</button> : undefined}>
+      <SectionCard title="Source detail" description="Evidence and in-place maintenance for the selected source." action={selectedResource ? <div className="toolbar"><button className="btn" disabled={refreshing || loading || isFolderBundle} onClick={() => void reindexSelected()}>{refreshing ? 'Working…' : reindexLabel}</button>{isFolderBundle ? <button className="btn secondary" onClick={() => startFolderBundleVersion(selectedResource)}>Upload new version</button> : null}</div> : undefined}>
         {!selectedResource
           ? <EmptyState text="Select a source from the list to inspect its lifecycle, snapshots, index runs, graph, and generated context." />
           : <div className="grid">
@@ -332,6 +386,22 @@ export default function SourcesPage() {
               </div> : <div className="muted" style={{ marginTop: 8 }}>{manifestError ? `Manifest unavailable: ${manifestError}` : 'Manifest will appear after indexing completes.'}</div>}
               {manifest ? <div className="muted" style={{ marginTop: 6 }}>{manifest.total_bytes.toLocaleString()} bytes scanned from the uploaded zip.</div> : null}
               {manifest ? <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>Path</th><th>Status</th><th>Warnings</th><th>Size</th></tr></thead><tbody>{manifest.files.slice(0, 8).map((file) => <tr key={file.id}><td><span className="code">{file.normalized_path}</span></td><td><StatusChip value={file.status} /></td><td>{file.warnings_json.length ? file.warnings_json.join('; ') : <span className="muted">—</span>}</td><td>{file.size_bytes.toLocaleString()}</td></tr>)}</tbody></table></div> : null}
+            </div> : null}
+            {selectedResource.type === 'folder_bundle' ? <div className="notice">
+              <strong>Manifest diff</strong>
+              {manifestDiff ? <>
+                <div className="grid five" style={{ marginTop: 8 }}>
+                  <Metric label="Added" value={manifestDiff.added_count} />
+                  <Metric label="Changed" value={manifestDiff.changed_count} />
+                  <Metric label="Deleted" value={manifestDiff.deleted_count} />
+                  <Metric label="Unchanged" value={manifestDiff.unchanged_count} />
+                  <Metric label="Warnings" value={manifestDiff.warning_changed_count} />
+                </div>
+                <div className="muted" style={{ marginTop: 6 }}>{manifestDiff.deleted_file_impact.message}</div>
+                <div className="muted" style={{ marginTop: 4 }}>Showing {manifestDiff.row_count_returned.toLocaleString()} of {manifestDiff.total_row_count.toLocaleString()} changed rows.</div>
+                <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>Path</th><th>Change</th><th>Size delta</th><th>Base</th><th>Head</th><th>Reason</th></tr></thead><tbody>{manifestDiff.rows.map((row) => <tr key={`${row.change_type}-${row.normalized_path}`}><td><span className="code">{row.normalized_path}</span></td><td><StatusChip value={row.change_type} /></td><td>{sizeDelta(row.base_size_bytes, row.head_size_bytes)}</td><td>{row.base_status ?? <span className="muted">—</span>}</td><td>{row.head_status ?? <span className="muted">—</span>}</td><td>{row.reason}</td></tr>)}</tbody></table></div>
+                {manifestDiff.next_cursor ? <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => setManifestDiffLimit((value) => value + 25)}>Show more diff rows</button> : null}
+              </> : manifestDiffError ? <div className="notice error" style={{ marginTop: 8 }}>Manifest diff unavailable: {manifestDiffError}</div> : <div className="muted" style={{ marginTop: 8 }}>Manifest diff will appear after a second uploaded version.</div>}
             </div> : null}
             <div><div className="label">Last refresh</div><div className="muted">{fmt(selectedResource.last_refresh_finished_at)}</div></div>
             {actionError ? <div className="notice error">{actionError}</div> : null}

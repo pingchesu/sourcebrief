@@ -178,6 +178,9 @@ class ResourceRead(BaseModel):
     last_refresh_started_at: datetime | None = None
     last_refresh_finished_at: datetime | None = None
     stale_after_days: int = 30
+    source_family_label: str | None = None
+    version_label: str | None = None
+    has_manifest_diff: bool = False
 
 
 class ResourceReviewRequest(BaseModel):
@@ -481,6 +484,48 @@ class ResourceManifestRead(BaseModel):
     unsupported_file_count: int
     created_at: datetime
     files: list[ResourceManifestFileRead]
+
+
+class ManifestDiffRowRead(BaseModel):
+    normalized_path: str
+    change_type: str
+    base_file_id: UUID | None = None
+    head_file_id: UUID | None = None
+    base_status: str | None = None
+    head_status: str | None = None
+    base_size_bytes: int | None = None
+    head_size_bytes: int | None = None
+    base_content_hash: str | None = None
+    head_content_hash: str | None = None
+    warning_changed: bool
+    reason: str
+
+
+class DeletedFileImpactStubRead(BaseModel):
+    deleted_file_count: int
+    impacted_sections_known: bool
+    message: str
+
+
+class ManifestDiffRead(BaseModel):
+    base_manifest_id: UUID
+    head_manifest_id: UUID
+    base_resource_id: UUID
+    head_resource_id: UUID
+    source_family_label: str | None = None
+    added_count: int
+    changed_count: int
+    deleted_count: int
+    unchanged_count: int
+    warning_changed_count: int
+    base_file_count: int
+    head_file_count: int
+    total_row_count: int
+    row_count_returned: int
+    limit: int
+    next_cursor: str | None = None
+    rows: list[ManifestDiffRowRead]
+    deleted_file_impact: DeletedFileImpactStubRead
 
 
 class SnapshotRead(BaseModel):
