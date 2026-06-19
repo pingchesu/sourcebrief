@@ -440,6 +440,155 @@ def test_resource_map_missing_snapshot_sections_fails_idempotently(monkeypatch: 
 
 
 @pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_context_pack_publish_runtime_rollback_and_purge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "context-pack")
+    workspace_id, project_id = scope.split(":")
+    upload = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        "B1 Context Pack bundle",
+        {
+            "README.md": b"# Overview\nPinned context pack content.\n# Operations\nPublished pack runtime should cite this snapshot.",
+            "docs/runbook.md": b"# Runbook\nRollback and invalidation are explicit release operations.",
+        },
+    )
+    resource_id = upload["resource"]["id"]
+    artifact = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+    )
+    assert artifact.status_code == 200, artifact.text
+    artifact_id = artifact.json()["id"]
+    approved = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}/approve",
+        headers=auth_headers(token),
+        json={"acknowledge_warnings": True, "comment": "Approve for B1 pack."},
+    )
+    assert approved.status_code == 200, approved.text
+
+    draft = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions",
+        headers=auth_headers(token),
+        json={"title": "Default pack", "description": "B1 test", "artifact_ids": [artifact_id]},
+    )
+    assert draft.status_code == 201, draft.text
+    assert draft.json()["status"] == "draft"
+    assert draft.json()["coverage"][0]["resource_id"] == resource_id
+    published = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{draft.json()['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish v1."},
+    )
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+
+    current = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/current", headers=auth_headers(token))
+    assert current.status_code == 200, current.text
+    assert current.json()["version"] == 1
+
+    runtime = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        headers=auth_headers(token),
+        json={"query": "operations", "context_pack_key": "default", "top_k": 3},
+    )
+    assert runtime.status_code == 200, runtime.text
+    runtime_body = runtime.json()
+    assert runtime_body["context_pack_key"] == "default"
+    assert runtime_body["context_pack_version"] == 1
+    assert runtime_body["context_pack_snapshot_pin_enforced"] is True
+    assert runtime_body["citations"]
+    assert {citation["resource_id"] for citation in runtime_body["citations"]} == {resource_id}
+
+    denied_token = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        headers=auth_headers(token),
+        json={"name": "pack denied", "scopes": ["resource:read", "project:query"], "allowed_project_ids": [project_id], "allowed_resource_ids": []},
+    )
+    assert denied_token.status_code == 201, denied_token.text
+    denied_current = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/current", headers=auth_headers(denied_token.json()["token"]))
+    assert denied_current.status_code == 404
+
+    denied_review_token = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        headers=auth_headers(token),
+        json={"name": "pack review denied", "scopes": ["resource:read", "project:query", "review:write"], "allowed_project_ids": [project_id], "allowed_resource_ids": []},
+    )
+    assert denied_review_token.status_code == 201, denied_review_token.text
+    denied_invalidate = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{draft.json()['version']}/invalidate",
+        headers=auth_headers(denied_review_token.json()["token"]),
+        json={"reason": "should not invalidate denied resource coverage"},
+    )
+    assert denied_invalidate.status_code == 404
+
+    viewer_email = f"pack-viewer-{int(time.time() * 1000)}@contextsmith.local"
+    viewer_password = "viewer-password-123"
+    viewer = client.post(
+        f"/workspaces/{workspace_id}/members",
+        headers=auth_headers(token),
+        json={"email": viewer_email, "display_name": "Viewer", "password": viewer_password, "role": "viewer"},
+    )
+    assert viewer.status_code == 201, viewer.text
+    viewer_login = client.post("/auth/login", json={"email": viewer_email, "password": viewer_password})
+    assert viewer_login.status_code == 200, viewer_login.text
+    denied_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{draft.json()['version']}/publish",
+        headers=auth_headers(viewer_login.json()["session_token"]),
+        json={"comment": "viewer cannot publish"},
+    )
+    assert denied_publish.status_code == 403
+
+    draft2 = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions",
+        headers=auth_headers(token),
+        json={"title": "Default pack", "description": "B1 test v2", "artifact_ids": [artifact_id]},
+    )
+    assert draft2.status_code == 201, draft2.text
+    published2 = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{draft2.json()['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish v2."},
+    )
+    assert published2.status_code == 200, published2.text
+    assert published2.json()["version"] == 2
+
+    rollback = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/1/rollback",
+        headers=auth_headers(token),
+        json={"reason": "Rollback test."},
+    )
+    assert rollback.status_code == 200, rollback.text
+    assert rollback.json()["status"] == "published"
+    assert rollback.json()["version"] == 1
+
+    soft_delete = client.delete(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", headers=auth_headers(token))
+    assert soft_delete.status_code == 204, soft_delete.text
+    blocked_purge = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", headers=auth_headers(token))
+    assert blocked_purge.status_code == 409
+    assert "Context Pack" in str(blocked_purge.json()["detail"])
+
+    invalidate_v1 = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/1/invalidate",
+        headers=auth_headers(token),
+        json={"reason": "Allow purge."},
+    )
+    assert invalidate_v1.status_code == 200, invalidate_v1.text
+    invalidate_v2 = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/2/invalidate",
+        headers=auth_headers(token),
+        json={"reason": "Allow purge."},
+    )
+    assert invalidate_v2.status_code == 200, invalidate_v2.text
+    purged = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", headers=auth_headers(token))
+    assert purged.status_code == 200, purged.text
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_manifest_diff_with_one_version_returns_conflict(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
     monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))

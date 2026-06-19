@@ -10,10 +10,12 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -934,4 +936,105 @@ class ContextArtifactCitation(Base):
     content_hash: Mapped[str] = mapped_column(Text, nullable=False)
     line_start: Mapped[int | None] = mapped_column(Integer)
     line_end: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContextPack(Base):
+    __tablename__ = "context_packs"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", "project_id", name="uq_context_packs_id_scope"),
+        UniqueConstraint("workspace_id", "project_id", "pack_key", name="uq_context_packs_project_key"),
+        ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], name="fk_context_packs_workspace"),
+        ForeignKeyConstraint(["project_id"], ["projects.id"], name="fk_context_packs_project"),
+        CheckConstraint("pack_key ~ '^[a-z0-9][a-z0-9._-]{0,62}$'", name="ck_context_packs_key_format"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    pack_key: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ContextPackVersion(Base):
+    __tablename__ = "context_pack_versions"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", "project_id", name="uq_context_pack_versions_id_scope"),
+        UniqueConstraint("workspace_id", "project_id", "pack_key", "version", name="uq_context_pack_versions_project_key_version"),
+        Index("uq_context_pack_versions_one_published", "workspace_id", "project_id", "pack_key", unique=True, postgresql_where=text("status = 'published'")),
+        Index("ix_context_pack_versions_project_key_status", "workspace_id", "project_id", "pack_key", "status"),
+        Index("ix_context_pack_versions_project_status_created", "workspace_id", "project_id", "status", "created_at"),
+        ForeignKeyConstraint(["context_pack_id", "workspace_id", "project_id"], ["context_packs.id", "context_packs.workspace_id", "context_packs.project_id"], name="fk_context_pack_versions_pack_scope"),
+        CheckConstraint("status IN ('draft', 'published', 'superseded', 'rolled_back', 'invalidated', 'failed')", name="ck_context_pack_versions_status"),
+        CheckConstraint("version >= 1", name="ck_context_pack_versions_version_positive"),
+        CheckConstraint("pack_hash LIKE 'sha256:%' AND length(pack_hash) = 71", name="ck_context_pack_versions_hash_format"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    context_pack_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("context_packs.id"), nullable=False)
+    pack_key: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    pack_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    coverage_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    validation_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    published_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rolled_back_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ContextPackArtifact(Base):
+    __tablename__ = "context_pack_artifacts"
+    __table_args__ = (
+        UniqueConstraint("context_pack_version_id", "context_artifact_id", name="uq_context_pack_artifacts_version_artifact"),
+        UniqueConstraint("context_pack_version_id", "ordinal", name="uq_context_pack_artifacts_version_ordinal"),
+        ForeignKeyConstraint(["context_pack_version_id", "workspace_id", "project_id"], ["context_pack_versions.id", "context_pack_versions.workspace_id", "context_pack_versions.project_id"], name="fk_context_pack_artifacts_version_scope"),
+        ForeignKeyConstraint(["context_artifact_id", "workspace_id", "project_id", "resource_id", "source_snapshot_id", "resource_manifest_id"], ["context_artifacts.id", "context_artifacts.workspace_id", "context_artifacts.project_id", "context_artifacts.resource_id", "context_artifacts.source_snapshot_id", "context_artifacts.resource_manifest_id"], name="fk_context_pack_artifacts_artifact_scope"),
+        CheckConstraint("ordinal >= 0", name="ck_context_pack_artifacts_ordinal_nonnegative"),
+        CheckConstraint("artifact_hash LIKE 'sha256:%' AND length(artifact_hash) = 71", name="ck_context_pack_artifacts_hash_format"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    context_pack_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("context_pack_versions.id"), nullable=False)
+    context_artifact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("context_artifacts.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    resource_manifest_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resource_manifests.id"), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(Text, nullable=False)
+    artifact_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContextPackResourceCoverage(Base):
+    __tablename__ = "context_pack_resource_coverage"
+    __table_args__ = (
+        UniqueConstraint("context_pack_version_id", "resource_id", "source_snapshot_id", "resource_manifest_id", name="uq_context_pack_coverage_version_resource_snapshot_manifest"),
+        ForeignKeyConstraint(["context_pack_version_id", "workspace_id", "project_id"], ["context_pack_versions.id", "context_pack_versions.workspace_id", "context_pack_versions.project_id"], name="fk_context_pack_coverage_version_scope"),
+        CheckConstraint("artifact_count >= 0", name="ck_context_pack_coverage_artifact_count_nonnegative"),
+        CheckConstraint("citation_count >= 0", name="ck_context_pack_coverage_citation_count_nonnegative"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    context_pack_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("context_pack_versions.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    resource_manifest_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resource_manifests.id"), nullable=False)
+    artifact_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    citation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
