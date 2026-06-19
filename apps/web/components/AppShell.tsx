@@ -12,7 +12,7 @@ const NAV_SECTIONS: NavSection[] = [
   { items: [{ href: '/', label: 'Command Center' }] },
   { label: 'Build context', items: [{ href: '/sources', label: 'Sources' }, { href: '/workbench', label: 'Workbench' }] },
   { label: 'Assure quality', items: [{ href: '/quality', label: 'Quality' }] },
-  { label: 'Ship', items: [{ href: '/agent-profile', label: 'Project agent' }, { href: '/repo-agents', label: 'Repo agents' }, { href: '/graphs', label: 'Graphs' }] },
+  { label: 'Ship', items: [{ href: '/agent-profile', label: 'Project agent' }, { href: '/repo-agents', label: 'Repo agents' }, { href: '/graphs', label: 'Graphs' }, { href: '/graph-merge', label: 'Graph merge' }] },
   { label: 'Administration', secondary: true, items: [{ href: '/users', label: 'Team access' }, { href: '/config', label: 'Settings' }, { href: '/login', label: 'Account' }] },
 ];
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -1203,6 +1204,81 @@ class GraphCompileResponse(BaseModel):
     graph: GraphStreamRead
     version: GraphVersionRead
     unchanged: bool
+
+
+class GraphMergeInputRequest(BaseModel):
+    graph_key: str | None = None
+    version: int | None = None
+    graph_version_id: UUID | None = None
+
+
+class GraphMergeCompileRequest(BaseModel):
+    merge_key: str | None = None
+    title: str
+    description: str | None = None
+    strategy: str = "union"
+    inputs: list[GraphMergeInputRequest]
+
+
+class GraphMergeReviewRequest(BaseModel):
+    comment: str = Field(min_length=3, max_length=2000)
+    allow_stale_inputs: bool = False
+    allow_unresolved_candidates: bool = False
+
+
+class GraphMergeCandidateReviewRequest(BaseModel):
+    status: str
+    reason: str
+
+
+class GraphMergeVersionRead(BaseModel):
+    id: UUID
+    graph_merge_id: UUID
+    version: int
+    status: str
+    merge_strategy: str
+    version_hash: str
+    input_hash: str
+    node_count: int
+    edge_count: int
+    candidate_count: int
+    unresolved_candidate_count: int
+    summary_json: dict[str, Any]
+    validation_json: dict[str, Any]
+    status_reason: str | None
+    published_at: datetime | None
+    invalidated_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class GraphMergeRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    merge_key: str
+    title: str
+    description: str | None
+    status: str
+    current_version_id: UUID | None
+    current: GraphMergeVersionRead | None
+    versions: list[GraphMergeVersionRead]
+    created_at: datetime
+    updated_at: datetime
+
+
+class GraphMergeDataRead(BaseModel):
+    kind: str
+    items: list[dict[str, Any]]
+    limit: int
+    next_cursor: str | None = None
+
+
+class GraphMergePathRead(BaseModel):
+    found: bool
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, Any]]
 
 
 class GraphReviewRequest(BaseModel):

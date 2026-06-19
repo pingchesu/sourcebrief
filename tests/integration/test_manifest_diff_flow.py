@@ -1143,3 +1143,209 @@ def test_graph_version_storage_e0_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp
     purge_blocked = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", headers=auth_headers(token))
     assert purge_blocked.status_code == 409
     assert "graphs" in purge_blocked.json()["detail"]
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("CONTEXTSMITH_ALLOW_LOCAL_GIT", "true")
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "graph-merge")
+    workspace_id, project_id = scope.split(":")
+
+    def make_repo(name: str, ret: str) -> Path:
+        repo_dir = tmp_path / name
+        repo_dir.mkdir()
+        (repo_dir / "README.md").write_text(f"# Shared Guide\n{name}\n", encoding="utf-8")
+        (repo_dir / "src").mkdir()
+        (repo_dir / "src" / "common.py").write_text(f"def main():\n    return {ret!r}\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", f"{name}@example.com"], cwd=repo_dir, check=True)
+        subprocess.run(["git", "config", "user.name", name], cwd=repo_dir, check=True)
+        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+        return repo_dir
+
+    def create_git_resource(name: str, repo_dir: Path) -> str:
+        created = client.post(
+            f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+            headers=auth_headers(token),
+            json={"type": "git", "name": name, "uri": str(repo_dir), "source_config": {"url": str(repo_dir), "branch": "main"}},
+        )
+        assert created.status_code == 201, created.text
+        resource_id = created.json()["id"]
+        refresh = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh", headers=auth_headers(token))
+        assert refresh.status_code == 202, refresh.text
+        run_index(refresh.json()["id"])
+        return resource_id
+
+    def publish_resource_graph(resource_id: str, graph_key: str, title: str) -> dict:
+        compiled = client.post(
+            f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph/versions",
+            headers=auth_headers(token),
+            json={"graph_key": graph_key, "title": title},
+        )
+        assert compiled.status_code == 200, compiled.text
+        published = client.post(
+            f"/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/versions/{compiled.json()['version']['version']}/publish",
+            headers=auth_headers(token),
+            json={"comment": f"Publish {graph_key}"},
+        )
+        assert published.status_code == 200, published.text
+        return published.json()["current"]
+
+    repo_a = make_repo("merge-a", "a")
+    repo_b = make_repo("merge-b", "b")
+    resource_a = create_git_resource("Merge A", repo_a)
+    resource_b = create_git_resource("Merge B", repo_b)
+    graph_a_v1 = publish_resource_graph(resource_a, "merge-a-graph", "Merge A Graph")
+    graph_b_v1 = publish_resource_graph(resource_b, "merge-b-graph", "Merge B Graph")
+
+    monkeypatch.setenv("CONTEXTSMITH_GRAPH_MERGE_MAX_INPUTS", "1")
+    too_many = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges",
+        headers=auth_headers(token),
+        json={"title": "Too many", "strategy": "union", "inputs": [{"graph_key": "merge-a-graph", "version": graph_a_v1["version"]}, {"graph_key": "merge-b-graph", "version": graph_b_v1["version"]}]},
+    )
+    assert too_many.status_code == 422
+    assert "too_many_inputs" in too_many.text
+    monkeypatch.setenv("CONTEXTSMITH_GRAPH_MERGE_MAX_INPUTS", "8")
+    monkeypatch.setenv("CONTEXTSMITH_GRAPH_MERGE_MAX_NODES", "1")
+    too_large = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges",
+        headers=auth_headers(token),
+        json={"title": "Too large", "strategy": "union", "inputs": [{"graph_key": "merge-a-graph", "version": graph_a_v1["version"]}, {"graph_key": "merge-b-graph", "version": graph_b_v1["version"]}]},
+    )
+    assert too_large.status_code == 413
+    assert "merge_node_limit_exceeded" in too_large.text
+    monkeypatch.setenv("CONTEXTSMITH_GRAPH_MERGE_MAX_NODES", "10000")
+
+    compiled_merge = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges",
+        headers=auth_headers(token),
+        json={"merge_key": "merge-fixture", "title": "Merge Fixture", "strategy": "overlay", "inputs": [{"graph_key": "merge-a-graph", "version": graph_a_v1["version"]}, {"graph_key": "merge-b-graph", "version": graph_b_v1["version"]}]},
+    )
+    assert compiled_merge.status_code == 200, compiled_merge.text
+    merge = compiled_merge.json()
+    latest = merge["versions"][0]
+    merge_key = merge["merge_key"]
+    assert latest["status"] == "draft"
+    assert latest["node_count"] >= graph_a_v1["node_count"] + graph_b_v1["node_count"]
+    assert latest["candidate_count"] >= 1
+
+    scoped = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        headers=auth_headers(token),
+        json={"name": "merge scoped reader", "scopes": ["resource:read"], "allowed_project_ids": [project_id], "allowed_resource_ids": [resource_a]},
+    )
+    assert scoped.status_code == 201, scoped.text
+    hidden_merge = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}", headers=auth_headers(scoped.json()["token"]))
+    assert hidden_merge.status_code == 404
+
+    blocked_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish should block unresolved candidates."},
+    )
+    assert blocked_publish.status_code == 422
+    assert "unresolved" in blocked_publish.text
+
+    candidates = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/data",
+        headers=auth_headers(token),
+        params={"kind": "candidates", "limit": 1},
+    )
+    assert candidates.status_code == 200, candidates.text
+    assert candidates.json()["next_cursor"] is not None
+    candidate_page_2 = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/data",
+        headers=auth_headers(token),
+        params={"kind": "candidates", "limit": 1, "cursor": candidates.json()["next_cursor"]},
+    )
+    assert candidate_page_2.status_code == 200, candidate_page_2.text
+    inputs_data = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/data",
+        headers=auth_headers(token),
+        params={"kind": "inputs"},
+    )
+    assert inputs_data.status_code == 200, inputs_data.text
+    assert {row["resource_name"] for row in inputs_data.json()["items"]} == {"Merge A", "Merge B"}
+    candidate_key = candidates.json()["items"][0]["candidate_key"]
+    reviewed = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/candidates/{candidate_key}/review",
+        headers=auth_headers(token),
+        json={"status": "rejected", "reason": "Same path is not enough for semantic equivalence."},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+
+    published_merge = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish merge fixture with reviewed candidate; acknowledge unresolved candidate risk.", "allow_unresolved_candidates": True},
+    )
+    assert published_merge.status_code == 200, published_merge.text
+    assert published_merge.json()["current"]["status"] == "published"
+
+    nodes = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/data",
+        headers=auth_headers(token),
+        params={"kind": "nodes", "limit": 10},
+    )
+    assert nodes.status_code == 200, nodes.text
+    first_node = nodes.json()["items"][0]["key"]
+    path = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/path",
+        headers=auth_headers(token),
+        params={"from_node_key": first_node, "to_node_key": first_node, "max_depth": 4},
+    )
+    assert path.status_code == 200, path.text
+    assert path.json()["found"] is True
+    too_deep = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/path",
+        headers=auth_headers(token),
+        params={"from_node_key": first_node, "to_node_key": first_node, "max_depth": 99},
+    )
+    assert too_deep.status_code == 422
+
+    (repo_a / "src" / "common.py").write_text("def main():\n    return 'a2'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_a, check=True)
+    subprocess.run(["git", "commit", "-m", "second"], cwd=repo_a, check=True, capture_output=True)
+    refresh_a2 = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_a}/refresh", headers=auth_headers(token))
+    assert refresh_a2.status_code == 202, refresh_a2.text
+    run_index(refresh_a2.json()["id"])
+    graph_a_v2_draft = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_a}/graph/versions",
+        headers=auth_headers(token),
+        json={"graph_key": "merge-a-graph", "title": "Merge A Graph"},
+    )
+    assert graph_a_v2_draft.status_code == 200, graph_a_v2_draft.text
+
+    stale_draft = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges",
+        headers=auth_headers(token),
+        json={"merge_key": "merge-stale-fixture", "title": "Merge Stale Fixture", "strategy": "union", "inputs": [{"graph_key": "merge-a-graph", "version": graph_a_v1["version"]}, {"graph_key": "merge-b-graph", "version": graph_b_v1["version"]}]},
+    )
+    assert stale_draft.status_code == 200, stale_draft.text
+    stale_merge_key = stale_draft.json()["merge_key"]
+    stale_version = stale_draft.json()["versions"][0]["version"]
+    graph_a_v2 = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graphs/merge-a-graph/versions/{graph_a_v2_draft.json()['version']['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish merge-a v2."},
+    )
+    assert graph_a_v2.status_code == 200, graph_a_v2.text
+    assert graph_a_v2.json()["current"]["version"] > graph_a_v1["version"]
+    stale_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{stale_merge_key}/versions/{stale_version}/publish",
+        headers=auth_headers(token),
+        json={"comment": "This stale merge draft should fail; acknowledge unresolved candidate risk.", "allow_unresolved_candidates": True},
+    )
+    assert stale_publish.status_code == 422
+    assert "stale" in stale_publish.text
+
+    deleted = client.delete(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_a}", headers=auth_headers(token))
+    assert deleted.status_code == 204, deleted.text
+    purge_blocked = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_a}/purge", headers=auth_headers(token))
+    assert purge_blocked.status_code == 409
+    assert "graph_merges" in purge_blocked.json()["detail"]

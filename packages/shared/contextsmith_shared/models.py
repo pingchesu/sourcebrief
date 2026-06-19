@@ -324,6 +324,7 @@ class GraphVersion(Base):
     __table_args__ = (
         UniqueConstraint("id", "workspace_id", "project_id", name="uq_graph_versions_id_scope"),
         UniqueConstraint("graph_id", "version", name="uq_graph_versions_graph_version"),
+        UniqueConstraint("id", "workspace_id", "project_id", "graph_id", "resource_id", "source_snapshot_id", name="uq_graph_versions_input_identity"),
         Index("ix_graph_versions_graph_status", "graph_id", "status"),
         Index("ix_graph_versions_resource_snapshot", "resource_id", "source_snapshot_id"),
         CheckConstraint("status IN ('draft', 'published', 'superseded', 'invalidated')", name="ck_graph_versions_status"),
@@ -358,6 +359,156 @@ class GraphVersion(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     invalidated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GraphMerge(Base):
+    __tablename__ = "graph_merges"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "project_id", "merge_key", name="uq_graph_merges_project_key"),
+        UniqueConstraint("id", "workspace_id", "project_id", name="uq_graph_merges_id_scope"),
+        ForeignKeyConstraint(["current_version_id", "id", "workspace_id", "project_id"], ["graph_merge_versions.id", "graph_merge_versions.graph_merge_id", "graph_merge_versions.workspace_id", "graph_merge_versions.project_id"], name="fk_graph_merges_current_version", use_alter=True),
+        CheckConstraint("status IN ('active', 'archived')", name="ck_graph_merges_status"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    merge_key: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class GraphMergeVersion(Base):
+    __tablename__ = "graph_merge_versions"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", "project_id", name="uq_graph_merge_versions_id_scope"),
+        UniqueConstraint("id", "graph_merge_id", "workspace_id", "project_id", name="uq_graph_merge_versions_current_scope"),
+        UniqueConstraint("graph_merge_id", "version", name="uq_graph_merge_versions_merge_version"),
+        ForeignKeyConstraint(["graph_merge_id", "workspace_id", "project_id"], ["graph_merges.id", "graph_merges.workspace_id", "graph_merges.project_id"], name="fk_graph_merge_versions_merge_scope"),
+        Index("ix_graph_merge_versions_merge_status", "graph_merge_id", "status"),
+        CheckConstraint("status IN ('draft', 'published', 'superseded', 'invalidated')", name="ck_graph_merge_versions_status"),
+        CheckConstraint("merge_strategy IN ('union', 'overlay')", name="ck_graph_merge_versions_strategy"),
+        CheckConstraint("version >= 1", name="ck_graph_merge_versions_version_positive"),
+        CheckConstraint("version_hash LIKE 'sha256:%' AND length(version_hash) = 71", name="ck_graph_merge_versions_hash_format"),
+        CheckConstraint("input_hash LIKE 'sha256:%' AND length(input_hash) = 71", name="ck_graph_merge_versions_input_hash_format"),
+        CheckConstraint("node_count >= 0", name="ck_graph_merge_versions_node_count_nonnegative"),
+        CheckConstraint("edge_count >= 0", name="ck_graph_merge_versions_edge_count_nonnegative"),
+        CheckConstraint("candidate_count >= 0", name="ck_graph_merge_versions_candidate_count_nonnegative"),
+        CheckConstraint("unresolved_candidate_count >= 0", name="ck_graph_merge_versions_unresolved_candidate_count_nonnegative"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    graph_merge_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    merge_strategy: Mapped[str] = mapped_column(Text, nullable=False)
+    version_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    input_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    node_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    edge_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unresolved_candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    summary_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    validation_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    published_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status_reason: Mapped[str | None] = mapped_column(Text)
+
+
+class GraphMergeInput(Base):
+    __tablename__ = "graph_merge_inputs"
+    __table_args__ = (
+        UniqueConstraint("graph_merge_version_id", "input_graph_version_id", name="uq_graph_merge_inputs_version_input"),
+        UniqueConstraint("graph_merge_version_id", "input_resource_id", name="uq_graph_merge_inputs_version_resource"),
+        UniqueConstraint("graph_merge_version_id", "input_graph_id", name="uq_graph_merge_inputs_version_graph"),
+        UniqueConstraint("graph_merge_version_id", "ordinal", name="uq_graph_merge_inputs_version_ordinal"),
+        ForeignKeyConstraint(["graph_merge_version_id", "workspace_id", "project_id"], ["graph_merge_versions.id", "graph_merge_versions.workspace_id", "graph_merge_versions.project_id"], name="fk_graph_merge_inputs_version_scope"),
+        ForeignKeyConstraint(["input_graph_version_id", "workspace_id", "project_id", "input_graph_id", "input_resource_id", "input_source_snapshot_id"], ["graph_versions.id", "graph_versions.workspace_id", "graph_versions.project_id", "graph_versions.graph_id", "graph_versions.resource_id", "graph_versions.source_snapshot_id"], name="fk_graph_merge_inputs_graph_version_identity"),
+        ForeignKeyConstraint(["input_resource_id", "workspace_id", "project_id"], ["resources.id", "resources.workspace_id", "resources.project_id"], name="fk_graph_merge_inputs_resource_scope"),
+        ForeignKeyConstraint(["input_source_snapshot_id", "workspace_id", "project_id", "input_resource_id"], ["source_snapshots.id", "source_snapshots.workspace_id", "source_snapshots.project_id", "source_snapshots.resource_id"], name="fk_graph_merge_inputs_snapshot_scope"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    graph_merge_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    input_graph_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    input_graph_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    input_resource_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    input_source_snapshot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_version_hash: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class GraphMergeNode(Base):
+    __tablename__ = "graph_merge_nodes"
+    __table_args__ = (
+        UniqueConstraint("graph_merge_version_id", "merged_node_key", name="uq_graph_merge_nodes_version_key"),
+        ForeignKeyConstraint(["graph_merge_version_id", "workspace_id", "project_id"], ["graph_merge_versions.id", "graph_merge_versions.workspace_id", "graph_merge_versions.project_id"], name="fk_graph_merge_nodes_version_scope"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    graph_merge_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    merged_node_key: Mapped[str] = mapped_column(Text, nullable=False)
+    node_type: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    path: Mapped[str | None] = mapped_column(Text)
+    display_label: Mapped[str] = mapped_column(Text, nullable=False)
+    origin_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+
+
+class GraphMergeEdge(Base):
+    __tablename__ = "graph_merge_edges"
+    __table_args__ = (
+        UniqueConstraint("graph_merge_version_id", "source_merged_node_key", "target_merged_node_key", "edge_type", name="uq_graph_merge_edges_version_edge"),
+        ForeignKeyConstraint(["graph_merge_version_id", "workspace_id", "project_id"], ["graph_merge_versions.id", "graph_merge_versions.workspace_id", "graph_merge_versions.project_id"], name="fk_graph_merge_edges_version_scope"),
+        ForeignKeyConstraint(["graph_merge_version_id", "source_merged_node_key"], ["graph_merge_nodes.graph_merge_version_id", "graph_merge_nodes.merged_node_key"], name="fk_graph_merge_edges_source_node"),
+        ForeignKeyConstraint(["graph_merge_version_id", "target_merged_node_key"], ["graph_merge_nodes.graph_merge_version_id", "graph_merge_nodes.merged_node_key"], name="fk_graph_merge_edges_target_node"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    graph_merge_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    source_merged_node_key: Mapped[str] = mapped_column(Text, nullable=False)
+    target_merged_node_key: Mapped[str] = mapped_column(Text, nullable=False)
+    edge_type: Mapped[str] = mapped_column(Text, nullable=False)
+    weight: Mapped[float] = mapped_column(nullable=False, default=1.0)
+    origin_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+
+
+class GraphMergeReconcileCandidate(Base):
+    __tablename__ = "graph_merge_reconcile_candidates"
+    __table_args__ = (
+        UniqueConstraint("graph_merge_version_id", "candidate_key", name="uq_graph_merge_candidates_version_key"),
+        ForeignKeyConstraint(["graph_merge_version_id", "workspace_id", "project_id"], ["graph_merge_versions.id", "graph_merge_versions.workspace_id", "graph_merge_versions.project_id"], name="fk_graph_merge_candidates_version_scope"),
+        CheckConstraint("candidate_type IN ('same_path', 'same_label', 'same_symbol')", name="ck_graph_merge_candidates_type"),
+        CheckConstraint("status IN ('open', 'accepted', 'rejected')", name="ck_graph_merge_candidates_status"),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_graph_merge_candidates_confidence"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    graph_merge_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    candidate_key: Mapped[str] = mapped_column(Text, nullable=False)
+    candidate_type: Mapped[str] = mapped_column(Text, nullable=False)
+    left_origin_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    right_origin_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    confidence: Mapped[float] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="open")
+    review_reason: Mapped[str | None] = mapped_column(Text)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class QueryRun(Base):
