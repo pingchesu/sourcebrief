@@ -10,10 +10,20 @@ function headers(settings: PlatformSettings, init?: RequestInit): Record<string,
   return next;
 }
 
+function apiErrorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') {
+    const record = detail as Record<string, unknown>;
+    if (typeof record.message === 'string') return record.message;
+    return JSON.stringify(record);
+  }
+  return fallback;
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
   const body = text ? JSON.parse(text) : null;
-  if (!response.ok) throw new ApiError(response.status, body?.detail ? String(body.detail) : text || response.statusText);
+  if (!response.ok) throw new ApiError(response.status, apiErrorMessage(body?.detail, text || response.statusText));
   return body as T;
 }
 

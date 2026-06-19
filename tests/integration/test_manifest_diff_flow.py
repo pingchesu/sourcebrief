@@ -268,6 +268,178 @@ def test_section_absence_hash_fallback_is_path_scoped(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_resource_map_compile_review_and_scope(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "resource-map")
+    workspace_id, project_id = scope.split(":")
+
+    upload = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        "Resource Map bundle",
+        {
+            "README.md": b"# Overview\nThis repo ships the compiler.\n# Operations\nRun tests before release.",
+            "docs/runbook.md": b"# Runbook\nRestart workers only after queue drain.",
+        },
+    )
+    resource_id = upload["resource"]["id"]
+
+    compiled = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+    )
+    assert compiled.status_code == 200, compiled.text
+    artifact = compiled.json()
+    assert artifact["artifact_type"] == "resource_map"
+    assert artifact["status"] == "draft"
+    assert artifact["coverage_json"]["source_count"] == 2
+    assert artifact["coverage_json"]["citation_count"] >= 3
+    assert artifact["sources"]
+    assert artifact["citations"]
+    assert {source["normalized_path"] for source in artifact["sources"]} == {"README.md", "docs/runbook.md"}
+
+    listed = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts",
+        headers=auth_headers(token),
+        params={"artifact_type": "resource_map"},
+    )
+    assert listed.status_code == 200, listed.text
+    assert listed.json()[0]["id"] == artifact["id"]
+    assert listed.json()[0]["sources"] == []
+
+    fetched = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact['id']}",
+        headers=auth_headers(token),
+    )
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["artifact_hash"] == artifact["artifact_hash"]
+
+    idempotent = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+    )
+    assert idempotent.status_code == 200, idempotent.text
+    assert idempotent.json()["id"] == artifact["id"]
+
+    read_token = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        headers=auth_headers(token),
+        json={
+            "name": "Resource Map read token",
+            "scopes": ["resource:read"],
+            "allowed_project_ids": [project_id],
+            "allowed_resource_ids": [resource_id],
+        },
+    )
+    assert read_token.status_code == 201, read_token.text
+    read_headers = auth_headers(read_token.json()["token"])
+    scoped_list = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts",
+        headers=read_headers,
+    )
+    assert scoped_list.status_code == 200, scoped_list.text
+    denied_compile = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=read_headers,
+    )
+    assert denied_compile.status_code == 403
+
+    viewer_email = f"viewer-{int(time.time() * 1000)}@contextsmith.local"
+    viewer_password = "viewer-password-123"
+    viewer = client.post(
+        f"/workspaces/{workspace_id}/members",
+        headers=auth_headers(token),
+        json={"email": viewer_email, "display_name": "Viewer", "password": viewer_password, "role": "viewer"},
+    )
+    assert viewer.status_code == 201, viewer.text
+    viewer_login = client.post("/auth/login", json={"email": viewer_email, "password": viewer_password})
+    assert viewer_login.status_code == 200, viewer_login.text
+    viewer_headers = auth_headers(viewer_login.json()["session_token"])
+    viewer_approve = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact['id']}/approve",
+        headers=viewer_headers,
+        json={"acknowledge_warnings": True},
+    )
+    assert viewer_approve.status_code == 403
+    viewer_reject = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact['id']}/reject",
+        headers=viewer_headers,
+        json={"reason": "Viewer should not be allowed."},
+    )
+    assert viewer_reject.status_code == 403
+
+    admin_reject = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact['id']}/reject",
+        headers=auth_headers(token),
+        json={"reason": "Exercise force recompile after rejection."},
+    )
+    assert admin_reject.status_code == 200, admin_reject.text
+    assert admin_reject.json()["status"] == "rejected"
+    force_after_reject = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+        params={"force": "true"},
+    )
+    assert force_after_reject.status_code == 200, force_after_reject.text
+    assert force_after_reject.json()["status"] == "draft"
+    assert force_after_reject.json()["id"] != artifact["id"]
+    artifact = force_after_reject.json()
+
+    approved = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact['id']}/approve",
+        headers=auth_headers(token),
+        json={"acknowledge_warnings": True, "comment": "Looks good."},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "approved"
+
+    approved_again = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+    )
+    assert approved_again.status_code == 200, approved_again.text
+    assert approved_again.json()["id"] == artifact["id"]
+    assert approved_again.json()["status"] == "approved"
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_resource_map_missing_snapshot_sections_fails_idempotently(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "resource-map-corrupt")
+    workspace_id, project_id = scope.split(":")
+    upload = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        "Corrupt Resource Map bundle",
+        {"README.md": b"# Overview\nThis section will be removed from snapshot_sections."},
+    )
+    resource_id = upload["resource"]["id"]
+
+    with get_engine().begin() as conn:
+        conn.execute(text("DELETE FROM snapshot_sections WHERE version_resource_id = :resource_id"), {"resource_id": resource_id})
+
+    first = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+    )
+    assert first.status_code == 409, first.text
+    second = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+    )
+    assert second.status_code == 409, second.text
+    assert "snapshot sections" in str(second.json()["detail"]).lower() or "sections" in str(second.json()["detail"]).lower()
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_manifest_diff_with_one_version_returns_conflict(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
     monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))

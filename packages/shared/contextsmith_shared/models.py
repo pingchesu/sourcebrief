@@ -648,6 +648,18 @@ class SnapshotSection(Base):
     __tablename__ = "snapshot_sections"
     __table_args__ = (
         UniqueConstraint("source_snapshot_id", "resource_manifest_file_id", "ordinal", name="uq_snapshot_sections_snapshot_file_ordinal"),
+        UniqueConstraint(
+            "id",
+            "workspace_id",
+            "project_id",
+            "version_resource_id",
+            "section_family_resource_id",
+            "source_snapshot_id",
+            "resource_manifest_id",
+            "resource_manifest_file_id",
+            "normalized_path",
+            name="uq_snapshot_sections_id_b0_scope",
+        ),
         ForeignKeyConstraint(
             ["version_resource_id", "workspace_id", "project_id"],
             ["resources.id", "resources.workspace_id", "resources.project_id"],
@@ -706,4 +718,220 @@ class SnapshotSection(Base):
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     reused_from_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("source_snapshots.id"))
     reuse_status: Mapped[str] = mapped_column(Text, nullable=False, default="extracted")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContextArtifact(Base):
+    __tablename__ = "context_artifacts"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "workspace_id",
+            "project_id",
+            "resource_id",
+            "source_snapshot_id",
+            "resource_manifest_id",
+            name="uq_context_artifacts_id_scope",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "project_id",
+            "resource_id",
+            "source_snapshot_id",
+            "artifact_type",
+            "artifact_hash",
+            "artifact_revision",
+            name="uq_context_artifacts_hash_revision",
+        ),
+        ForeignKeyConstraint(
+            ["resource_id", "workspace_id", "project_id"],
+            ["resources.id", "resources.workspace_id", "resources.project_id"],
+            name="fk_context_artifacts_resource_scope",
+        ),
+        ForeignKeyConstraint(
+            ["source_snapshot_id", "workspace_id", "project_id", "resource_id"],
+            ["source_snapshots.id", "source_snapshots.workspace_id", "source_snapshots.project_id", "source_snapshots.resource_id"],
+            name="fk_context_artifacts_snapshot_scope",
+        ),
+        ForeignKeyConstraint(
+            ["resource_manifest_id", "workspace_id", "project_id", "resource_id", "source_snapshot_id"],
+            [
+                "resource_manifests.id",
+                "resource_manifests.workspace_id",
+                "resource_manifests.project_id",
+                "resource_manifests.resource_id",
+                "resource_manifests.source_snapshot_id",
+            ],
+            name="fk_context_artifacts_manifest_scope",
+        ),
+        CheckConstraint("status IN ('draft', 'approved', 'rejected', 'failed')", name="ck_context_artifacts_status"),
+        CheckConstraint("artifact_revision >= 1", name="ck_context_artifacts_revision_positive"),
+        CheckConstraint("artifact_hash LIKE 'sha256:%' AND length(artifact_hash) = 71", name="ck_context_artifacts_hash_format"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    resource_manifest_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resource_manifests.id"), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(Text, nullable=False)
+    artifact_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    artifact_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    content_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    coverage_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    validation_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContextArtifactSource(Base):
+    __tablename__ = "context_artifact_sources"
+    __table_args__ = (
+        UniqueConstraint("context_artifact_id", "normalized_path", name="uq_context_artifact_sources_artifact_path"),
+        UniqueConstraint(
+            "id",
+            "workspace_id",
+            "project_id",
+            "context_artifact_id",
+            "resource_manifest_file_id",
+            "resource_id",
+            "source_snapshot_id",
+            "resource_manifest_id",
+            "normalized_path",
+            name="uq_context_artifact_sources_id_scope",
+        ),
+        ForeignKeyConstraint(
+            ["context_artifact_id", "workspace_id", "project_id", "resource_id", "source_snapshot_id", "resource_manifest_id"],
+            [
+                "context_artifacts.id",
+                "context_artifacts.workspace_id",
+                "context_artifacts.project_id",
+                "context_artifacts.resource_id",
+                "context_artifacts.source_snapshot_id",
+                "context_artifacts.resource_manifest_id",
+            ],
+            name="fk_context_artifact_sources_artifact_scope",
+        ),
+        ForeignKeyConstraint(
+            ["resource_manifest_file_id", "workspace_id", "project_id", "resource_id", "resource_manifest_id"],
+            [
+                "resource_manifest_files.id",
+                "resource_manifest_files.workspace_id",
+                "resource_manifest_files.project_id",
+                "resource_manifest_files.resource_id",
+                "resource_manifest_files.resource_manifest_id",
+            ],
+            name="fk_context_artifact_sources_manifest_file_scope",
+        ),
+        CheckConstraint("section_count >= 0", name="ck_context_artifact_sources_section_count_nonnegative"),
+        CheckConstraint(
+            "coverage_status IN ('covered', 'warning', 'empty', 'unsupported', 'failed', 'skipped')",
+            name="ck_context_artifact_sources_coverage_status",
+        ),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    context_artifact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("context_artifacts.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    resource_manifest_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resource_manifests.id"), nullable=False)
+    resource_manifest_file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resource_manifest_files.id"), nullable=False)
+    normalized_path: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    section_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    coverage_status: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContextArtifactCitation(Base):
+    __tablename__ = "context_artifact_citations"
+    __table_args__ = (
+        UniqueConstraint("context_artifact_id", "snapshot_section_id", name="uq_context_artifact_citations_artifact_snapshot_section"),
+        ForeignKeyConstraint(
+            [
+                "snapshot_section_id",
+                "workspace_id",
+                "project_id",
+                "resource_id",
+                "section_family_resource_id",
+                "source_snapshot_id",
+                "resource_manifest_id",
+                "resource_manifest_file_id",
+                "normalized_path",
+            ],
+            [
+                "snapshot_sections.id",
+                "snapshot_sections.workspace_id",
+                "snapshot_sections.project_id",
+                "snapshot_sections.version_resource_id",
+                "snapshot_sections.section_family_resource_id",
+                "snapshot_sections.source_snapshot_id",
+                "snapshot_sections.resource_manifest_id",
+                "snapshot_sections.resource_manifest_file_id",
+                "snapshot_sections.normalized_path",
+            ],
+            name="fk_context_artifact_citations_snapshot_section_scope",
+        ),
+        ForeignKeyConstraint(
+            ["section_id", "workspace_id", "project_id", "section_family_resource_id"],
+            ["sections.id", "sections.workspace_id", "sections.project_id", "sections.section_family_resource_id"],
+            name="fk_context_artifact_citations_section_scope",
+        ),
+        ForeignKeyConstraint(
+            [
+                "context_artifact_source_id",
+                "workspace_id",
+                "project_id",
+                "context_artifact_id",
+                "resource_manifest_file_id",
+                "resource_id",
+                "source_snapshot_id",
+                "resource_manifest_id",
+                "normalized_path",
+            ],
+            [
+                "context_artifact_sources.id",
+                "context_artifact_sources.workspace_id",
+                "context_artifact_sources.project_id",
+                "context_artifact_sources.context_artifact_id",
+                "context_artifact_sources.resource_manifest_file_id",
+                "context_artifact_sources.resource_id",
+                "context_artifact_sources.source_snapshot_id",
+                "context_artifact_sources.resource_manifest_id",
+                "context_artifact_sources.normalized_path",
+            ],
+            name="fk_context_artifact_citations_source_scope",
+        ),
+        CheckConstraint("ordinal >= 0", name="ck_context_artifact_citations_ordinal_nonnegative"),
+        CheckConstraint("content_hash LIKE 'sha256:%' AND length(content_hash) = 71", name="ck_context_artifact_citations_content_hash_format"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    context_artifact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("context_artifacts.id"), nullable=False)
+    context_artifact_source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("context_artifact_sources.id"), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    section_family_resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_snapshots.id"), nullable=False)
+    resource_manifest_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resource_manifests.id"), nullable=False)
+    resource_manifest_file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resource_manifest_files.id"), nullable=False)
+    section_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sections.id"), nullable=False)
+    snapshot_section_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("snapshot_sections.id"), nullable=False)
+    normalized_path: Mapped[str] = mapped_column(Text, nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    title: Mapped[str | None] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    line_start: Mapped[int | None] = mapped_column(Integer)
+    line_end: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

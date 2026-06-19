@@ -6,7 +6,7 @@ import { AgentContextPreview } from '../../components/AgentContextPreview';
 import { usePlatform } from '../../lib/platform-context';
 import { ApiError, fmt, short } from '../../lib/api';
 import { freshnessLabel, isActive, isIndexFailed, isVisible, lifecycleStages, readiness } from '../../lib/lifecycle';
-import type { AgentContextResponse, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, SectionImpact, SnapshotSections, ReviewItem } from '../../lib/types';
+import type { AgentContextResponse, ContextArtifact, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, SectionImpact, SnapshotSections, ReviewItem } from '../../lib/types';
 
 type ResourceType = 'git' | 'url' | 'markdown' | 'upload' | 'folder_bundle';
 type GitDraft = { branch: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
@@ -41,6 +41,10 @@ function sizeDelta(base: number | null, head: number | null) {
   if (base != null && head == null) return `-${base.toLocaleString()}`;
   const delta = (head ?? 0) - (base ?? 0);
   return delta > 0 ? `+${delta.toLocaleString()}` : delta.toLocaleString();
+}
+function numberMetric(record: Record<string, unknown>, key: string, fallback: number) {
+  const value = record[key];
+  return typeof value === 'number' ? value : fallback;
 }
 
 // Attention-first ordering: failed → stale → not indexed → needs review → rest, then by name.
@@ -107,6 +111,14 @@ export default function SourcesPage() {
   const [sectionImpact, setSectionImpact] = useState<SectionImpact | null>(null);
   const [sectionImpactError, setSectionImpactError] = useState<string | null>(null);
   const [snapshotSectionsLimit, setSnapshotSectionsLimit] = useState(8);
+  const [contextArtifacts, setContextArtifacts] = useState<ContextArtifact[]>([]);
+  const [selectedArtifact, setSelectedArtifact] = useState<ContextArtifact | null>(null);
+  const [artifactError, setArtifactError] = useState<string | null>(null);
+  const [artifactBusy, setArtifactBusy] = useState(false);
+  const [artifactSourceLimit, setArtifactSourceLimit] = useState(8);
+  const [artifactCitationLimit, setArtifactCitationLimit] = useState(8);
+  const [ackArtifactWarnings, setAckArtifactWarnings] = useState(false);
+  const [rejectArtifactReason, setRejectArtifactReason] = useState('');
 
   // Git environment state.
   const [gitEnv, setGitEnv] = useState<GitResourceEnv | null>(null);
@@ -122,7 +134,7 @@ export default function SourcesPage() {
   const isFolderBundle = selectedResource?.type === 'folder_bundle';
 
   // Reset detail-scoped state when selection changes.
-  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); setSnapshotSections(null); setSnapshotSectionsError(null); setSnapshotSectionsLimit(8); setSectionImpact(null); setSectionImpactError(null); }, [selectedResourceId]);
+  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); setSnapshotSections(null); setSnapshotSectionsError(null); setSnapshotSectionsLimit(8); setSectionImpact(null); setSectionImpactError(null); setContextArtifacts([]); setSelectedArtifact(null); setArtifactError(null); setArtifactBusy(false); setArtifactSourceLimit(8); setArtifactCitationLimit(8); setAckArtifactWarnings(false); setRejectArtifactReason(''); }, [selectedResourceId]);
 
   // Load git env for the selected git source.
   useEffect(() => {
@@ -174,6 +186,30 @@ export default function SourcesPage() {
       .catch((err) => { if (!cancelled) { setSectionImpact(null); setSectionImpactError(String(err)); } });
     return () => { cancelled = true; };
   }, [client, selectedResource, settings.workspaceId, settings.projectId, snapshotSectionsLimit]);
+
+  useEffect(() => {
+    if (!selectedResource || selectedResource.type !== 'folder_bundle' || !selectedResource.current_snapshot_id) { setContextArtifacts([]); setSelectedArtifact(null); return; }
+    let cancelled = false;
+    setArtifactError(null);
+    client<ContextArtifact[]>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources/${selectedResource.id}/context-artifacts?artifact_type=resource_map`)
+      .then((rows) => {
+        if (cancelled) return;
+        setContextArtifacts(rows);
+        const latest = rows[0];
+        if (!latest) { setSelectedArtifact(null); return; }
+        return client<ContextArtifact>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-artifacts/${latest.id}`)
+          .then((artifact) => { if (!cancelled) setSelectedArtifact(artifact); });
+      })
+      .catch((err) => { if (!cancelled) { setContextArtifacts([]); setSelectedArtifact(null); setArtifactError(String(err)); } });
+    return () => { cancelled = true; };
+  }, [client, selectedResource, settings.workspaceId, settings.projectId]);
+
+  useEffect(() => {
+    setAckArtifactWarnings(false);
+    setRejectArtifactReason('');
+    setArtifactSourceLimit(8);
+    setArtifactCitationLimit(8);
+  }, [selectedArtifact?.id]);
 
   function changeType(next: ResourceType) {
     setType(next);
@@ -276,6 +312,53 @@ export default function SourcesPage() {
       }));
     } catch (err) { setPreviewError(String(err)); }
     finally { setPreviewBusy(false); }
+  }
+
+  async function refreshArtifacts(resourceId: string) {
+    const rows = await client<ContextArtifact[]>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources/${resourceId}/context-artifacts?artifact_type=resource_map`);
+    setContextArtifacts(rows);
+    if (rows[0]) setSelectedArtifact(await client<ContextArtifact>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-artifacts/${rows[0].id}`));
+    else setSelectedArtifact(null);
+  }
+
+  async function compileResourceMap(force = false) {
+    if (!selectedResource) return;
+    setArtifactBusy(true); setArtifactError(null);
+    try {
+      const artifact = await client<ContextArtifact>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources/${selectedResource.id}/context-artifacts/resource-map${force ? '?force=true' : ''}`, { method: 'POST' });
+      setSelectedArtifact(artifact);
+      await refreshArtifacts(selectedResource.id);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && selectedResource) {
+        await refreshArtifacts(selectedResource.id).catch(() => undefined);
+      }
+      setArtifactError(String(err));
+    }
+    finally { setArtifactBusy(false); }
+  }
+
+  async function approveArtifact() {
+    if (!selectedArtifact) return;
+    setArtifactBusy(true); setArtifactError(null);
+    try {
+      const artifact = await client<ContextArtifact>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-artifacts/${selectedArtifact.id}/approve`, { method: 'POST', body: JSON.stringify({ acknowledge_warnings: ackArtifactWarnings }) });
+      setSelectedArtifact(artifact);
+      if (selectedResource) await refreshArtifacts(selectedResource.id);
+    } catch (err) { setArtifactError(String(err)); }
+    finally { setArtifactBusy(false); }
+  }
+
+  async function rejectArtifact() {
+    if (!selectedArtifact) return;
+    const reason = rejectArtifactReason.trim();
+    if (!reason) { setArtifactError('Enter a rejection reason before rejecting this artifact.'); return; }
+    setArtifactBusy(true); setArtifactError(null);
+    try {
+      const artifact = await client<ContextArtifact>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-artifacts/${selectedArtifact.id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+      setSelectedArtifact(artifact);
+      if (selectedResource) await refreshArtifacts(selectedResource.id);
+    } catch (err) { setArtifactError(String(err)); }
+    finally { setArtifactBusy(false); }
   }
 
   async function saveGitEnv(event: FormEvent) {
@@ -435,6 +518,39 @@ export default function SourcesPage() {
                 <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>Path</th><th>Title</th><th>Reuse</th><th>Preview</th></tr></thead><tbody>{snapshotSections.rows.map((row) => <tr key={row.id}><td><span className="code">{row.normalized_path}</span><div className="muted">L{row.start_line ?? '—'}-{row.end_line ?? '—'}</div></td><td>{row.title || <span className="muted">Untitled</span>}</td><td><StatusChip value={row.reuse_status} /></td><td>{row.content_preview}</td></tr>)}</tbody></table></div>
                 {snapshotSections.next_cursor ? <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => setSnapshotSectionsLimit((value) => value + 25)}>Show more sections</button> : null}
               </> : snapshotSectionsError ? <div className="notice error" style={{ marginTop: 8 }}>Snapshot sections unavailable: {snapshotSectionsError}</div> : <div className="muted" style={{ marginTop: 8 }}>Sections will appear after indexing.</div>}
+            </div> : null}
+            {selectedResource.type === 'folder_bundle' ? <div className="notice">
+              <div className="section-card-head"><div><strong>Resource Map artifact</strong><div className="muted section-card-desc">Deterministic source map for agent/runtime review. Compile creates a draft; approval is explicit.</div></div><button className="btn secondary" disabled={artifactBusy || !manifest} onClick={() => void compileResourceMap(selectedArtifact?.status === 'failed')}>{artifactBusy ? 'Working…' : selectedArtifact?.status === 'failed' ? 'Retry compile' : selectedArtifact ? 'Recompile map' : 'Compile map'}</button></div>
+              {artifactError ? <div className="notice error" style={{ marginTop: 8 }}>{artifactError}</div> : null}
+              {selectedArtifact ? <>
+                <div className="grid four" style={{ marginTop: 8 }}>
+                  <Metric label="Status" value={<StatusChip value={selectedArtifact.status} />} />
+                  <Metric label="Revision" value={selectedArtifact.artifact_revision} />
+                  <Metric label="Sources" value={numberMetric(selectedArtifact.coverage_json, 'source_count', selectedArtifact.sources.length)} />
+                  <Metric label="Citations" value={numberMetric(selectedArtifact.coverage_json, 'citation_count', selectedArtifact.citations.length)} />
+                </div>
+                <div className="grid four" style={{ marginTop: 8 }}>
+                  <Metric label="Hash" value={<span className="code">{short(selectedArtifact.artifact_hash)}</span>} />
+                  <Metric label="Compiled" value={fmt(selectedArtifact.created_at)} />
+                  <Metric label="Validation" value={selectedArtifact.validation_json?.ok === false ? 'failed' : 'ok'} />
+                  <Metric label="Warnings" value={selectedArtifact.validation_json?.warnings?.length ?? 0} />
+                </div>
+                {selectedArtifact.error_message ? <div className="notice error" style={{ marginTop: 8 }}>{selectedArtifact.error_message}</div> : null}
+                {selectedArtifact.validation_json?.errors?.length ? <div className="notice error" style={{ marginTop: 8 }}>{selectedArtifact.validation_json.errors.map((error, index) => <div key={index}>{String(error.message ?? 'Validation error')}</div>)}</div> : null}
+                <div className="muted" style={{ marginTop: 6 }}>{selectedArtifact.summary || 'Resource Map is ready for review.'}</div>
+                {selectedArtifact.validation_json?.warnings?.length ? <label className={`scope-pill ${ackArtifactWarnings ? 'active' : ''}`} style={{ marginTop: 8 }}><input type="checkbox" checked={ackArtifactWarnings} onChange={(event) => setAckArtifactWarnings(event.target.checked)} /> I reviewed and acknowledge {selectedArtifact.validation_json.warnings.length} Resource Map warning(s)</label> : null}
+                <Field label="Reject reason"><input className="input" value={rejectArtifactReason} onChange={(event) => setRejectArtifactReason(event.target.value)} placeholder="Required only when rejecting" /></Field>
+                <div className="toolbar" style={{ marginTop: 8 }}>
+                  <button className="btn" disabled={artifactBusy || selectedArtifact.status !== 'draft' || Boolean(selectedArtifact.validation_json?.warnings?.length && !ackArtifactWarnings)} onClick={() => void approveArtifact()}>Approve artifact</button>
+                  <button className="btn secondary" disabled={artifactBusy || selectedArtifact.status !== 'draft'} onClick={() => void rejectArtifact()}>Reject</button>
+                </div>
+                <div className="muted" style={{ marginTop: 8 }}>Showing {Math.min(artifactSourceLimit, selectedArtifact.sources.length)} of {selectedArtifact.sources.length} source rows.</div>
+                <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>Path</th><th>Coverage</th><th>Sections</th><th>Status</th></tr></thead><tbody>{selectedArtifact.sources.slice(0, artifactSourceLimit).map((source) => <tr key={source.id}><td><span className="code">{source.normalized_path}</span></td><td>{source.coverage_status}</td><td>{source.section_count}</td><td><StatusChip value={source.status} /></td></tr>)}</tbody></table></div>
+                {artifactSourceLimit < selectedArtifact.sources.length ? <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => setArtifactSourceLimit((value) => value + 25)}>Show more source rows</button> : null}
+                <div className="muted" style={{ marginTop: 8 }}>Showing {Math.min(artifactCitationLimit, selectedArtifact.citations.length)} of {selectedArtifact.citations.length} citation rows.</div>
+                <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>Path</th><th>Title</th><th>Lines</th><th>Hash</th></tr></thead><tbody>{selectedArtifact.citations.slice(0, artifactCitationLimit).map((citation) => <tr key={citation.id}><td><span className="code">{citation.normalized_path}</span></td><td>{citation.title || <span className="muted">Untitled</span>}</td><td>{citation.line_start ?? '—'}-{citation.line_end ?? '—'}</td><td><span className="code">{short(citation.content_hash)}</span></td></tr>)}</tbody></table></div>
+                {artifactCitationLimit < selectedArtifact.citations.length ? <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => setArtifactCitationLimit((value) => value + 25)}>Show more citation rows</button> : null}
+              </> : <div className="muted" style={{ marginTop: 8 }}>{contextArtifacts.length ? 'Select a Resource Map artifact to inspect it.' : 'No Resource Map artifact compiled yet.'}</div>}
             </div> : null}
             <div><div className="label">Last refresh</div><div className="muted">{fmt(selectedResource.last_refresh_finished_at)}</div></div>
             {actionError ? <div className="notice error">{actionError}</div> : null}

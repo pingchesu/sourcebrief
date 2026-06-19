@@ -522,6 +522,56 @@ class SectionImpactRead(BaseModel):
     changed_paths_with_absent_sections: list[dict] = Field(default_factory=list)
 
 
+class ContextArtifactSourceRead(BaseModel):
+    id: UUID
+    normalized_path: str
+    status: str
+    coverage_status: str
+    section_count: int
+    metadata_json: dict = Field(default_factory=dict)
+
+
+class ContextArtifactCitationRead(BaseModel):
+    id: UUID
+    normalized_path: str
+    ordinal: int
+    title: str | None = None
+    content_hash: str
+    line_start: int | None = None
+    line_end: int | None = None
+
+
+class ContextArtifactRead(BaseModel):
+    id: UUID
+    resource_id: UUID
+    source_snapshot_id: UUID
+    resource_manifest_id: UUID
+    artifact_type: str
+    artifact_revision: int
+    status: str
+    artifact_hash: str
+    title: str
+    summary: str | None = None
+    coverage_json: dict = Field(default_factory=dict)
+    validation_json: dict = Field(default_factory=dict)
+    error_message: str | None = None
+    review_comment: str | None = None
+    approved_at: datetime | None = None
+    rejected_at: datetime | None = None
+    created_at: datetime
+    sources: list[ContextArtifactSourceRead] = Field(default_factory=list)
+    citations: list[ContextArtifactCitationRead] = Field(default_factory=list)
+
+
+class ArtifactApprovalRequest(BaseModel):
+    comment: str | None = None
+    acknowledge_warnings: bool = False
+
+
+class ArtifactRejectRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
 class ManifestDiffRowRead(BaseModel):
     normalized_path: str
     change_type: str
