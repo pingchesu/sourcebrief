@@ -193,6 +193,11 @@ from contextsmith_api.schemas import (
     SearchRequest,
     SearchResponse,
     SectionImpactRead,
+    SkillExportFileRead,
+    SkillExportGenerateRequest,
+    SkillExportRead,
+    SkillExportRejectRequest,
+    SkillExportReviewRequest,
     SnapshotRead,
     SnapshotSectionRead,
     SnapshotSectionsRead,
@@ -202,6 +207,15 @@ from contextsmith_api.schemas import (
     WorkspaceMemberRead,
     WorkspaceMemberUpdate,
     WorkspaceRead,
+)
+from contextsmith_api.skill_exports import (
+    SKILL_EXPORT_STATUS_APPROVED,
+    SKILL_EXPORT_STATUS_DRAFT,
+    SKILL_EXPORT_STATUS_FAILED,
+    SKILL_EXPORT_STATUS_INVALIDATED,
+    SKILL_EXPORT_STATUS_REJECTED,
+    compile_skill_export,
+    next_export_version,
 )
 from contextsmith_shared.agent_card_auditor import run_agent_card_auditor
 from contextsmith_shared.config import get_settings
@@ -238,6 +252,7 @@ from contextsmith_shared.models import (
     RetrievalEvalRun,
     RetrievalHit,
     Section,
+    SkillExport,
     SnapshotFile,
     SnapshotSection,
     SourceSnapshot,
@@ -1463,6 +1478,27 @@ def _purge_resource_artifacts(session: Session, resource: Resource) -> dict[str,
             detail={
                 "message": "Resource is covered by Context Pack versions. Invalidate those pack versions before hard purge.",
                 "context_packs": [dict(row) for row in pack_refs],
+            },
+        )
+    skill_export_refs = session.execute(
+        text(
+            """
+            SELECT se.pack_key, se.pack_version, se.export_version, se.status, se.package_hash
+            FROM skill_exports se
+            JOIN context_pack_resource_coverage cprc ON cprc.context_pack_version_id = se.context_pack_version_id
+            WHERE cprc.resource_id = :resource_id
+              AND se.files_json <> '[]'::jsonb
+            ORDER BY se.pack_key, se.pack_version, se.export_version
+            """
+        ),
+        params,
+    ).mappings().all()
+    if skill_export_refs:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Resource is referenced by generated skill exports with retained files. Invalidate/scrub those exports before hard purge.",
+                "skill_exports": [dict(row) for row in skill_export_refs],
             },
         )
     statements = [
@@ -3556,6 +3592,271 @@ def invalidate_context_pack_version(
     session.add(AuditEvent(workspace_id=workspace_id, actor_user_id=principal.user.id, actor_token_id=principal.token_id, action="context_pack.invalidate", target_type="context_pack_version", target_id=version.id, meta={"pack_key": version.pack_key, "version": version.version, "reason": payload.reason}))
     session.commit()
     return _pack_version_read(session, version)
+
+
+
+
+def _skill_export_file_read(file: dict[str, Any], include_content: bool = True) -> SkillExportFileRead:
+    return SkillExportFileRead(
+        path=str(file.get("path", "")),
+        kind=str(file.get("kind", "text")),
+        sha256=str(file.get("sha256", "")),
+        bytes=int(file.get("bytes", 0)),
+        content=str(file.get("content", "")) if include_content else None,
+    )
+
+
+def _skill_export_read(export: SkillExport, include_content: bool = True) -> SkillExportRead:
+    return SkillExportRead(
+        id=export.id,
+        context_pack_version_id=export.context_pack_version_id,
+        pack_key=export.pack_key,
+        pack_version=export.pack_version,
+        export_type=export.export_type,
+        export_version=export.export_version,
+        status=export.status,
+        title=export.title,
+        summary=export.summary,
+        package_hash=export.package_hash,
+        manifest_json=export.manifest_json,
+        files=[_skill_export_file_read(cast(dict[str, Any], file), include_content=include_content) for file in export.files_json],
+        validation_json=export.validation_json,
+        leak_scan_json=export.leak_scan_json,
+        approved_at=export.approved_at,
+        rejected_at=export.rejected_at,
+        invalidated_at=export.invalidated_at,
+        review_comment=export.review_comment,
+        created_at=export.created_at,
+    )
+
+
+def _resolve_skill_export(session: Session, workspace_id: UUID, project_id: UUID, export_id: UUID, *, for_update: bool = False) -> SkillExport:
+    stmt = select(SkillExport).where(SkillExport.id == export_id, SkillExport.workspace_id == workspace_id, SkillExport.project_id == project_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    export = session.scalar(stmt)
+    if export is None:
+        raise HTTPException(status_code=404, detail="skill export not found")
+    return export
+
+
+def _pack_for_export(session: Session, export: SkillExport) -> ContextPackVersion:
+    version = session.scalar(select(ContextPackVersion).where(ContextPackVersion.id == export.context_pack_version_id, ContextPackVersion.workspace_id == export.workspace_id, ContextPackVersion.project_id == export.project_id))
+    if version is None:
+        raise HTTPException(status_code=404, detail="context pack not found")
+    return version
+
+
+def _require_skill_export_read(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, export: SkillExport) -> ContextPackVersion:
+    version = _pack_for_export(session, export)
+    _require_pack_read(session, workspace_id, project_id, principal, version)
+    return version
+
+
+def _require_skill_export_review(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, export: SkillExport) -> ContextPackVersion:
+    _require_review_write(session, workspace_id, project_id, principal)
+    version = _pack_for_export(session, export)
+    if not _pack_resources_allowed(session, version, principal):
+        raise HTTPException(status_code=404, detail="skill export not found")
+    return version
+
+
+def _scrub_skill_export(export: SkillExport, reason: str) -> None:
+    export.files_json = []
+    export.manifest_json = {"scrubbed": True, "reason": reason, "pack_key": export.pack_key, "pack_version": export.pack_version, "package_hash": export.package_hash}
+
+
+@app.post("/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}/skill-exports", response_model=SkillExportRead)
+def generate_skill_export(
+    workspace_id: UUID,
+    project_id: UUID,
+    pack_key: str,
+    version_number: int,
+    payload: SkillExportGenerateRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> SkillExportRead:
+    _require_review_write(session, workspace_id, project_id, principal)
+    version = _resolve_pack_version(session, workspace_id, project_id, pack_key, version_number, for_update=True)
+    if version.status != PACK_STATUS_PUBLISHED:
+        raise HTTPException(status_code=422, detail="only published context pack versions can be exported")
+    if not _pack_resources_allowed(session, version, principal):
+        raise HTTPException(status_code=404, detail="context pack version not found")
+    compiled = compile_skill_export(session, version, title=payload.title, summary=payload.summary, export_type=payload.export_type)
+    existing = session.scalar(
+        select(SkillExport).where(
+            SkillExport.workspace_id == workspace_id,
+            SkillExport.project_id == project_id,
+            SkillExport.context_pack_version_id == version.id,
+            SkillExport.export_type == payload.export_type,
+            SkillExport.package_hash == compiled.package_hash,
+        )
+    )
+    if existing is not None:
+        return _skill_export_read(existing)
+    export = SkillExport(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        context_pack_version_id=version.id,
+        pack_key=version.pack_key,
+        pack_version=version.version,
+        export_type=payload.export_type,
+        export_version=next_export_version(session, version, payload.export_type),
+        status=compiled.status,
+        title=payload.title,
+        summary=payload.summary,
+        package_hash=compiled.package_hash,
+        manifest_json=compiled.manifest,
+        files_json=compiled.files,
+        validation_json=compiled.validation,
+        leak_scan_json=compiled.leak_scan,
+        created_by=principal.user.id,
+    )
+    session.add(export)
+    session.add(AuditEvent(workspace_id=workspace_id, actor_user_id=principal.user.id, actor_token_id=principal.token_id, action="skill_export.generate", target_type="skill_export", target_id=export.id, meta={"pack_key": version.pack_key, "pack_version": version.version, "status": compiled.status, "package_hash": compiled.package_hash}))
+    session.commit()
+    return _skill_export_read(export)
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}/skill-exports", response_model=list[SkillExportRead])
+def list_skill_exports(
+    workspace_id: UUID,
+    project_id: UUID,
+    pack_key: str,
+    version_number: int,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> list[SkillExportRead]:
+    version = _resolve_pack_version(session, workspace_id, project_id, pack_key, version_number)
+    _require_pack_read(session, workspace_id, project_id, principal, version)
+    exports = list(
+        session.scalars(
+            select(SkillExport)
+            .where(SkillExport.workspace_id == workspace_id, SkillExport.project_id == project_id, SkillExport.context_pack_version_id == version.id)
+            .order_by(SkillExport.export_version.desc())
+        )
+    )
+    return [_skill_export_read(export) for export in exports]
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}", response_model=SkillExportRead)
+def get_skill_export(
+    workspace_id: UUID,
+    project_id: UUID,
+    export_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> SkillExportRead:
+    export = _resolve_skill_export(session, workspace_id, project_id, export_id)
+    _require_skill_export_read(session, workspace_id, project_id, principal, export)
+    return _skill_export_read(export)
+
+
+@app.post("/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}/approve", response_model=SkillExportRead)
+def approve_skill_export(
+    workspace_id: UUID,
+    project_id: UUID,
+    export_id: UUID,
+    payload: SkillExportReviewRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> SkillExportRead:
+    export = _resolve_skill_export(session, workspace_id, project_id, export_id, for_update=True)
+    _require_skill_export_review(session, workspace_id, project_id, principal, export)
+    if export.status != SKILL_EXPORT_STATUS_DRAFT:
+        raise HTTPException(status_code=422, detail="only draft exports can be approved")
+    if not export.validation_json.get("ok") or not export.leak_scan_json.get("ok"):
+        raise HTTPException(status_code=422, detail="validation and leak scan must pass before approval")
+    export.status = SKILL_EXPORT_STATUS_APPROVED
+    export.approved_by = principal.user.id
+    export.approved_at = datetime.now(UTC)
+    export.review_comment = payload.comment
+    manifest = dict(export.manifest_json)
+    manifest["export_status"] = SKILL_EXPORT_STATUS_APPROVED
+    manifest["approval"] = {"approved_at": export.approved_at.isoformat(), "comment": payload.comment}
+    export.manifest_json = manifest
+    manifest_content = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    updated_files = []
+    for file in export.files_json:
+        record = dict(cast(dict[str, Any], file))
+        if record.get("path") == "manifest.json":
+            record["content"] = manifest_content
+            record["bytes"] = len(manifest_content.encode("utf-8"))
+            record["sha256"] = "sha256:" + hashlib.sha256(manifest_content.encode("utf-8")).hexdigest()
+        updated_files.append(record)
+    export.files_json = updated_files
+    session.add(AuditEvent(workspace_id=workspace_id, actor_user_id=principal.user.id, actor_token_id=principal.token_id, action="skill_export.approve", target_type="skill_export", target_id=export.id, meta={"previous_status": SKILL_EXPORT_STATUS_DRAFT, "new_status": export.status, "pack_key": export.pack_key, "pack_version": export.pack_version, "package_hash": export.package_hash}))
+    session.commit()
+    return _skill_export_read(export)
+
+
+@app.post("/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}/reject", response_model=SkillExportRead)
+def reject_skill_export(
+    workspace_id: UUID,
+    project_id: UUID,
+    export_id: UUID,
+    payload: SkillExportRejectRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> SkillExportRead:
+    export = _resolve_skill_export(session, workspace_id, project_id, export_id, for_update=True)
+    _require_skill_export_review(session, workspace_id, project_id, principal, export)
+    if export.status not in {SKILL_EXPORT_STATUS_DRAFT, SKILL_EXPORT_STATUS_FAILED}:
+        raise HTTPException(status_code=422, detail="only draft or failed exports can be rejected")
+    previous = export.status
+    export.status = SKILL_EXPORT_STATUS_REJECTED
+    export.rejected_by = principal.user.id
+    export.rejected_at = datetime.now(UTC)
+    export.review_comment = payload.reason
+    session.add(AuditEvent(workspace_id=workspace_id, actor_user_id=principal.user.id, actor_token_id=principal.token_id, action="skill_export.reject", target_type="skill_export", target_id=export.id, meta={"previous_status": previous, "new_status": export.status, "pack_key": export.pack_key, "pack_version": export.pack_version, "package_hash": export.package_hash, "reason": payload.reason}))
+    session.commit()
+    return _skill_export_read(export)
+
+
+@app.post("/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}/invalidate", response_model=SkillExportRead)
+def invalidate_skill_export(
+    workspace_id: UUID,
+    project_id: UUID,
+    export_id: UUID,
+    payload: SkillExportRejectRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> SkillExportRead:
+    export = _resolve_skill_export(session, workspace_id, project_id, export_id, for_update=True)
+    _require_skill_export_review(session, workspace_id, project_id, principal, export)
+    if export.status == SKILL_EXPORT_STATUS_INVALIDATED:
+        raise HTTPException(status_code=422, detail="skill export is already invalidated")
+    previous = export.status
+    export.status = SKILL_EXPORT_STATUS_INVALIDATED
+    export.invalidated_by = principal.user.id
+    export.invalidated_at = datetime.now(UTC)
+    export.review_comment = payload.reason
+    _scrub_skill_export(export, payload.reason)
+    session.add(AuditEvent(workspace_id=workspace_id, actor_user_id=principal.user.id, actor_token_id=principal.token_id, action="skill_export.invalidate", target_type="skill_export", target_id=export.id, meta={"previous_status": previous, "new_status": export.status, "pack_key": export.pack_key, "pack_version": export.pack_version, "package_hash": export.package_hash, "reason": payload.reason}))
+    session.commit()
+    return _skill_export_read(export)
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}/files/{file_path:path}")
+def download_skill_export_file(
+    workspace_id: UUID,
+    project_id: UUID,
+    export_id: UUID,
+    file_path: str,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> Response:
+    export = _resolve_skill_export(session, workspace_id, project_id, export_id)
+    _require_skill_export_read(session, workspace_id, project_id, principal, export)
+    if export.status != SKILL_EXPORT_STATUS_APPROVED:
+        raise HTTPException(status_code=403, detail="skill export must be approved before download")
+    if ".." in file_path or file_path.startswith("/"):
+        raise HTTPException(status_code=400, detail="invalid export file path")
+    file = next((cast(dict[str, Any], item) for item in export.files_json if str(cast(dict[str, Any], item).get("path")) == file_path), None)
+    if file is None:
+        raise HTTPException(status_code=404, detail="export file not found")
+    media_type = "application/json" if file_path.endswith(".json") else "text/plain"
+    return Response(content=str(file.get("content", "")), media_type=media_type)
 
 
 @app.post(

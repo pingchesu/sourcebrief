@@ -1038,3 +1038,44 @@ class ContextPackResourceCoverage(Base):
     artifact_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     citation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SkillExport(Base):
+    __tablename__ = "skill_exports"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", "project_id", name="uq_skill_exports_id_scope"),
+        UniqueConstraint("workspace_id", "project_id", "context_pack_version_id", "export_type", "package_hash", name="uq_skill_exports_pack_type_hash"),
+        UniqueConstraint("workspace_id", "project_id", "context_pack_version_id", "export_type", "export_version", name="uq_skill_exports_pack_type_version"),
+        Index("ix_skill_exports_pack_status", "workspace_id", "project_id", "context_pack_version_id", "status"),
+        ForeignKeyConstraint(["context_pack_version_id", "workspace_id", "project_id"], ["context_pack_versions.id", "context_pack_versions.workspace_id", "context_pack_versions.project_id"], name="fk_skill_exports_pack_version_scope"),
+        CheckConstraint("status IN ('draft', 'approved', 'rejected', 'invalidated', 'failed')", name="ck_skill_exports_status"),
+        CheckConstraint("export_type IN ('hermes_skill')", name="ck_skill_exports_type"),
+        CheckConstraint("export_version >= 1", name="ck_skill_exports_version_positive"),
+        CheckConstraint("package_hash LIKE 'sha256:%' AND length(package_hash) = 71", name="ck_skill_exports_hash_format"),
+    )
+    id = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    context_pack_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("context_pack_versions.id"), nullable=False)
+    pack_key: Mapped[str] = mapped_column(Text, nullable=False)
+    pack_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    export_type: Mapped[str] = mapped_column(Text, nullable=False, default="hermes_skill")
+    export_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    package_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    manifest_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    files_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    validation_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    leak_scan_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

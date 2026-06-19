@@ -607,3 +607,176 @@ def test_real_services_reachable_for_manifest_diff() -> None:
     require_real_services()
     Redis.from_url(get_settings().redis_url).ping()
     Queue("default", connection=Redis.from_url(get_settings().redis_url))
+
+
+@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    require_real_services()
+    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    client = TestClient(app)
+    token, scope = login_admin(client, monkeypatch, "skill-export")
+    workspace_id, project_id = scope.split(":")
+    upload = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        "C Skill Export bundle",
+        {
+            "README.md": b"# Skill Export Source\nRuntime adapters must not copy this corpus sentence verbatim into package files.",
+            "docs/runtime.md": b"# Runtime\nUse pinned ContextSmith context with citations.",
+        },
+    )
+    resource_id = upload["resource"]["id"]
+    artifact = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
+        headers=auth_headers(token),
+    )
+    assert artifact.status_code == 200, artifact.text
+    artifact_id = artifact.json()["id"]
+    approved_artifact = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}/approve",
+        headers=auth_headers(token),
+        json={"acknowledge_warnings": True, "comment": "Approve for C skill export."},
+    )
+    assert approved_artifact.status_code == 200, approved_artifact.text
+
+    draft_pack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions",
+        headers=auth_headers(token),
+        json={"title": "Default pack", "description": "C test", "artifact_ids": [artifact_id]},
+    )
+    assert draft_pack.status_code == 201, draft_pack.text
+    draft_export = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{draft_pack.json()['version']}/skill-exports",
+        headers=auth_headers(token),
+        json={"title": "Should fail for draft pack"},
+    )
+    assert draft_export.status_code == 422
+
+    published_pack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{draft_pack.json()['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish for C export."},
+    )
+    assert published_pack.status_code == 200, published_pack.text
+
+    leak_export = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{published_pack.json()['version']}/skill-exports",
+        headers=auth_headers(token),
+        json={"export_type": "hermes_skill", "title": "Leaky skill", "summary": "Runtime adapters must not copy this corpus sentence verbatim into package files."},
+    )
+    assert leak_export.status_code == 200, leak_export.text
+    assert leak_export.json()["status"] == "failed"
+    assert leak_export.json()["files"] == []
+    assert leak_export.json()["leak_scan_json"]["ok"] is False
+    leak_download = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{leak_export.json()['id']}/files/SKILL.md",
+        headers=auth_headers(token),
+    )
+    assert leak_download.status_code == 403
+
+    export = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{published_pack.json()['version']}/skill-exports",
+        headers=auth_headers(token),
+        json={"export_type": "hermes_skill", "title": "Default runtime skill", "summary": "Use pinned ContextSmith runtime context."},
+    )
+    assert export.status_code == 200, export.text
+    export_body = export.json()
+    assert export_body["status"] == "draft"
+    assert export_body["package_hash"].startswith("sha256:")
+    file_names = {file["path"] for file in export_body["files"]}
+    assert {"SKILL.md", "README.md", "manifest.json"}.issubset(file_names)
+    joined = "\n".join(file.get("content") or "" for file in export_body["files"])
+    assert "contextsmith.get_agent_context" in joined
+    assert "context_pack_key" in joined
+    assert "context_pack_version" in joined
+    assert "context_pack_snapshot_pin_enforced" in joined
+    assert "Bearer " not in joined
+    assert "cs_" not in joined
+    assert "/home/" not in joined
+    assert "Runtime adapters must not copy this corpus sentence" not in joined
+    assert export_body["validation_json"]["ok"] is True
+    assert export_body["leak_scan_json"]["ok"] is True
+
+    repeated = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{published_pack.json()['version']}/skill-exports",
+        headers=auth_headers(token),
+        json={"export_type": "hermes_skill", "title": "Default runtime skill", "summary": "Use pinned ContextSmith runtime context."},
+    )
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["id"] == export_body["id"]
+
+    draft_download = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}/files/SKILL.md",
+        headers=auth_headers(token),
+    )
+    assert draft_download.status_code == 403
+
+    denied_token = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        headers=auth_headers(token),
+        json={"name": "skill export denied", "scopes": ["resource:read", "review:write"], "allowed_project_ids": [project_id], "allowed_resource_ids": []},
+    )
+    assert denied_token.status_code == 201, denied_token.text
+    denied_get = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}",
+        headers=auth_headers(denied_token.json()["token"]),
+    )
+    assert denied_get.status_code == 404
+    denied_generate = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{published_pack.json()['version']}/skill-exports",
+        headers=auth_headers(denied_token.json()["token"]),
+        json={"title": "Denied"},
+    )
+    assert denied_generate.status_code == 404
+
+    approved_export = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}/approve",
+        headers=auth_headers(token),
+        json={"comment": "Approved for runtime use."},
+    )
+    assert approved_export.status_code == 200, approved_export.text
+    assert approved_export.json()["status"] == "approved"
+    downloaded = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}/files/SKILL.md",
+        headers=auth_headers(token),
+    )
+    assert downloaded.status_code == 200, downloaded.text
+    assert "Default runtime skill" in downloaded.text
+    manifest_download = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}/files/manifest.json",
+        headers=auth_headers(token),
+    )
+    assert manifest_download.status_code == 200, manifest_download.text
+    assert '"export_status":"approved"' in manifest_download.text
+    assert '"approval"' in manifest_download.text
+    traversal = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}/files/../SKILL.md",
+        headers=auth_headers(token),
+    )
+    assert traversal.status_code in {400, 404}
+
+    soft_delete = client.delete(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", headers=auth_headers(token))
+    assert soft_delete.status_code == 204, soft_delete.text
+    blocked_by_pack = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", headers=auth_headers(token))
+    assert blocked_by_pack.status_code == 409
+    invalidate_pack = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{published_pack.json()['version']}/invalidate",
+        headers=auth_headers(token),
+        json={"reason": "Allow skill export purge test."},
+    )
+    assert invalidate_pack.status_code == 200, invalidate_pack.text
+    blocked_by_export = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", headers=auth_headers(token))
+    assert blocked_by_export.status_code == 409
+    assert "skill export" in str(blocked_by_export.json()["detail"]).lower()
+    invalidated_export = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}/invalidate",
+        headers=auth_headers(token),
+        json={"reason": "Scrub export for purge."},
+    )
+    assert invalidated_export.status_code == 200, invalidated_export.text
+    assert invalidated_export.json()["status"] == "invalidated"
+    assert invalidated_export.json()["files"] == []
+    purged = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", headers=auth_headers(token))
+    assert purged.status_code == 200, purged.text

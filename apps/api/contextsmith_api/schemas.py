@@ -644,6 +644,50 @@ class ContextPackSummaryRead(BaseModel):
     versions: list[ContextPackVersionRead] = Field(default_factory=list)
 
 
+class SkillExportGenerateRequest(BaseModel):
+    export_type: str = Field(default="hermes_skill", pattern=r"^hermes_skill$")
+    title: str = Field(default="ContextSmith runtime skill", min_length=1)
+    summary: str | None = None
+
+
+class SkillExportReviewRequest(BaseModel):
+    comment: str = Field(min_length=1)
+
+
+class SkillExportRejectRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class SkillExportFileRead(BaseModel):
+    path: str
+    kind: str
+    sha256: str
+    bytes: int
+    content: str | None = None
+
+
+class SkillExportRead(BaseModel):
+    id: UUID
+    context_pack_version_id: UUID
+    pack_key: str
+    pack_version: int
+    export_type: str
+    export_version: int
+    status: str
+    title: str
+    summary: str | None = None
+    package_hash: str
+    manifest_json: dict = Field(default_factory=dict)
+    files: list[SkillExportFileRead] = Field(default_factory=list)
+    validation_json: dict = Field(default_factory=dict)
+    leak_scan_json: dict = Field(default_factory=dict)
+    approved_at: datetime | None = None
+    rejected_at: datetime | None = None
+    invalidated_at: datetime | None = None
+    review_comment: str | None = None
+    created_at: datetime
+
+
 class ManifestDiffRowRead(BaseModel):
     normalized_path: str
     change_type: str

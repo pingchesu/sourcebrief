@@ -4,9 +4,9 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { PageHeader, Card, SectionCard, Metric, Chip, StatusChip, EmptyState, Field, LifecyclePipeline, ReadinessBadge } from '../../components/ui';
 import { AgentContextPreview } from '../../components/AgentContextPreview';
 import { usePlatform } from '../../lib/platform-context';
-import { ApiError, fmt, short } from '../../lib/api';
+import { ApiError, apiFetchBlob, fmt, short } from '../../lib/api';
 import { freshnessLabel, isActive, isIndexFailed, isVisible, lifecycleStages, readiness } from '../../lib/lifecycle';
-import type { AgentContextResponse, ContextArtifact, ContextPackSummary, ContextPackVersion, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, SectionImpact, SnapshotSections, ReviewItem } from '../../lib/types';
+import type { AgentContextResponse, ContextArtifact, ContextPackSummary, ContextPackVersion, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, SectionImpact, SkillExport, SnapshotSections, ReviewItem } from '../../lib/types';
 
 type ResourceType = 'git' | 'url' | 'markdown' | 'upload' | 'folder_bundle';
 type GitDraft = { branch: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
@@ -125,6 +125,12 @@ export default function SourcesPage() {
   const [packBusy, setPackBusy] = useState(false);
   const [packComment, setPackComment] = useState('');
   const [packArtifactIds, setPackArtifactIds] = useState<string[]>([]);
+  const [skillExports, setSkillExports] = useState<SkillExport[]>([]);
+  const [selectedSkillExport, setSelectedSkillExport] = useState<SkillExport | null>(null);
+  const [skillExportError, setSkillExportError] = useState<string | null>(null);
+  const [skillExportBusy, setSkillExportBusy] = useState(false);
+  const [skillExportComment, setSkillExportComment] = useState('');
+  const [selectedSkillExportFilePath, setSelectedSkillExportFilePath] = useState<string | null>(null);
 
   // Git environment state.
   const [gitEnv, setGitEnv] = useState<GitResourceEnv | null>(null);
@@ -140,7 +146,7 @@ export default function SourcesPage() {
   const isFolderBundle = selectedResource?.type === 'folder_bundle';
 
   // Reset detail-scoped state when selection changes.
-  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); setSnapshotSections(null); setSnapshotSectionsError(null); setSnapshotSectionsLimit(8); setSectionImpact(null); setSectionImpactError(null); setContextArtifacts([]); setSelectedArtifact(null); setArtifactError(null); setArtifactBusy(false); setArtifactSourceLimit(8); setArtifactCitationLimit(8); setAckArtifactWarnings(false); setRejectArtifactReason(''); setSelectedPack(null); setPackError(null); setPackComment(''); setPackArtifactIds([]); }, [selectedResourceId]);
+  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); setSnapshotSections(null); setSnapshotSectionsError(null); setSnapshotSectionsLimit(8); setSectionImpact(null); setSectionImpactError(null); setContextArtifacts([]); setSelectedArtifact(null); setArtifactError(null); setArtifactBusy(false); setArtifactSourceLimit(8); setArtifactCitationLimit(8); setAckArtifactWarnings(false); setRejectArtifactReason(''); setSelectedPack(null); setPackError(null); setPackComment(''); setPackArtifactIds([]); setSkillExports([]); setSelectedSkillExport(null); setSkillExportError(null); setSkillExportComment(''); setSelectedSkillExportFilePath(null); }, [selectedResourceId]);
 
   // Load git env for the selected git source.
   useEffect(() => {
@@ -233,6 +239,26 @@ export default function SourcesPage() {
   }
 
   useEffect(() => { void refreshContextPacks(); }, [client, settings.workspaceId, settings.projectId]);
+
+  async function refreshSkillExports(pack = selectedPack) {
+    if (!pack) { setSkillExports([]); setSelectedSkillExport(null); return; }
+    try {
+      const exports = await client<SkillExport[]>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-packs/${pack.pack_key}/versions/${pack.version}/skill-exports`);
+      setSkillExports(exports);
+      setSelectedSkillExport((current) => current ? exports.find((item) => item.id === current.id) ?? exports[0] ?? null : exports[0] ?? null);
+    } catch (err) {
+      setSkillExportError(String(err));
+      setSkillExports([]);
+      setSelectedSkillExport(null);
+    }
+  }
+
+  useEffect(() => { void refreshSkillExports(selectedPack); }, [selectedPack?.id, client, settings.workspaceId, settings.projectId]);
+
+  useEffect(() => {
+    if (!selectedSkillExport) { setSelectedSkillExportFilePath(null); return; }
+    setSelectedSkillExportFilePath((current) => selectedSkillExport.files.some((file) => file.path === current) ? current : selectedSkillExport.files[0]?.path ?? null);
+  }, [selectedSkillExport?.id]);
 
   function changeType(next: ResourceType) {
     setType(next);
@@ -433,6 +459,70 @@ export default function SourcesPage() {
     finally { setPackBusy(false); }
   }
 
+  async function generateSkillExport() {
+    if (!selectedPack || selectedPack.status !== 'published') { setSkillExportError('Select a published Context Pack version first.'); return; }
+    setSkillExportBusy(true); setSkillExportError(null);
+    try {
+      const exported = await client<SkillExport>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-packs/${selectedPack.pack_key}/versions/${selectedPack.version}/skill-exports`, { method: 'POST', body: JSON.stringify({ export_type: 'hermes_skill', title: `${selectedPack.title} runtime skill`, summary: `Generated from ${selectedPack.pack_key} v${selectedPack.version}` }) });
+      setSelectedSkillExport(exported);
+      await refreshSkillExports(selectedPack);
+    } catch (err) { setSkillExportError(String(err)); }
+    finally { setSkillExportBusy(false); }
+  }
+
+  async function approveSkillExport() {
+    if (!selectedSkillExport) return;
+    const comment = skillExportComment.trim();
+    if (!comment) { setSkillExportError('Enter an approval comment first.'); return; }
+    setSkillExportBusy(true); setSkillExportError(null);
+    try {
+      const exported = await client<SkillExport>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/skill-exports/${selectedSkillExport.id}/approve`, { method: 'POST', body: JSON.stringify({ comment }) });
+      setSelectedSkillExport(exported); setSkillExportComment(''); await refreshSkillExports(selectedPack);
+    } catch (err) { setSkillExportError(String(err)); }
+    finally { setSkillExportBusy(false); }
+  }
+
+  async function rejectSkillExport() {
+    if (!selectedSkillExport) return;
+    const reason = skillExportComment.trim();
+    if (!reason) { setSkillExportError('Enter a rejection reason first.'); return; }
+    setSkillExportBusy(true); setSkillExportError(null);
+    try {
+      const exported = await client<SkillExport>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/skill-exports/${selectedSkillExport.id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+      setSelectedSkillExport(exported); setSkillExportComment(''); await refreshSkillExports(selectedPack);
+    } catch (err) { setSkillExportError(String(err)); }
+    finally { setSkillExportBusy(false); }
+  }
+
+  async function invalidateSkillExport() {
+    if (!selectedSkillExport) return;
+    const reason = skillExportComment.trim();
+    if (!reason) { setSkillExportError('Enter an invalidation/scrub reason first.'); return; }
+    setSkillExportBusy(true); setSkillExportError(null);
+    try {
+      const exported = await client<SkillExport>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/skill-exports/${selectedSkillExport.id}/invalidate`, { method: 'POST', body: JSON.stringify({ reason }) });
+      setSelectedSkillExport(exported); setSkillExportComment(''); await refreshSkillExports(selectedPack);
+    } catch (err) { setSkillExportError(String(err)); }
+    finally { setSkillExportBusy(false); }
+  }
+
+  async function downloadSkillExportFile(filePath: string) {
+    if (!selectedSkillExport) return;
+    setSkillExportBusy(true); setSkillExportError(null);
+    try {
+      const blob = await apiFetchBlob(settings, `/workspaces/${settings.workspaceId}/projects/${settings.projectId}/skill-exports/${selectedSkillExport.id}/files/${encodeURIComponent(filePath)}`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filePath.split('/').pop() || filePath;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) { setSkillExportError(String(err)); }
+    finally { setSkillExportBusy(false); }
+  }
+
   async function saveGitEnv(event: FormEvent) {
     event.preventDefault();
     if (!selectedResource) return;
@@ -473,6 +563,7 @@ export default function SourcesPage() {
       }
     : null;
   const selectedPackIssues = selectedPack ? [...(selectedPack.validation_json?.errors ?? []), ...(selectedPack.validation_json?.warnings ?? [])] : [];
+  const selectedSkillExportFile = selectedSkillExport?.files.find((file) => file.path === selectedSkillExportFilePath) ?? selectedSkillExport?.files[0] ?? null;
 
   return <main className="page">
     <PageHeader
@@ -514,6 +605,20 @@ export default function SourcesPage() {
       </div>
     </section>
 
+
+    <section className="card">
+      <div className="section-card-head"><div><h2 className="section-card-title">Skill Export</h2><p className="muted section-card-desc">Generate thin runtime skills from approved published Context Packs. Drafts are preview-only; download/copy requires approval.</p></div><button className="btn secondary" disabled={skillExportBusy || !selectedPack} onClick={() => void refreshSkillExports(selectedPack)}>Reload exports</button></div>
+      {skillExportError ? <div className="notice error">{skillExportError}</div> : null}
+      <div className="grid two" style={{ marginTop: 12 }}>
+        <div className="grid">
+          <button className="btn" disabled={skillExportBusy || selectedPack?.status !== 'published'} onClick={() => void generateSkillExport()}>Generate Hermes skill export</button>
+          {skillExports.length ? <div className="table-wrap"><table><thead><tr><th>Export</th><th>Status</th><th>Hash</th><th>Action</th></tr></thead><tbody>{skillExports.map((item) => <tr key={item.id} className="clickable" onClick={() => setSelectedSkillExport(item)}><td><strong>{item.title}</strong><div className="muted">v{item.export_version} · {item.export_type}</div></td><td><StatusChip value={item.status} /></td><td><span className="code">{short(item.package_hash)}</span></td><td><button className="btn secondary" onClick={(event) => { event.stopPropagation(); setSelectedSkillExport(item); }}>Review export</button></td></tr>)}</tbody></table></div> : <div className="empty">Select a published pack version, then generate a Hermes skill export.</div>}
+        </div>
+        <div className="grid">
+          {selectedSkillExport ? <div className="notice"><div className="section-card-head"><div><strong>{selectedSkillExport.title}</strong><div className="muted">{selectedSkillExport.pack_key} v{selectedSkillExport.pack_version} · {short(selectedSkillExport.package_hash)}</div></div><StatusChip value={selectedSkillExport.status} /></div>{selectedSkillExport.status !== 'approved' ? <div className="notice error" style={{ marginTop: 8 }}>Approval required before installing, copying, or downloading this generated skill. Drafts are preview-only.</div> : null}<div className="grid three" style={{ marginTop: 8 }}><Metric label="Files" value={selectedSkillExport.files.length} /><Metric label="Validation" value={selectedSkillExport.validation_json?.ok === false ? 'failed' : 'ok'} /><Metric label="Leak scan" value={selectedSkillExport.leak_scan_json?.ok === false ? 'failed' : 'ok'} /></div>{selectedSkillExport.leak_scan_json?.findings?.length ? <div className="notice error" style={{ marginTop: 8 }}><strong>Leak scan findings</strong>{selectedSkillExport.leak_scan_json.findings.map((finding, idx) => <div key={idx} className="muted">{String(finding.code ?? 'finding')}: {String(finding.message ?? JSON.stringify(finding))}</div>)}</div> : null}<Field label="Skill export review comment / reason"><input className="input" value={skillExportComment} onChange={(event) => setSkillExportComment(event.target.value)} placeholder="Required for approve / reject / invalidate" /></Field><div className="toolbar" style={{ marginTop: 8 }}><button className="btn" disabled={skillExportBusy || selectedSkillExport.status !== 'draft'} onClick={() => void approveSkillExport()}>Approve export</button><button className="btn secondary" disabled={skillExportBusy || !['draft','failed'].includes(selectedSkillExport.status)} onClick={() => void rejectSkillExport()}>Reject</button><button className="btn secondary" disabled={skillExportBusy || selectedSkillExport.status === 'invalidated'} onClick={() => void invalidateSkillExport()}>Invalidate / scrub</button></div>{selectedSkillExport.files.length ? <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>File</th><th>Bytes</th><th>Hash</th><th>Install</th></tr></thead><tbody>{selectedSkillExport.files.map((file) => <tr key={file.path} className="clickable" onClick={() => setSelectedSkillExportFilePath(file.path)}><td><strong>{file.path}</strong><div className="muted">{file.kind}</div></td><td>{file.bytes}</td><td><span className="code">{short(file.sha256)}</span></td><td>{selectedSkillExport.status === 'approved' ? <button className="btn secondary" onClick={(event) => { event.stopPropagation(); void downloadSkillExportFile(file.path); }}>Download</button> : <span className="muted">preview only</span>}</td></tr>)}</tbody></table></div> : null}{selectedSkillExportFile?.content ? <div><div className="label">Preview: {selectedSkillExportFile.path}</div><pre className="code-block" style={{ maxHeight: 280, overflow: 'auto' }}>{selectedSkillExportFile.content}</pre></div> : <div className="empty">No generated file content retained. Failed or invalidated exports are scrubbed.</div>}</div> : <div className="empty">Select an export to review package files, validation, and leak scan status.</div>}
+        </div>
+      </div>
+    </section>
     {connectOpen ? <section className="card connect-panel">
       <div className="section-card-head"><div><h2 className="section-card-title">Connect a source</h2><p className="muted section-card-desc">Pick a source type — only the fields it needs are shown. New sources appear in the list and are selected automatically.</p></div></div>
       <form className="grid two" onSubmit={submitConnect}>
