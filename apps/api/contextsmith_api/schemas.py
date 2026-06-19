@@ -572,6 +572,78 @@ class ArtifactRejectRequest(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class ContextPackDraftRequest(BaseModel):
+    title: str = Field(min_length=1)
+    description: str | None = None
+    artifact_ids: list[UUID] = Field(min_length=1)
+
+
+class ContextPackPublishRequest(BaseModel):
+    comment: str = Field(min_length=1)
+
+
+class ContextPackRollbackRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class ContextPackInvalidateRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class ContextPackArtifactRead(BaseModel):
+    id: UUID
+    context_artifact_id: UUID
+    resource_id: UUID
+    resource_name: str | None = None
+    source_snapshot_id: UUID
+    resource_manifest_id: UUID
+    artifact_type: str
+    artifact_hash: str
+    artifact_title: str | None = None
+    artifact_status: str | None = None
+    ordinal: int
+    citations: list[ContextArtifactCitationRead] = Field(default_factory=list)
+
+
+class ContextPackCoverageRead(BaseModel):
+    id: UUID
+    resource_id: UUID
+    resource_name: str | None = None
+    source_family_label: str | None = None
+    source_snapshot_id: UUID
+    resource_manifest_id: UUID
+    artifact_count: int
+    citation_count: int
+
+
+class ContextPackVersionRead(BaseModel):
+    id: UUID
+    pack_key: str
+    version: int
+    status: str
+    title: str
+    description: str | None = None
+    pack_hash: str
+    coverage_json: dict = Field(default_factory=dict)
+    validation_json: dict = Field(default_factory=dict)
+    status_reason: str | None = None
+    published_at: datetime | None = None
+    rolled_back_at: datetime | None = None
+    invalidated_at: datetime | None = None
+    created_at: datetime
+    artifacts: list[ContextPackArtifactRead] = Field(default_factory=list)
+    coverage: list[ContextPackCoverageRead] = Field(default_factory=list)
+
+
+class ContextPackSummaryRead(BaseModel):
+    pack_key: str
+    title: str
+    description: str | None = None
+    current: ContextPackVersionRead | None = None
+    latest: ContextPackVersionRead | None = None
+    versions: list[ContextPackVersionRead] = Field(default_factory=list)
+
+
 class ManifestDiffRowRead(BaseModel):
     normalized_path: str
     change_type: str
@@ -920,6 +992,9 @@ class AgentContextRequest(BaseModel):
     runtime: str | None = Field(default=None, pattern=r"^(api|hermes|claude|codex|cursor)$")
     include_code_symbols: bool = True
     max_chars: int = Field(default=12000, ge=1000, le=50000)
+    context_pack_key: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9._-]{0,62}$")
+    context_pack_version: int | str | None = "current"
+    context_pack_version_id: UUID | None = None
 
 
 class AgentContextCitation(BaseModel):
@@ -945,6 +1020,11 @@ class AgentContextResponse(BaseModel):
     citations: list[AgentContextCitation]
     symbols: list[CodeSymbolHit] = Field(default_factory=list)
     token_budget_hint: int
+    context_pack_key: str | None = None
+    context_pack_version: int | None = None
+    context_pack_version_id: UUID | None = None
+    context_pack_status: str | None = None
+    context_pack_snapshot_pin_enforced: bool = False
 
 
 class GraphNodeRead(BaseModel):

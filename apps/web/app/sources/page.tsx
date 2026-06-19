@@ -6,7 +6,7 @@ import { AgentContextPreview } from '../../components/AgentContextPreview';
 import { usePlatform } from '../../lib/platform-context';
 import { ApiError, fmt, short } from '../../lib/api';
 import { freshnessLabel, isActive, isIndexFailed, isVisible, lifecycleStages, readiness } from '../../lib/lifecycle';
-import type { AgentContextResponse, ContextArtifact, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, SectionImpact, SnapshotSections, ReviewItem } from '../../lib/types';
+import type { AgentContextResponse, ContextArtifact, ContextPackSummary, ContextPackVersion, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, SectionImpact, SnapshotSections, ReviewItem } from '../../lib/types';
 
 type ResourceType = 'git' | 'url' | 'markdown' | 'upload' | 'folder_bundle';
 type GitDraft = { branch: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
@@ -119,6 +119,12 @@ export default function SourcesPage() {
   const [artifactCitationLimit, setArtifactCitationLimit] = useState(8);
   const [ackArtifactWarnings, setAckArtifactWarnings] = useState(false);
   const [rejectArtifactReason, setRejectArtifactReason] = useState('');
+  const [contextPacks, setContextPacks] = useState<ContextPackSummary[]>([]);
+  const [selectedPack, setSelectedPack] = useState<ContextPackVersion | null>(null);
+  const [packError, setPackError] = useState<string | null>(null);
+  const [packBusy, setPackBusy] = useState(false);
+  const [packComment, setPackComment] = useState('');
+  const [packArtifactIds, setPackArtifactIds] = useState<string[]>([]);
 
   // Git environment state.
   const [gitEnv, setGitEnv] = useState<GitResourceEnv | null>(null);
@@ -134,7 +140,7 @@ export default function SourcesPage() {
   const isFolderBundle = selectedResource?.type === 'folder_bundle';
 
   // Reset detail-scoped state when selection changes.
-  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); setSnapshotSections(null); setSnapshotSectionsError(null); setSnapshotSectionsLimit(8); setSectionImpact(null); setSectionImpactError(null); setContextArtifacts([]); setSelectedArtifact(null); setArtifactError(null); setArtifactBusy(false); setArtifactSourceLimit(8); setArtifactCitationLimit(8); setAckArtifactWarnings(false); setRejectArtifactReason(''); }, [selectedResourceId]);
+  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); setSnapshotSections(null); setSnapshotSectionsError(null); setSnapshotSectionsLimit(8); setSectionImpact(null); setSectionImpactError(null); setContextArtifacts([]); setSelectedArtifact(null); setArtifactError(null); setArtifactBusy(false); setArtifactSourceLimit(8); setArtifactCitationLimit(8); setAckArtifactWarnings(false); setRejectArtifactReason(''); setSelectedPack(null); setPackError(null); setPackComment(''); setPackArtifactIds([]); }, [selectedResourceId]);
 
   // Load git env for the selected git source.
   useEffect(() => {
@@ -195,6 +201,7 @@ export default function SourcesPage() {
       .then((rows) => {
         if (cancelled) return;
         setContextArtifacts(rows);
+        setPackArtifactIds(rows.filter((row) => row.status === 'approved').map((row) => row.id));
         const latest = rows[0];
         if (!latest) { setSelectedArtifact(null); return; }
         return client<ContextArtifact>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-artifacts/${latest.id}`)
@@ -210,6 +217,22 @@ export default function SourcesPage() {
     setArtifactSourceLimit(8);
     setArtifactCitationLimit(8);
   }, [selectedArtifact?.id]);
+
+  async function refreshContextPacks() {
+    try {
+      const packs = await client<ContextPackSummary[]>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-packs`);
+      setContextPacks(packs);
+      const first = packs[0]?.current ?? packs[0]?.latest ?? null;
+      setSelectedPack(first);
+      setPackError(null);
+    } catch (err) {
+      setContextPacks([]);
+      setSelectedPack(null);
+      setPackError(String(err));
+    }
+  }
+
+  useEffect(() => { void refreshContextPacks(); }, [client, settings.workspaceId, settings.projectId]);
 
   function changeType(next: ResourceType) {
     setType(next);
@@ -317,6 +340,7 @@ export default function SourcesPage() {
   async function refreshArtifacts(resourceId: string) {
     const rows = await client<ContextArtifact[]>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources/${resourceId}/context-artifacts?artifact_type=resource_map`);
     setContextArtifacts(rows);
+    setPackArtifactIds(rows.filter((row) => row.status === 'approved').map((row) => row.id));
     if (rows[0]) setSelectedArtifact(await client<ContextArtifact>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-artifacts/${rows[0].id}`));
     else setSelectedArtifact(null);
   }
@@ -361,6 +385,54 @@ export default function SourcesPage() {
     finally { setArtifactBusy(false); }
   }
 
+  async function createPackDraft() {
+    if (packArtifactIds.length === 0) { setPackError('Select at least one approved Resource Map artifact before creating a Context Pack draft.'); return; }
+    setPackBusy(true); setPackError(null);
+    try {
+      const pack = await client<ContextPackVersion>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-packs/default/versions`, {
+        method: 'POST',
+        body: JSON.stringify({ title: 'Default context pack', description: 'Curated pack from approved Resource Map artifacts.', artifact_ids: packArtifactIds }),
+      });
+      setSelectedPack(pack);
+      await refreshContextPacks();
+    } catch (err) { setPackError(String(err)); }
+    finally { setPackBusy(false); }
+  }
+
+  async function publishPack() {
+    if (!selectedPack) return;
+    const comment = packComment.trim();
+    if (!comment) { setPackError('Enter a publish comment first.'); return; }
+    setPackBusy(true); setPackError(null);
+    try {
+      const pack = await client<ContextPackVersion>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-packs/${selectedPack.pack_key}/versions/${selectedPack.version}/publish`, { method: 'POST', body: JSON.stringify({ comment }) });
+      setSelectedPack(pack); setPackComment(''); await refreshContextPacks();
+    } catch (err) { setPackError(String(err)); }
+    finally { setPackBusy(false); }
+  }
+
+  async function rollbackPack(version: ContextPackVersion) {
+    const reason = packComment.trim();
+    if (!reason) { setPackError('Enter a rollback reason first.'); return; }
+    setPackBusy(true); setPackError(null);
+    try {
+      const pack = await client<ContextPackVersion>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-packs/${version.pack_key}/versions/${version.version}/rollback`, { method: 'POST', body: JSON.stringify({ reason }) });
+      setSelectedPack(pack); setPackComment(''); await refreshContextPacks();
+    } catch (err) { setPackError(String(err)); }
+    finally { setPackBusy(false); }
+  }
+
+  async function invalidatePack(version: ContextPackVersion) {
+    const reason = packComment.trim();
+    if (!reason) { setPackError('Enter an invalidation reason first.'); return; }
+    setPackBusy(true); setPackError(null);
+    try {
+      const pack = await client<ContextPackVersion>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-packs/${version.pack_key}/versions/${version.version}/invalidate`, { method: 'POST', body: JSON.stringify({ reason }) });
+      setSelectedPack(pack); setPackComment(''); await refreshContextPacks();
+    } catch (err) { setPackError(String(err)); }
+    finally { setPackBusy(false); }
+  }
+
   async function saveGitEnv(event: FormEvent) {
     event.preventDefault();
     if (!selectedResource) return;
@@ -388,6 +460,19 @@ export default function SourcesPage() {
   const stages = selectedResource ? lifecycleStages(selectedResource, selectedReview, lastIndexStatus) : [];
   const freshness = selectedResource ? freshnessLabel(selectedReview) : null;
   const reindexLabel = isGit ? 'Update repo & reindex' : isFolderBundle ? 'Upload new zip to update' : 'Reindex';
+  const selectedPackSummary = selectedPack ? contextPacks.find((pack) => pack.pack_key === selectedPack.pack_key) : undefined;
+  const currentPack = selectedPackSummary?.current ?? null;
+  const rollbackImpact = selectedPack && currentPack && selectedPack.status === 'superseded'
+    ? {
+        addedArtifacts: selectedPack.artifacts.filter((artifact) => !currentPack.artifacts.some((current) => current.context_artifact_id === artifact.context_artifact_id)).length,
+        removedArtifacts: currentPack.artifacts.filter((artifact) => !selectedPack.artifacts.some((target) => target.context_artifact_id === artifact.context_artifact_id)).length,
+        addedResources: selectedPack.coverage.filter((row) => !currentPack.coverage.some((current) => current.resource_id === row.resource_id)).length,
+        removedResources: currentPack.coverage.filter((row) => !selectedPack.coverage.some((target) => target.resource_id === row.resource_id)).length,
+        addedSnapshots: selectedPack.coverage.filter((row) => !currentPack.coverage.some((current) => current.source_snapshot_id === row.source_snapshot_id)).length,
+        removedSnapshots: currentPack.coverage.filter((row) => !selectedPack.coverage.some((target) => target.source_snapshot_id === row.source_snapshot_id)).length,
+      }
+    : null;
+  const selectedPackIssues = selectedPack ? [...(selectedPack.validation_json?.errors ?? []), ...(selectedPack.validation_json?.warnings ?? [])] : [];
 
   return <main className="page">
     <PageHeader
@@ -411,6 +496,21 @@ export default function SourcesPage() {
         <div className="health-item"><span className="label">Not indexed</span><span className="health-item-value"><Chip tone={summary.notIndexed > 0 ? 'warn' : 'neutral'}>{summary.notIndexed}</Chip></span></div>
         <div className="health-item"><span className="label">Index failed</span><span className="health-item-value"><Chip tone={summary.indexFailed > 0 ? 'risk' : 'neutral'}>{summary.indexFailed}</Chip></span></div>
         <div className="health-item"><span className="label">Stale</span><span className="health-item-value"><Chip tone={summary.stale > 0 ? 'warn' : 'neutral'}>{summary.stale}</Chip></span></div>
+      </div>
+    </section>
+
+    <section className="card">
+      <div className="section-card-head"><div><h2 className="section-card-title">Context Packs</h2><p className="muted section-card-desc">Published packs pin approved artifacts and source snapshots for runtime use. Operate by pack key and version — no UUID paste flow.</p></div><button className="btn secondary" disabled={packBusy} onClick={() => void refreshContextPacks()}>{packBusy ? 'Working…' : 'Reload packs'}</button></div>
+      {packError ? <div className="notice error">{packError}</div> : null}
+      <div className="grid two" style={{ marginTop: 12 }}>
+        <div className="grid">
+          {contextPacks.length === 0 ? <EmptyState text="No Context Packs yet. Select an approved Resource Map artifact, then create the default pack draft." /> : <div className="table-wrap"><table><thead><tr><th>Pack</th><th>Current</th><th>Latest</th><th>Artifacts</th><th>Action</th></tr></thead><tbody>{contextPacks.map((pack) => <tr key={pack.pack_key} className="clickable" onClick={() => setSelectedPack(pack.current ?? pack.latest)}><td><strong>{pack.pack_key}</strong><div className="muted">{pack.title}</div></td><td>{pack.current ? <span><StatusChip value={pack.current.status} /><div className="code">v{pack.current.version} · {short(pack.current.pack_hash)}</div></span> : <span className="muted">none</span>}</td><td>{pack.latest ? <span><StatusChip value={pack.latest.status} /><div className="code">v{pack.latest.version}</div></span> : <span className="muted">none</span>}</td><td>{pack.latest?.artifacts.length ?? 0}</td><td><button className="btn secondary" onClick={(event) => { event.stopPropagation(); setSelectedPack(pack.current ?? pack.latest); }}>Review</button></td></tr>)}</tbody></table></div>}
+          {contextPacks.length ? <div><div className="label">Version history</div><div className="table-wrap"><table><thead><tr><th>Version</th><th>Status</th><th>Published</th><th>Reason</th><th>Action</th></tr></thead><tbody>{contextPacks.flatMap((pack) => pack.versions.map((version) => <tr key={`${pack.pack_key}-${version.version}`} className="clickable" onClick={() => setSelectedPack(version)}><td><strong>{pack.pack_key} v{version.version}</strong><div className="code">{short(version.pack_hash)}</div></td><td><StatusChip value={version.status} /></td><td>{fmt(version.published_at)}</td><td>{version.status_reason || <span className="muted">—</span>}</td><td><button className="btn secondary" onClick={(event) => { event.stopPropagation(); setSelectedPack(version); }}>Review version</button></td></tr>))}</tbody></table></div></div> : null}
+        </div>
+        <div className="grid">
+          <div className="grid two"><button className="btn" disabled={packBusy || packArtifactIds.length === 0} onClick={() => void createPackDraft()}>Create default draft from selected artifacts</button><Field label="Publish / rollback / invalidate comment"><input className="input" value={packComment} onChange={(event) => setPackComment(event.target.value)} placeholder="Required for release actions" /></Field></div>{contextArtifacts.some((artifact) => artifact.status === 'approved') ? <div><div className="label">Approved artifacts for draft composition</div><div className="grid">{contextArtifacts.filter((artifact) => artifact.status === 'approved').map((artifact) => <label key={artifact.id} className={`scope-pill ${packArtifactIds.includes(artifact.id) ? 'active' : ''}`}><input type="checkbox" checked={packArtifactIds.includes(artifact.id)} onChange={(event) => setPackArtifactIds((ids) => event.target.checked ? Array.from(new Set([...ids, artifact.id])) : ids.filter((id) => id !== artifact.id))} /> {artifact.title} · {short(artifact.artifact_hash)}</label>)}</div></div> : <div className="empty">Approve one or more Resource Map artifacts to compose a Context Pack draft.</div>}
+          {selectedPack ? <div className="notice"><div className="section-card-head"><div><strong>{selectedPack.pack_key} v{selectedPack.version}</strong><div className="muted">{short(selectedPack.pack_hash)} · created {fmt(selectedPack.created_at)}</div></div><StatusChip value={selectedPack.status} /></div>{selectedPack.status === 'published' ? <div className="notice error" style={{ marginTop: 8 }}>Invalidating this published version removes the current runtime pack until another version is published or rolled back.</div> : null}<div className="grid three" style={{ marginTop: 8 }}><Metric label="Artifacts" value={selectedPack.artifacts.length} /><Metric label="Resources" value={selectedPack.coverage.length} /><Metric label="Validation" value={selectedPack.validation_json?.ok === false ? 'failed' : 'ok'} /></div>{selectedPackIssues.length ? <div className="notice error" style={{ marginTop: 8 }}><strong>Validation findings</strong>{selectedPackIssues.map((issue, idx) => <div key={idx} className="muted">{String(issue.code ?? 'validation')}: {String(issue.message ?? JSON.stringify(issue))}</div>)}</div> : null}{rollbackImpact ? <div className="notice" style={{ marginTop: 8 }}><strong>Rollback impact current → v{selectedPack.version}</strong><div className="grid three" style={{ marginTop: 8 }}><Metric label="Artifact delta" value={`+${rollbackImpact.addedArtifacts} / -${rollbackImpact.removedArtifacts}`} /><Metric label="Resource delta" value={`+${rollbackImpact.addedResources} / -${rollbackImpact.removedResources}`} /><Metric label="Snapshot delta" value={`+${rollbackImpact.addedSnapshots} / -${rollbackImpact.removedSnapshots}`} /></div></div> : null}<div className="toolbar" style={{ marginTop: 8 }}><button className="btn" disabled={packBusy || selectedPack.status !== 'draft'} onClick={() => void publishPack()}>Publish draft</button><button className="btn secondary" disabled={packBusy || selectedPack.status !== 'superseded'} onClick={() => void rollbackPack(selectedPack)}>Rollback to this version</button><button className="btn secondary" disabled={packBusy || selectedPack.status === 'invalidated'} onClick={() => void invalidatePack(selectedPack)}>{selectedPack.status === 'published' ? 'Invalidate current pack' : 'Invalidate'}</button></div>{selectedPack.coverage.length ? <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>Resource</th><th>Snapshot</th><th>Artifacts</th><th>Citations</th></tr></thead><tbody>{selectedPack.coverage.slice(0, 6).map((row) => <tr key={row.id}><td><strong>{row.resource_name || row.source_family_label || short(row.resource_id)}</strong></td><td><span className="code">{short(row.source_snapshot_id)}</span></td><td>{row.artifact_count}</td><td>{row.citation_count}</td></tr>)}</tbody></table></div> : null}{selectedPack.artifacts.length ? <div className="table-wrap" style={{ marginTop: 8 }}><table><thead><tr><th>Artifact</th><th>Resource</th><th>Status</th><th>Citations</th></tr></thead><tbody>{selectedPack.artifacts.slice(0, 6).map((artifact) => <tr key={artifact.id}><td><strong>{artifact.artifact_title || artifact.artifact_type}</strong><div className="code">{short(artifact.artifact_hash)}</div></td><td>{artifact.resource_name || short(artifact.resource_id)}</td><td><StatusChip value={artifact.artifact_status || 'artifact'} /></td><td>{artifact.citations.slice(0, 4).map((citation) => <div key={citation.id}><span className="code">{citation.normalized_path}</span>{citation.title ? <span className="muted"> · {citation.title}</span> : null}{citation.line_start ? <span className="muted"> · L{citation.line_start}{citation.line_end ? `-${citation.line_end}` : ''}</span> : null}</div>)}</td></tr>)}</tbody></table></div> : null}</div> : <div className="empty">Select a pack version to review coverage and publish state. Runtime only uses published packs.</div>}
+        </div>
       </div>
     </section>
 
