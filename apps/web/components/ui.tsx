@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import type { LifecycleStage, Readiness } from '../lib/lifecycle';
+import { isIndexFailed, READINESS_LABEL, readinessTone } from '../lib/lifecycle';
 
 export type Tone = 'ready' | 'warn' | 'risk' | 'neutral';
 
@@ -77,3 +79,25 @@ export function AttentionRow({ tone, title, detail, meta, action }: { tone: Tone
 export function EmptyState({ text }: { text: string }) { return <div className="empty">{text}</div>; }
 
 export function Field({ label, children }: { label: string; children: ReactNode }) { return <label><span className="label">{label}</span>{children}</label>; }
+
+// --- PR2 lifecycle primitives (additive; presentational, logic lives in lib/lifecycle.ts) ---
+
+/** Combined readiness lamp, mapping a readiness string to its tone + label. */
+export function ReadinessBadge({ state, lastIndexStatus }: { state: Readiness; lastIndexStatus?: string | null }) {
+  const failed = isIndexFailed(lastIndexStatus);
+  return <Chip tone={readinessTone(state, lastIndexStatus)}>{failed ? 'index failed' : READINESS_LABEL[state]}</Chip>;
+}
+
+/** Stepper rendering the five lifecycle stages; tone/state come from props only. */
+export function LifecyclePipeline({ stages }: { stages: LifecycleStage[] }) {
+  return <ol className="lifecycle-pipeline">
+    {stages.map((stage) => {
+      const variant = stage.failed ? 'is-failed' : stage.reached ? 'is-reached' : 'is-pending';
+      return <li key={stage.key} className={`lifecycle-stage ${variant}`}>
+        <span className="lifecycle-stage-dot" aria-hidden="true" />
+        <span className="lifecycle-stage-label">{stage.label}</span>
+        <span className="lifecycle-stage-state">{stage.failed ? 'failed' : stage.reached ? 'done' : 'pending'}</span>
+      </li>;
+    })}
+  </ol>;
+}

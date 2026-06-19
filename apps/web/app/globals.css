@@ -198,6 +198,27 @@ pre.code-block.light { background: var(--surface-muted); color: var(--ink); bord
 /* ---------- Empty ---------- */
 .empty { color: var(--muted); padding: 16px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-muted); font-size: 13px; }
 
+/* ---------- Lifecycle pipeline (PR2) ---------- */
+.lifecycle-pipeline { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.lifecycle-stage { flex: 1 1 90px; display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-top: 3px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-muted); }
+.lifecycle-stage-dot { width: 9px; height: 9px; border-radius: var(--radius-pill); background: var(--line-strong); }
+.lifecycle-stage-label { font-size: 13px; font-weight: 700; }
+.lifecycle-stage-state { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.lifecycle-stage.is-reached { border-top-color: var(--ready); background: var(--ready-soft); }
+.lifecycle-stage.is-reached .lifecycle-stage-dot { background: var(--ready); }
+.lifecycle-stage.is-reached .lifecycle-stage-state { color: var(--ready); }
+.lifecycle-stage.is-failed { border-top-color: var(--risk); background: var(--risk-soft); }
+.lifecycle-stage.is-failed .lifecycle-stage-dot { background: var(--risk); }
+.lifecycle-stage.is-failed .lifecycle-stage-state { color: var(--risk); }
+.lifecycle-stage.is-pending { opacity: 0.85; }
+
+/* ---------- Source detail / advanced (PR2) ---------- */
+.connect-panel { display: grid; gap: 14px; }
+.advanced-section { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-muted); }
+.advanced-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 14px; background: transparent; border: 0; cursor: pointer; font-weight: 700; font-size: 13px; color: var(--ink); }
+.advanced-toggle:hover { color: var(--accent); }
+.advanced-section form { padding: 0 14px 14px; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
   .grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
