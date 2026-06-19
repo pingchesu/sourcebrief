@@ -219,6 +219,13 @@ pre.code-block.light { background: var(--surface-muted); color: var(--ink); bord
 .advanced-toggle:hover { color: var(--accent); }
 .advanced-section form { padding: 0 14px 14px; }
 
+/* ---------- Workbench scope (PR3) ---------- */
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-muted); }
+.segmented button { border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: var(--radius-sm); padding: 7px 13px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.12s ease, color 0.12s ease; }
+.segmented button:hover { color: var(--ink); }
+.segmented button.active { background: var(--surface); color: var(--accent); border-color: var(--line-strong); box-shadow: var(--shadow-card); }
+.workbench-prompts { display: grid; gap: 8px; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
   .grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -18,8 +18,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Build context',
     items: [
       { href: '/sources', label: 'Sources' },
-      { href: '/repo-agents', label: 'Workbench' },
-      { href: '/ask', label: 'Ask & citations' },
+      { href: '/workbench', label: 'Workbench' },
     ],
   },
   {
