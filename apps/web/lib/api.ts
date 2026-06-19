@@ -4,37 +4,38 @@ export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-function authHeaders(settings: PlatformSettings): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (settings.bearer.trim()) headers.Authorization = `Bearer ${settings.bearer.trim()}`;
-  else if (settings.email.trim()) headers['X-User-Email'] = settings.email.trim();
-  return headers;
+function headers(settings: PlatformSettings, init?: RequestInit): Record<string, string> {
+  const next: Record<string, string> = { 'Content-Type': 'application/json', ...((init?.headers as Record<string, string> | undefined) ?? {}) };
+  if (settings.sessionToken.trim()) next.Authorization = `Bearer ${settings.sessionToken.trim()}`;
+  return next;
 }
 
-export async function apiFetch<T>(settings: PlatformSettings, path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${settings.apiBaseUrl}${path}`, { ...init, headers: { ...authHeaders(settings), ...(init.headers as Record<string, string> | undefined) } });
+async function parseResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
   const body = text ? JSON.parse(text) : null;
-  if (!response.ok) throw new ApiError(response.status, body?.detail ? JSON.stringify(body.detail) : text || response.statusText);
+  if (!response.ok) throw new ApiError(response.status, body?.detail ? String(body.detail) : text || response.statusText);
   return body as T;
 }
 
+export async function apiFetch<T>(settings: PlatformSettings, path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${settings.apiBaseUrl}${path}`, { ...init, headers: headers(settings, init) });
+  return parseResponse<T>(response);
+}
+
+export async function anonymousFetch<T>(settings: PlatformSettings, path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${settings.apiBaseUrl}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...((init.headers as Record<string, string> | undefined) ?? {}) } });
+  return parseResponse<T>(response);
+}
+
 export async function apiFetchText(settings: PlatformSettings, path: string, init: RequestInit = {}): Promise<string> {
-  const response = await fetch(`${settings.apiBaseUrl}${path}`, { ...init, headers: { ...authHeaders(settings), ...(init.headers as Record<string, string> | undefined) } });
+  const response = await fetch(`${settings.apiBaseUrl}${path}`, { ...init, headers: headers(settings, init) });
   const text = await response.text();
-  if (!response.ok) {
-    let message = text || response.statusText;
-    try {
-      const body = text ? JSON.parse(text) : null;
-      message = body?.detail ? JSON.stringify(body.detail) : message;
-    } catch {}
-    throw new ApiError(response.status, message);
-  }
+  if (!response.ok) throw new ApiError(response.status, text || response.statusText);
   return text;
 }
 
 export async function apiFetchBlob(settings: PlatformSettings, path: string, init: RequestInit = {}): Promise<Blob> {
-  const response = await fetch(`${settings.apiBaseUrl}${path}`, { ...init, headers: { ...authHeaders(settings), ...(init.headers as Record<string, string> | undefined) } });
+  const response = await fetch(`${settings.apiBaseUrl}${path}`, { ...init, headers: headers(settings, init) });
   if (!response.ok) {
     const text = await response.text();
     throw new ApiError(response.status, text || response.statusText);

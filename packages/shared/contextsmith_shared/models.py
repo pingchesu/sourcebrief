@@ -28,6 +28,9 @@ class User(Base):
     id = uuid_pk()
     email: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     display_name: Mapped[str | None] = mapped_column(Text)
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_platform_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -46,6 +49,7 @@ class ApiToken(Base):
     id = uuid_pk()
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    token_type: Mapped[str] = mapped_column(Text, nullable=False, default="api")
     token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     scopes: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     allowed_project_ids: Mapped[list[uuid.UUID] | None] = mapped_column(ARRAY(UUID(as_uuid=True)))

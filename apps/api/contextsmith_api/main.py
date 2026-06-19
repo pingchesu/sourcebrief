@@ -21,12 +21,13 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 from redis import Redis
 from rq import Queue
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, load_only
 
 from contextsmith_api.auth import (
     Principal,
+    hash_password,
     hash_token,
     new_plaintext_token,
     require_any_scope,
@@ -35,6 +36,7 @@ from contextsmith_api.auth import (
     require_workspace_member,
     token_allows_project,
     token_allows_resource,
+    verify_password,
 )
 from contextsmith_api.constants import (
     ACTIVE_INDEX_STATUSES,
@@ -84,12 +86,16 @@ from contextsmith_api.schemas import (
     ApiTokenCreateResponse,
     ApiTokenRead,
     AuditEventRead,
+    AuthLoginRequest,
+    AuthLoginResponse,
+    AuthLogoutResponse,
     CodeSearchRequest,
     CodeSearchResponse,
     CodeSymbolHit,
     ContextPacketItemRead,
     ContextPacketRead,
     ContextPacketRequest,
+    CurrentUserResponse,
     DueRefreshResponse,
     GeneratePatchRequest,
     GitResourceEnvRead,
@@ -139,12 +145,14 @@ from contextsmith_api.schemas import (
     SnapshotRead,
     UserRead,
     WorkspaceCreate,
+    WorkspaceMemberCreate,
     WorkspaceMemberRead,
+    WorkspaceMemberUpdate,
     WorkspaceRead,
 )
 from contextsmith_shared.agent_card_auditor import run_agent_card_auditor
 from contextsmith_shared.config import get_settings
-from contextsmith_shared.db import get_session
+from contextsmith_shared.db import get_session, get_sessionmaker
 from contextsmith_shared.embeddings import current_embedding_config
 from contextsmith_shared.lifecycle import compute_next_refresh_at
 from contextsmith_shared.models import (
@@ -212,6 +220,12 @@ def run_migrations_if_requested() -> None:
 @app.on_event("startup")
 def on_startup() -> None:
     run_migrations_if_requested()
+    try:
+        _bootstrap_default_admin()
+    except IntegrityError:
+        # A concurrent API replica may have inserted the same bootstrap rows first.
+        # Treat that as benign; the next readiness/login path will observe those rows.
+        return
 
 
 def _sanitize_public_uri(uri: str) -> str:
@@ -256,6 +270,91 @@ def _ensure_agent_profile(
     session.add(profile)
     session.flush()
     return profile
+
+
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def _bootstrap_default_admin() -> None:
+    settings = get_settings()
+    if not settings.admin_email or not settings.admin_password:
+        return
+    if settings.admin_password in {"change-me-before-compose-up", "contextsmith-admin"}:
+        raise RuntimeError("CONTEXTSMITH_ADMIN_PASSWORD must be changed from the sample/default value before startup")
+    SessionLocal = get_sessionmaker()
+    with SessionLocal() as session:
+        email = _normalize_email(settings.admin_email)
+        admin = session.scalar(select(User).where(User.email == email))
+        if admin is None:
+            admin = User(
+                email=email,
+                display_name=settings.admin_display_name,
+                password_hash=hash_password(settings.admin_password),
+                is_active=True,
+                is_platform_admin=True,
+            )
+            session.add(admin)
+            session.flush()
+        admin.display_name = admin.display_name or settings.admin_display_name
+        admin.password_hash = hash_password(settings.admin_password)
+        admin.is_active = True
+        admin.is_platform_admin = True
+
+        workspace = session.scalar(select(Workspace).where(Workspace.slug == settings.bootstrap_workspace_slug))
+        if workspace is None:
+            workspace = Workspace(name=settings.bootstrap_workspace_name, slug=settings.bootstrap_workspace_slug)
+            session.add(workspace)
+            session.flush()
+        membership = session.scalar(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == workspace.id,
+                WorkspaceMembership.user_id == admin.id,
+            )
+        )
+        if membership is None:
+            session.add(WorkspaceMembership(workspace_id=workspace.id, user_id=admin.id, role="owner"))
+        elif membership.role not in {"owner", "admin"}:
+            membership.role = "owner"
+
+        project = session.scalar(
+            select(Project).where(
+                Project.workspace_id == workspace.id,
+                Project.name == settings.bootstrap_project_name,
+                Project.deleted_at.is_(None),
+            )
+        )
+        if project is None:
+            project = Project(
+                workspace_id=workspace.id,
+                name=settings.bootstrap_project_name,
+                description="Bootstrap project for the initial ContextSmith console.",
+                created_by=admin.id,
+            )
+            session.add(project)
+            session.flush()
+        project_membership = session.scalar(
+            select(ProjectMembership).where(
+                ProjectMembership.project_id == project.id,
+                ProjectMembership.user_id == admin.id,
+            )
+        )
+        if project_membership is None:
+            session.add(
+                ProjectMembership(
+                    workspace_id=workspace.id,
+                    project_id=project.id,
+                    user_id=admin.id,
+                    role="owner",
+                )
+            )
+        elif project_membership.role not in {"owner", "admin"}:
+            project_membership.role = "owner"
+        _ensure_agent_profile(session, workspace.id, project, admin.id)
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
 
 
 def _tool_policy_patch_generation_enabled(profile: AgentProfile | None) -> bool:
@@ -1294,6 +1393,8 @@ def _user_read(user: User) -> UserRead:
         id=user.id,
         email=user.email,
         display_name=user.display_name,
+        is_active=getattr(user, "is_active", True),
+        is_platform_admin=getattr(user, "is_platform_admin", False),
         created_at=user.created_at,
     )
 
@@ -1366,6 +1467,164 @@ def _is_empty_scope(resource_ids: list[UUID] | None) -> bool:
     return resource_ids is not None and len(resource_ids) == 0
 
 
+def _current_user_response(session: Session, principal: Principal) -> CurrentUserResponse:
+    memberships = list(
+        session.scalars(
+            select(WorkspaceMembership)
+            .where(WorkspaceMembership.user_id == principal.user.id)
+            .order_by(WorkspaceMembership.created_at.asc())
+        )
+    )
+    workspace_ids = [membership.workspace_id for membership in memberships]
+    workspaces: list[Workspace] = []
+    projects_by_workspace: dict[UUID, list[ProjectRead]] = {}
+    if workspace_ids:
+        workspaces = list(
+            session.scalars(
+                select(Workspace)
+                .where(Workspace.id.in_(workspace_ids), Workspace.deleted_at.is_(None))
+                .order_by(Workspace.created_at.asc())
+            )
+        )
+        for workspace in workspaces:
+            project_membership_ids = set(
+                session.scalars(
+                    select(ProjectMembership.project_id).where(
+                        ProjectMembership.workspace_id == workspace.id,
+                        ProjectMembership.user_id == principal.user.id,
+                    )
+                )
+            )
+            projects = list(
+                session.scalars(
+                    select(Project)
+                    .where(Project.workspace_id == workspace.id, Project.deleted_at.is_(None))
+                    .order_by(Project.created_at.asc())
+                )
+            )
+            visible_projects = [
+                project
+                for project in projects
+                if project.visibility in {"workspace", "public"} or project.id in project_membership_ids
+            ]
+            projects_by_workspace[workspace.id] = [ProjectRead.model_validate(project, from_attributes=True) for project in visible_projects]
+    default_workspace_id = workspaces[0].id if workspaces else None
+    default_project_id = None
+    if default_workspace_id is not None and projects_by_workspace.get(default_workspace_id):
+        default_project_id = projects_by_workspace[default_workspace_id][0].id
+    return CurrentUserResponse(
+        user=_user_read(principal.user),
+        workspaces=[WorkspaceRead.model_validate(workspace, from_attributes=True) for workspace in workspaces],
+        memberships=[_workspace_member_read(session, membership) for membership in memberships],
+        projects_by_workspace=projects_by_workspace,
+        default_workspace_id=default_workspace_id,
+        default_project_id=default_project_id,
+    )
+
+
+def _session_scopes_for_role(role: str) -> list[str]:
+    if role in {"owner", "admin"}:
+        return sorted(ALLOWED_TOKEN_SCOPES)
+    if role == "member":
+        return sorted(ALLOWED_TOKEN_SCOPES - {"token:admin"})
+    return sorted({"project:read", "project:query", "resource:read", "review:read", "code:read"})
+
+
+def _revoke_user_sessions(session: Session, workspace_id: UUID, user_id: UUID) -> None:
+    now = datetime.now(UTC)
+    for token in session.scalars(
+        select(ApiToken).where(
+            ApiToken.workspace_id == workspace_id,
+            ApiToken.created_by == user_id,
+            ApiToken.token_type == "session",
+            ApiToken.revoked_at.is_(None),
+        )
+    ):
+        token.revoked_at = now
+
+
+def _admin_count(session: Session, workspace_id: UUID) -> int:
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(WorkspaceMembership)
+            .join(User, WorkspaceMembership.user_id == User.id)
+            .where(
+                WorkspaceMembership.workspace_id == workspace_id,
+                WorkspaceMembership.role.in_(["owner", "admin"]),
+                User.is_active.is_(True),
+                User.password_hash.is_not(None),
+            )
+        )
+        or 0
+    )
+
+
+def _is_admin_role(role: str | None) -> bool:
+    return role in {"owner", "admin"}
+
+
+def _assert_login_capable_admin(user: User, role: str) -> None:
+    if _is_admin_role(role) and (not user.is_active or not user.password_hash):
+        raise HTTPException(status_code=422, detail="admin users must be active and have a password")
+
+
+def _assert_not_last_admin_transition(session: Session, workspace_id: UUID, membership: WorkspaceMembership, next_role: str, next_active: bool, next_password_hash: str | None) -> None:
+    current_user = session.get(User, membership.user_id)
+    current_is_login_admin = current_user is not None and _is_admin_role(membership.role) and current_user.is_active and current_user.password_hash is not None
+    next_is_login_admin = _is_admin_role(next_role) and next_active and next_password_hash is not None
+    if current_is_login_admin and not next_is_login_admin and _admin_count(session, workspace_id) <= 1:
+        raise HTTPException(status_code=422, detail="cannot remove the final active admin")
+
+
+@app.post("/auth/login", response_model=AuthLoginResponse)
+def login(payload: AuthLoginRequest, session: Session = Depends(get_session)) -> AuthLoginResponse:
+    email = _normalize_email(payload.email)
+    user = session.scalar(select(User).where(User.email == email))
+    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid email or password")
+    membership = session.scalar(
+        select(WorkspaceMembership).where(WorkspaceMembership.user_id == user.id).order_by(WorkspaceMembership.created_at.asc())
+    )
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="user has no workspace access")
+    plaintext = new_plaintext_token()
+    token = ApiToken(
+        workspace_id=membership.workspace_id,
+        name=f"Web session for {user.email}",
+        token_type="session",
+        token_hash=hash_token(plaintext),
+        scopes=_session_scopes_for_role(membership.role),
+        allowed_project_ids=None,
+        allowed_resource_ids=None,
+        created_by=user.id,
+        expires_at=datetime.now(UTC) + timedelta(hours=12),
+    )
+    session.add(token)
+    session.flush()
+    response = _current_user_response(session, Principal(user=user, api_token=token))
+    session.commit()
+    return AuthLoginResponse(session_token=plaintext, **response.model_dump())
+
+
+@app.get("/auth/me", response_model=CurrentUserResponse)
+def me(principal: Principal = Depends(require_principal), session: Session = Depends(get_session)) -> CurrentUserResponse:
+    if principal.is_token:
+        raise HTTPException(status_code=403, detail="account session required")
+    return _current_user_response(session, principal)
+
+
+@app.post("/auth/logout", response_model=AuthLogoutResponse)
+def logout(
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> AuthLogoutResponse:
+    if principal.api_token is not None and principal.api_token.revoked_at is None:
+        principal.api_token.revoked_at = datetime.now(UTC)
+        session.commit()
+    return AuthLogoutResponse(status="ok")
+
+
 @app.post("/workspaces", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
 def create_workspace(
     payload: WorkspaceCreate,
@@ -1399,8 +1658,11 @@ def list_workspaces(
     session: Session = Depends(get_session),
 ) -> list[Workspace]:
     require_scope(principal, "project:read")
-    if principal.api_token is not None:
-        workspace = session.get(Workspace, principal.api_token.workspace_id)
+    if principal.is_token:
+        token = principal.api_token
+        if token is None:
+            return []
+        workspace = session.get(Workspace, token.workspace_id)
         if workspace is None or workspace.deleted_at is not None:
             return []
         return [workspace]
@@ -1452,6 +1714,8 @@ def create_api_token(
         if resource is None or resource.workspace_id != workspace_id or resource.deleted_at is not None:
             raise HTTPException(status_code=404, detail="resource not found")
         _require_project_access(session, workspace_id, resource.project_id, principal)
+    if payload.name.startswith("Web session for "):
+        raise HTTPException(status_code=422, detail="token name uses a reserved session prefix")
     plaintext = new_plaintext_token()
     token = ApiToken(
         workspace_id=workspace_id,
@@ -1491,7 +1755,7 @@ def list_api_tokens(
     tokens = list(
         session.scalars(
             select(ApiToken)
-            .where(ApiToken.workspace_id == workspace_id)
+            .where(ApiToken.workspace_id == workspace_id, ApiToken.token_type == "api")
             .order_by(ApiToken.created_at.asc())
         )
     )
@@ -1507,7 +1771,7 @@ def revoke_api_token(
 ) -> ApiTokenRead:
     require_scope(principal, "token:admin")
     _require_workspace_admin(session, workspace_id, principal)
-    token = session.scalar(select(ApiToken).where(ApiToken.workspace_id == workspace_id, ApiToken.id == token_id))
+    token = session.scalar(select(ApiToken).where(ApiToken.workspace_id == workspace_id, ApiToken.id == token_id, ApiToken.token_type == "api"))
     if token is None:
         raise HTTPException(status_code=404, detail="token not found")
     if token.revoked_at is None:
@@ -1568,6 +1832,142 @@ def list_workspace_members(
         )
     )
     return [_workspace_member_read(session, membership) for membership in memberships]
+
+
+@app.post("/workspaces/{workspace_id}/members", response_model=WorkspaceMemberRead, status_code=201)
+def create_workspace_member(
+    workspace_id: UUID,
+    payload: WorkspaceMemberCreate,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> WorkspaceMemberRead:
+    if principal.is_token:
+        raise HTTPException(status_code=403, detail="user management requires user authentication")
+    _require_workspace_admin(session, workspace_id, principal)
+    email = _normalize_email(payload.email)
+    user = session.scalar(select(User).where(User.email == email))
+    user_created = False
+    if user is None:
+        user = User(
+            email=email,
+            display_name=payload.display_name or email.split("@")[0],
+            password_hash=hash_password(payload.password) if payload.password else None,
+            is_active=True,
+        )
+        session.add(user)
+        session.flush()
+        user_created = True
+    if payload.display_name is not None:
+        user.display_name = payload.display_name
+    if not user_created and payload.password:
+        if not principal.user.is_platform_admin:
+            raise HTTPException(status_code=403, detail="existing-user password reset requires platform admin")
+        user.password_hash = hash_password(payload.password)
+    if user_created:
+        user.is_active = True
+    if _is_admin_role(payload.role) and not user.password_hash:
+        raise HTTPException(status_code=422, detail="admin users require a password")
+    membership = session.scalar(
+        select(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id, WorkspaceMembership.user_id == user.id)
+    )
+    if membership is None:
+        membership = WorkspaceMembership(workspace_id=workspace_id, user_id=user.id, role=payload.role)
+        session.add(membership)
+    else:
+        _assert_not_last_admin_transition(session, workspace_id, membership, payload.role, user.is_active, user.password_hash)
+        if membership.role != payload.role:
+            _revoke_user_sessions(session, workspace_id, user.id)
+        membership.role = payload.role
+    projects = list(session.scalars(select(Project).where(Project.workspace_id == workspace_id, Project.deleted_at.is_(None))))
+    for project in projects:
+        project_membership = session.scalar(
+            select(ProjectMembership).where(ProjectMembership.project_id == project.id, ProjectMembership.user_id == user.id)
+        )
+        if project_membership is None:
+            session.add(ProjectMembership(workspace_id=workspace_id, project_id=project.id, user_id=user.id, role=payload.role))
+        else:
+            project_membership.role = payload.role
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=principal.user.id,
+            actor_token_id=principal.token_id,
+            action="workspace_member.upsert",
+            target_type="user",
+            target_id=user.id,
+            meta={"email": user.email, "role": payload.role},
+        )
+    )
+    session.commit()
+    return _workspace_member_read(session, membership)
+
+
+@app.patch("/workspaces/{workspace_id}/members/{membership_id}", response_model=WorkspaceMemberRead)
+def update_workspace_member(
+    workspace_id: UUID,
+    membership_id: UUID,
+    payload: WorkspaceMemberUpdate,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> WorkspaceMemberRead:
+    if principal.is_token:
+        raise HTTPException(status_code=403, detail="user management requires user authentication")
+    _require_workspace_admin(session, workspace_id, principal)
+    membership = session.scalar(select(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id, WorkspaceMembership.id == membership_id))
+    if membership is None:
+        raise HTTPException(status_code=404, detail="member not found")
+    user = session.get(User, membership.user_id)
+    if user is None:
+        raise HTTPException(status_code=500, detail="workspace membership references missing user")
+    next_role = payload.role if payload.role is not None else membership.role
+    next_active = payload.is_active if payload.is_active is not None else user.is_active
+    next_password_hash: str | None
+    if payload.password:
+        if not principal.user.is_platform_admin:
+            raise HTTPException(status_code=403, detail="password reset requires platform admin")
+        next_password_hash = hash_password(payload.password)
+    else:
+        next_password_hash = user.password_hash
+    _assert_not_last_admin_transition(session, workspace_id, membership, next_role, next_active, next_password_hash)
+    if _is_admin_role(next_role) and (not next_active or not next_password_hash):
+        raise HTTPException(status_code=422, detail="admin users must be active and have a password")
+    sessions_should_revoke = bool(payload.password or payload.is_active is not None or payload.role is not None)
+    if sessions_should_revoke:
+        _revoke_user_sessions(session, workspace_id, user.id)
+    if payload.display_name is not None:
+        user.display_name = payload.display_name
+    if payload.password:
+        if not principal.user.is_platform_admin:
+            raise HTTPException(status_code=403, detail="password reset requires platform admin")
+        user.password_hash = hash_password(payload.password)
+    if payload.is_active is not None:
+        if not principal.user.is_platform_admin:
+            raise HTTPException(status_code=403, detail="user activation changes require platform admin")
+        user.is_active = payload.is_active
+    if payload.role is not None:
+        membership.role = payload.role
+        projects = list(session.scalars(select(Project).where(Project.workspace_id == workspace_id, Project.deleted_at.is_(None))))
+        for project in projects:
+            project_membership = session.scalar(
+                select(ProjectMembership).where(ProjectMembership.project_id == project.id, ProjectMembership.user_id == user.id)
+            )
+            if project_membership is None:
+                session.add(ProjectMembership(workspace_id=workspace_id, project_id=project.id, user_id=user.id, role=payload.role))
+            else:
+                project_membership.role = payload.role
+    session.add(
+        AuditEvent(
+            workspace_id=workspace_id,
+            actor_user_id=principal.user.id,
+            actor_token_id=principal.token_id,
+            action="workspace_member.update",
+            target_type="user",
+            target_id=user.id,
+            meta={"role": membership.role, "is_active": user.is_active},
+        )
+    )
+    session.commit()
+    return _workspace_member_read(session, membership)
 
 
 @app.post("/workspaces/{workspace_id}/projects", response_model=ProjectRead, status_code=201)

@@ -8,8 +8,6 @@ import { fmt } from '../../lib/api';
 import { freshnessLabel, isActive, isIndexFailed, isVisible, readiness } from '../../lib/lifecycle';
 import type { AgentCardSummaryList, Resource, ReviewItem, RetrievalEvalQuestion, RetrievalEvalResponse, RetrievalEvalRunList, RetrievalProfilesResponse } from '../../lib/types';
 
-function safeJson(value: unknown) { return JSON.stringify(value, null, 2); }
-
 function driftSeverityTone(severity?: string | null): Tone {
   const normalized = String(severity ?? '').toLowerCase();
   if (['blocker', 'critical', 'major', 'high'].includes(normalized)) return 'risk';
@@ -31,7 +29,7 @@ type Gate = { key: string; tone: Tone; title: string; detail: string; status: st
 export default function QualityPage() {
   const { settings, client, resources, reviewItems, usageItems, provider, agent, workspace, project, selectedResource, selectedResourceId, selectResource, loading, error, reload } = usePlatform();
 
-  const signedIn = Boolean(settings.bearer.trim() || settings.email.trim());
+  const signedIn = Boolean(settings.sessionToken.trim());
   const platformEvidenceUnavailable = loading || Boolean(error);
 
   const reviewByResource = useMemo(() => new Map(reviewItems.map((item) => [item.resource.id, item])), [reviewItems]);
@@ -149,20 +147,19 @@ export default function QualityPage() {
 
   useEffect(() => { void loadHistory(); void loadProfiles(); void loadDrift(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [settings.workspaceId, settings.projectId, signedIn]);
 
-  function seedQuestions() {
-    if (!seedResource) return;
-    const seeded: RetrievalEvalQuestion[] = [
-      { id: 'repo-responsibility', query: `What is ${seedResource.name} responsible for? Cite exact files.`, expected_resource_ids: [seedResource.id], resource_ids: [seedResource.id], min_citations: 1, top_k: 8, include_code_symbols: true },
-      { id: 'repo-entrypoints-config', query: `Show ${seedResource.name}'s main entrypoints, config files, and runtime boundaries.`, expected_resource_ids: [seedResource.id], resource_ids: [seedResource.id], min_citations: 1, top_k: 10, include_code_symbols: true },
+  function defaultQuestions(): RetrievalEvalQuestion[] {
+    if (!seedResource) return [];
+    return [
+      { id: 'source-responsibility', query: `What is ${seedResource.name} responsible for? Cite exact files.`, expected_resource_ids: [seedResource.id], resource_ids: [seedResource.id], min_citations: 1, top_k: 8, include_code_symbols: true },
+      { id: 'source-boundaries', query: `Show ${seedResource.name}'s main entrypoints, config files, and runtime boundaries.`, expected_resource_ids: [seedResource.id], resource_ids: [seedResource.id], min_citations: 1, top_k: 10, include_code_symbols: true },
     ];
-    setQuestionsJson(safeJson(seeded));
   }
 
-  async function runEval(event: FormEvent) {
-    event.preventDefault();
+  async function runEval(event?: FormEvent) {
+    event?.preventDefault();
     setEvalBusy(true); setEvalError(null);
     try {
-      const questions = JSON.parse(questionsJson || '[]') as RetrievalEvalQuestion[];
+      const questions = questionsJson ? JSON.parse(questionsJson) as RetrievalEvalQuestion[] : defaultQuestions();
       const response = await client<RetrievalEvalResponse>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/retrieval-evals`, {
         method: 'POST',
         body: JSON.stringify({ runtime: 'hermes', profile: selectedProfile, max_chars: 10000, questions }),
@@ -408,13 +405,11 @@ export default function QualityPage() {
           ? <EmptyState text="Index at least one retrieval-enabled source before running evals." />
           : <form className="grid" onSubmit={runEval}>
             <div className="grid two">
-              <Field label="Seed resource"><select className="input" value={seedResource?.id ?? ''} onChange={(event) => setSeedId(event.target.value)}>{indexedResources.map((r) => <option key={r.id} value={r.id}>{r.name} — {r.type}</option>)}</select></Field>
-              <Field label="Retrieval profile"><select className="input" value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>{(profileCatalog?.profiles ?? []).map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}</select></Field>
+              <Field label="Seed source"><select className="input" value={seedResource?.id ?? ''} onChange={(event) => setSeedId(event.target.value)}>{indexedResources.map((r) => <option key={r.id} value={r.id}>{r.name} — {r.type}</option>)}</select></Field>
+              <Field label="Evaluation style"><select className="input" value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>{(profileCatalog?.profiles ?? []).map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}</select></Field>
             </div>
-            {activeProfile ? <div className="notice"><strong>{activeProfile.name}</strong>: {activeProfile.description}<br />Weights {Object.entries(activeProfile.weights).map(([key, value]) => `${key}=${value}`).join(', ')}</div> : null}
-            <div className="toolbar"><button type="button" className="btn secondary" disabled={!seedResource} onClick={seedQuestions}>Seed from selected resource</button></div>
-            <Field label="Questions JSON"><textarea className="input" rows={12} value={questionsJson} onChange={(event) => setQuestionsJson(event.target.value)} placeholder="Click Seed from selected resource or paste RetrievalEvalQuestion[] JSON." /></Field>
-            <button className="btn" disabled={evalBusy || !questionsJson.trim()}>{evalBusy ? 'Running…' : `Run ${selectedProfile} eval`}</button>
+            {activeProfile ? <div className="notice"><strong>{activeProfile.name}</strong>: {activeProfile.description}</div> : null}
+            <button className="btn" disabled={evalBusy || !seedResource}>{evalBusy ? 'Running…' : `Run ${selectedProfile} evaluation`}</button>
           </form>}
       </div> : null}
 
@@ -427,13 +422,13 @@ export default function QualityPage() {
           <h2>Run summary</h2>
           {!result ? <EmptyState text="No eval run selected. Load a historical run or run a new eval." /> : <div className="grid">
             <div className="grid four"><Metric label="Status" value={<StatusChip value={result.summary.status} />} /><Metric label="Profile" value={result.profile} /><Metric label="Pass rate" value={`${Math.round(result.summary.pass_rate * 100)}%`} /><Metric label="Avg latency" value={`${result.summary.avg_latency_ms}ms`} /></div>
-            <div className="notice">Run {result.run_id ?? 'not persisted'} · {result.provider}/{result.model} · vector {(result.diagnostics.vector_status as string) ?? 'unknown'} · namespace {(result.diagnostics.embedding_namespace as string) ?? 'unknown'}.</div>
+            <div className="notice">{result.provider}/{result.model} · vector {(result.diagnostics.vector_status as string) ?? 'unknown'}.</div>
             {result.summary.failure_reasons.length ? <div className="notice error">{result.summary.failure_reasons.join('\n')}</div> : null}
           </div>}
         </Card>
       </div>
 
-      {result ? <div style={{ marginTop: 16 }} className="table-wrap"><table><thead><tr><th>Status</th><th>Question</th><th>Citations</th><th>Symbols</th><th>Latency</th><th>Failures</th><th>Hit quality</th></tr></thead><tbody>{result.results.map((row) => <tr key={row.id}><td><StatusChip value={row.passed ? 'passed' : 'failed'} /></td><td>{row.id}</td><td>{row.citation_count}</td><td>{row.symbol_count}</td><td>{row.latency_ms}ms</td><td>{row.failure_reasons.join(', ') || '—'}</td><td><pre className="code-block light">{safeJson(row.hit_quality)}</pre></td></tr>)}</tbody></table></div> : null}
+      {result ? <div style={{ marginTop: 16 }} className="table-wrap"><table><thead><tr><th>Status</th><th>Question</th><th>Citations</th><th>Symbols</th><th>Latency</th><th>Failures</th></tr></thead><tbody>{result.results.map((row) => <tr key={row.id}><td><StatusChip value={row.passed ? 'passed' : 'failed'} /></td><td>{row.id}</td><td>{row.citation_count}</td><td>{row.symbol_count}</td><td>{row.latency_ms}ms</td><td>{row.failure_reasons.join(', ') || '—'}</td></tr>)}</tbody></table></div> : null}
     </SectionCard>
 
     <section className="card">

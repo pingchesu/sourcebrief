@@ -9,7 +9,7 @@ import { freshnessLabel, isActive, isIndexFailed, isVisible, lifecycleStages, re
 import type { AgentContextResponse, GitResourceEnv, IndexRun, Resource, ReviewItem } from '../../lib/types';
 
 type ResourceType = 'git' | 'url' | 'markdown' | 'upload';
-type GitDraft = { branch: string; auth_token_env: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
+type GitDraft = { branch: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
 
 function defaultUri(type: ResourceType) {
   if (type === 'git') return 'https://github.com/owner/repo.git';
@@ -25,7 +25,6 @@ function defaultName(type: ResourceType) {
 function toGitDraft(env: GitResourceEnv | null): GitDraft {
   return {
     branch: env?.branch ?? '',
-    auth_token_env: env?.auth_token_env ?? '',
     clone_timeout: env?.clone_timeout?.toString() ?? '',
     max_file_bytes: env?.max_file_bytes?.toString() ?? '',
     max_repo_files: env?.max_repo_files?.toString() ?? '',
@@ -74,7 +73,6 @@ export default function SourcesPage() {
   const [name, setName] = useState(defaultName('git'));
   const [uri, setUri] = useState(defaultUri('git'));
   const [branch, setBranch] = useState('main');
-  const [authTokenEnv, setAuthTokenEnv] = useState('');
   const [frequency, setFrequency] = useState('daily');
   const [content, setContent] = useState('');
   const [filename, setFilename] = useState('notes.txt');
@@ -90,8 +88,7 @@ export default function SourcesPage() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  // Advanced (git env) state.
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Git environment state.
   const [gitEnv, setGitEnv] = useState<GitResourceEnv | null>(null);
   const [gitDraft, setGitDraft] = useState<GitDraft>(toGitDraft(null));
   const [gitEnvLoading, setGitEnvLoading] = useState(false);
@@ -104,9 +101,9 @@ export default function SourcesPage() {
   const isGit = selectedResource?.type === 'git';
 
   // Reset detail-scoped state when selection changes.
-  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setAdvancedOpen(false); setGitEnvSaved(false); }, [selectedResourceId]);
+  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); }, [selectedResourceId]);
 
-  // Load git env for the selected git source (Advanced section).
+  // Load git env for the selected git source.
   useEffect(() => {
     if (!selectedResource || selectedResource.type !== 'git') { setGitEnv(null); setGitDraft(toGitDraft(null)); return; }
     let cancelled = false;
@@ -129,7 +126,7 @@ export default function SourcesPage() {
     setConnectBusy(true); setConnectError(null); setConnectResult(null);
     try {
       const source_config = type === 'git'
-        ? { url: uri, branch, ...(authTokenEnv.trim() ? { auth_token_env: authTokenEnv.trim() } : {}) }
+        ? { url: uri, branch }
         : type === 'url'
           ? { url: uri }
           : type === 'upload'
@@ -181,7 +178,6 @@ export default function SourcesPage() {
         method: 'PATCH',
         body: JSON.stringify({
           branch: gitDraft.branch.trim() || null,
-          auth_token_env: gitDraft.auth_token_env.trim() || null,
           clone_timeout: optionalNumber(gitDraft.clone_timeout),
           max_file_bytes: optionalNumber(gitDraft.max_file_bytes),
           max_repo_files: optionalNumber(gitDraft.max_repo_files),
@@ -205,7 +201,7 @@ export default function SourcesPage() {
     <PageHeader
       eyebrow="Sources"
       title="Connected sources and lifecycle"
-      description="Every context source from connect through indexing, review, and retrieval. Select a source to inspect its evidence and run maintenance in place — no UUID required."
+      description="Every context source from connect through indexing, review, and retrieval. Select a source to inspect its evidence and run maintenance in place."
       actions={<>
         <button className="btn" onClick={() => { setConnectOpen((open) => !open); setConnectResult(null); setConnectError(null); }}>{connectOpen ? 'Close connect' : 'Connect source'}</button>
         <button className="btn secondary" onClick={() => reload()} disabled={loading}>{loading ? 'Loading…' : 'Reload'}</button>
@@ -233,7 +229,7 @@ export default function SourcesPage() {
           <Field label="Source type"><select className="input" value={type} onChange={(event) => changeType(event.target.value as ResourceType)}><option value="git">Git repository</option><option value="url">URL / web page</option><option value="markdown">Markdown / inline doc</option><option value="upload">Upload text</option></select></Field>
           <Field label="Name"><input className="input" value={name} onChange={(event) => setName(event.target.value)} /></Field>
           <Field label={type === 'git' ? 'Git URL' : type === 'url' ? 'URL' : 'URI / path'}><input className="input" value={uri} onChange={(event) => setUri(event.target.value)} /></Field>
-          {type === 'git' ? <div className="grid two"><Field label="Branch / ref"><input className="input" value={branch} onChange={(event) => setBranch(event.target.value)} /></Field><Field label="Auth token env var"><input className="input" placeholder="GITHUB_TOKEN_FOR_CONTEXTSMITH" value={authTokenEnv} onChange={(event) => setAuthTokenEnv(event.target.value)} /></Field></div> : null}
+          {type === 'git' ? <div className="grid two"><Field label="Branch"><input className="input" value={branch} onChange={(event) => setBranch(event.target.value)} /></Field></div> : null}
           {type === 'upload' ? <Field label="Filename"><input className="input" value={filename} onChange={(event) => setFilename(event.target.value)} /></Field> : null}
           {type === 'markdown' || type === 'upload' ? <Field label="Content"><textarea className="input" rows={8} value={content} onChange={(event) => setContent(event.target.value)} /></Field> : null}
           <div className="grid two"><Field label="Update frequency"><select className="input" value={frequency} onChange={(event) => setFrequency(event.target.value)}><option value="manual">manual</option><option value="hourly">hourly</option><option value="daily">daily</option><option value="weekly">weekly</option></select></Field><label className={`scope-pill ${refreshNow ? 'active' : ''}`}><input type="checkbox" checked={refreshNow} onChange={(event) => setRefreshNow(event.target.checked)} /> Create index immediately</label></div>
@@ -241,8 +237,7 @@ export default function SourcesPage() {
         </div>
         <div className="grid">
           {connectError ? <div className="notice error">{connectError}</div> : null}
-          {connectResult ? <div className="notice">Source connected — {refreshNow ? 'now indexing' : 'not yet indexed'}. <strong>{connectResult.name}</strong> is selected in the list.</div> : <div className="empty">Connected sources are added to the list and indexed when requested. Secrets are never stored — for private git, reference only the worker env var name.</div>}
-          {type === 'git' ? <div className="notice">For private repos, set the token in the worker environment and enter only its env var name. ContextSmith stores <code>auth_token_env</code>, never the token value.</div> : null}
+          {connectResult ? <div className="notice">Source connected — {refreshNow ? 'now indexing' : 'not yet indexed'}. <strong>{connectResult.name}</strong> is selected in the list.</div> : <div className="empty">Connected sources are added to the list and indexed when requested. Private-source credentials will be handled by named connections in Settings.</div>}
         </div>
       </form>
     </section> : null}
@@ -287,35 +282,16 @@ export default function SourcesPage() {
               <div><div className="label">Type</div><Chip>{selectedResource.type}</Chip></div>
               <div><div className="label">Retrieval</div><Chip tone={selectedResource.retrieval_enabled ? 'ready' : 'warn'}>{selectedResource.retrieval_enabled ? 'enabled' : 'off'}</Chip></div>
             </div>
-            <div><div className="label">URI</div><div className="code">{selectedResource.uri}</div></div>
-            <div className="grid two">
-              <div><div className="label">Current snapshot</div><div className="code">{short(selectedResource.current_snapshot_id)}</div></div>
-              <div><div className="label">Last refresh</div><div className="code">{fmt(selectedResource.last_refresh_finished_at)}</div></div>
-            </div>
+            <div><div className="label">Source location</div><div className="muted">{selectedResource.uri}</div></div>
+            <div><div className="label">Last refresh</div><div className="muted">{fmt(selectedResource.last_refresh_finished_at)}</div></div>
             {actionError ? <div className="notice error">{actionError}</div> : null}
-
-            {isGit ? <div className="advanced-section">
-              <button type="button" className="advanced-toggle" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)}>
-                <span>Advanced git environment</span><span className="code">{advancedOpen ? 'hide' : 'show'}</span>
-              </button>
-              {advancedOpen ? (gitEnvLoading ? <EmptyState text="Loading git environment…" /> : <form className="grid" onSubmit={saveGitEnv}>
-                <Field label="Branch / ref"><input className="input" value={gitDraft.branch} onChange={(event) => setGitDraft({ ...gitDraft, branch: event.target.value })} /></Field>
-                <Field label="Auth token env var"><input className="input" placeholder="GITHUB_TOKEN_FOR_CONTEXTSMITH" value={gitDraft.auth_token_env} onChange={(event) => setGitDraft({ ...gitDraft, auth_token_env: event.target.value })} /></Field>
-                <div className="grid two"><Field label="Clone timeout (s)"><input className="input" value={gitDraft.clone_timeout} onChange={(event) => setGitDraft({ ...gitDraft, clone_timeout: event.target.value })} /></Field><Field label="Update frequency"><select className="input" value={gitDraft.update_frequency} onChange={(event) => setGitDraft({ ...gitDraft, update_frequency: event.target.value })}><option value="manual">manual</option><option value="hourly">hourly</option><option value="daily">daily</option><option value="weekly">weekly</option></select></Field></div>
-                <div className="grid three"><Field label="Max file bytes"><input className="input" value={gitDraft.max_file_bytes} onChange={(event) => setGitDraft({ ...gitDraft, max_file_bytes: event.target.value })} /></Field><Field label="Max repo files"><input className="input" value={gitDraft.max_repo_files} onChange={(event) => setGitDraft({ ...gitDraft, max_repo_files: event.target.value })} /></Field><Field label="Max repo bytes"><input className="input" value={gitDraft.max_repo_bytes} onChange={(event) => setGitDraft({ ...gitDraft, max_repo_bytes: event.target.value })} /></Field></div>
-                <button className="btn" disabled={gitEnvBusy}>{gitEnvBusy ? 'Saving…' : 'Save git environment'}</button>
-                {gitEnvError ? <div className="notice error">{gitEnvError}</div> : null}
-                {gitEnvSaved ? <div className="notice">Git environment saved. Next refresh {fmt(gitEnv?.next_refresh_at)}.</div> : null}
-                <div className="notice">Secrets stay out of ContextSmith. Put the token in the worker environment and reference only the env var name here.</div>
-              </form>) : null}
-            </div> : null}
           </div>}
       </SectionCard>
     </div>
 
     {selectedResource ? <div className="grid two">
-      <Card><h2>Snapshots</h2>{snapshots.length === 0 ? <EmptyState text="No snapshots yet. Reindex to build the first snapshot." /> : <div className="table-wrap"><table><thead><tr><th>Status</th><th>Version</th><th>Indexed</th></tr></thead><tbody>{snapshots.map((s) => <tr key={s.id}><td>{s.is_current ? <StatusChip value="current" /> : <StatusChip value={s.status} />}</td><td className="code">{s.version_kind}={short(s.version)}</td><td>{fmt(s.indexed_at)}</td></tr>)}</tbody></table></div>}</Card>
-      <Card><h2>Index runs</h2>{indexRuns.length === 0 ? <EmptyState text="No index runs yet." /> : <div className="table-wrap"><table><thead><tr><th>Status</th><th>Trigger</th><th>Chunks</th><th>Symbols</th><th>Finished</th></tr></thead><tbody>{indexRuns.slice(0, 10).map((run) => <tr key={run.id}><td><StatusChip value={run.status} />{run.error_message ? <div className="code" style={{ color: 'var(--risk)' }}>{run.error_message}</div> : null}</td><td className="code">{run.trigger}</td><td>{run.chunks_created}</td><td>{run.symbols_created}</td><td>{fmt(run.finished_at)}</td></tr>)}</tbody></table></div>}</Card>
+      <Card><h2>Refresh history</h2>{snapshots.length === 0 ? <EmptyState text="No refresh history yet. Reindex to build the first reviewed snapshot." /> : <div className="table-wrap"><table><thead><tr><th>Status</th><th>Indexed</th></tr></thead><tbody>{snapshots.map((s) => <tr key={s.id}><td>{s.is_current ? <StatusChip value="current" /> : <StatusChip value={s.status} />}</td><td>{fmt(s.indexed_at)}</td></tr>)}</tbody></table></div>}</Card>
+      <Card><h2>Index activity</h2>{indexRuns.length === 0 ? <EmptyState text="No index runs yet." /> : <div className="table-wrap"><table><thead><tr><th>Status</th><th>Trigger</th><th>Chunks</th><th>Symbols</th><th>Finished</th></tr></thead><tbody>{indexRuns.slice(0, 10).map((run) => <tr key={run.id}><td><StatusChip value={run.status} />{run.error_message ? <div className="muted" style={{ color: 'var(--risk)' }}>{run.error_message}</div> : null}</td><td>{run.trigger}</td><td>{run.chunks_created}</td><td>{run.symbols_created}</td><td>{fmt(run.finished_at)}</td></tr>)}</tbody></table></div>}</Card>
     </div> : null}
 
     {selectedResource ? <Card>

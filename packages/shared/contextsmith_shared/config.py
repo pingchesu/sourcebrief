@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     )
     auto_migrate: bool = False
     dev_auth: bool = False
+    admin_email: str | None = None
+    admin_password: str | None = None
+    admin_display_name: str = "ContextSmith Admin"
+    bootstrap_workspace_name: str = "ContextSmith"
+    bootstrap_workspace_slug: str = "contextsmith"
+    bootstrap_project_name: str = "Default Project"
 
     model_config = SettingsConfigDict(env_prefix="CONTEXTSMITH_", extra="ignore")
 

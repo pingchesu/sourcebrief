@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import secrets
@@ -17,6 +18,37 @@ from contextsmith_shared.models import ApiToken, User, WorkspaceMembership
 
 DEV_ALL_SCOPES = {"*"}
 TOKEN_PREFIX = "cs_"
+PASSWORD_ALGORITHM = "pbkdf2_sha256"
+PASSWORD_ITERATIONS = 390_000
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
+    return "$".join(
+        [
+            PASSWORD_ALGORITHM,
+            str(PASSWORD_ITERATIONS),
+            base64.urlsafe_b64encode(salt).decode("ascii"),
+            base64.urlsafe_b64encode(digest).decode("ascii"),
+        ]
+    )
+
+
+def verify_password(password: str, password_hash: str | None) -> bool:
+    if not password_hash:
+        return False
+    try:
+        algorithm, iterations_raw, salt_raw, expected_raw = password_hash.split("$", 3)
+        if algorithm != PASSWORD_ALGORITHM:
+            return False
+        iterations = int(iterations_raw)
+        salt = base64.urlsafe_b64decode(salt_raw.encode("ascii"))
+        expected = base64.urlsafe_b64decode(expected_raw.encode("ascii"))
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    except Exception:
+        return False
+    return hmac.compare_digest(digest, expected)
 
 
 @dataclass(frozen=True)
@@ -29,8 +61,14 @@ class Principal:
         return self.api_token.id if self.api_token is not None else None
 
     @property
+    def is_session(self) -> bool:
+        return self.api_token is not None and getattr(self.api_token, "token_type", "api") == "session"
+
+    @property
     def is_token(self) -> bool:
-        return self.api_token is not None
+        if not self.api_token:
+            return False
+        return getattr(self.api_token, "token_type", "api") == "api"
 
     @property
     def scopes(self) -> set[str]:
@@ -96,6 +134,8 @@ def require_principal(
         user = session.get(User, token.created_by)
         if user is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token owner missing")
+        if not getattr(user, "is_active", True):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user disabled")
         return Principal(user=user, api_token=token)
     if not get_settings().dev_auth:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication required")
@@ -120,7 +160,7 @@ def require_any_scope(principal: Principal, scopes: set[str]) -> None:
 
 def require_workspace_member(session: Session, workspace_id: UUID, principal: Principal | User) -> WorkspaceMembership:
     user = principal.user if isinstance(principal, Principal) else principal
-    token = principal.api_token if isinstance(principal, Principal) else None
+    token = principal.api_token if isinstance(principal, Principal) and principal.api_token is not None else None
     if token is not None and token.workspace_id != workspace_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="workspace not found")
     membership = session.scalar(
@@ -135,6 +175,8 @@ def require_workspace_member(session: Session, workspace_id: UUID, principal: Pr
 
 
 def token_allows_project(principal: Principal, project_id: UUID) -> bool:
+    if not principal.is_token:
+        return True
     token = principal.api_token
     if token is None:
         return True
@@ -143,6 +185,8 @@ def token_allows_project(principal: Principal, project_id: UUID) -> bool:
 
 
 def token_allows_resource(principal: Principal, resource_id: UUID) -> bool:
+    if not principal.is_token:
+        return True
     token = principal.api_token
     if token is None:
         return True

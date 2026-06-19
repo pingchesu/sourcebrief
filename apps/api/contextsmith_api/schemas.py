@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from uuid import UUID
 
@@ -32,7 +34,45 @@ class UserRead(BaseModel):
     id: UUID
     email: str
     display_name: str | None = None
+    is_active: bool = True
+    is_platform_admin: bool = False
     created_at: datetime | None = None
+
+
+class AuthLoginRequest(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=1)
+
+
+class WorkspaceMemberCreate(BaseModel):
+    email: str = Field(min_length=3)
+    display_name: str | None = None
+    password: str | None = Field(default=None, min_length=8)
+    role: str = Field(pattern=r"^(owner|admin|member|viewer)$")
+
+
+class WorkspaceMemberUpdate(BaseModel):
+    display_name: str | None = None
+    password: str | None = Field(default=None, min_length=8)
+    role: str | None = Field(default=None, pattern=r"^(owner|admin|member|viewer)$")
+    is_active: bool | None = None
+
+
+class CurrentUserResponse(BaseModel):
+    user: UserRead
+    workspaces: list[WorkspaceRead]
+    memberships: list[WorkspaceMemberRead] = Field(default_factory=list)
+    projects_by_workspace: dict[UUID, list[ProjectRead]] = Field(default_factory=dict)
+    default_workspace_id: UUID | None = None
+    default_project_id: UUID | None = None
+
+
+class AuthLoginResponse(CurrentUserResponse):
+    session_token: str
+
+
+class AuthLogoutResponse(BaseModel):
+    status: str
 
 
 class WorkspaceMemberRead(BaseModel):
@@ -599,7 +639,7 @@ class RemoteFindSymbolRequest(BaseModel):
 
 
 class RemoteFindSymbolResponse(BaseModel):
-    symbols: list["CodeSymbolHit"]
+    symbols: list[CodeSymbolHit]
     next_cursor: str | None = None
 
 
@@ -628,7 +668,7 @@ class PatchFileChange(BaseModel):
     rationale: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
-    def validate_range(self) -> "PatchFileChange":
+    def validate_range(self) -> PatchFileChange:
         if self.end_line is not None and self.end_line < self.start_line:
             raise ValueError("end_line must be greater than or equal to start_line")
         return self

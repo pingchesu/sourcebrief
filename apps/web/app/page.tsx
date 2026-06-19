@@ -17,9 +17,8 @@ const READINESS_COPY: Record<Readiness, { state: string; tone: Tone; title: stri
 };
 
 export default function CommandCenterPage() {
-  const { agent, provider, workspace, project, settings, resources, reviewItems, usageItems, loading, error, reload } = usePlatform();
+  const { agent, provider, workspace, project, settings, signedIn, resources, reviewItems, usageItems, loading, error, reload } = usePlatform();
 
-  const signedIn = Boolean(settings.bearer.trim() || settings.email.trim());
   const initialLoading = loading && signedIn && !workspace && !project && !agent && resources.length === 0;
   const providerOk = provider?.status === 'ok';
 
@@ -54,14 +53,14 @@ export default function CommandCenterPage() {
       return items;
     }
     if (!signedIn) {
-      items.push({ key: 'session', tone: 'risk', title: 'No active session', detail: 'Sign in with an email or API token to load this workspace.', href: '/login', action: 'Sign in' });
+      items.push({ key: 'session', tone: 'risk', title: 'No active session', detail: 'Sign in with your ContextSmith account to load this workspace.', href: '/login', action: 'Sign in' });
       return items;
     }
-    if (!workspace || !project) items.push({ key: 'scope', tone: 'risk', title: 'Workspace or project not loaded', detail: 'Confirm the workspace and project identifiers in configuration.', href: '/config', action: 'Open config' });
+    if (!workspace || !project) items.push({ key: 'scope', tone: 'risk', title: 'Workspace or project not loaded', detail: 'Choose your workspace and project in Settings.', href: '/config', action: 'Open settings' });
     if (!agent) items.push({ key: 'agent', tone: 'warn', title: 'Project agent not generated', detail: 'Generate the project agent once sources are indexed.', href: '/agent-profile', action: 'Project agent' });
     if (!hasActiveSource) items.push({ key: 'sources', tone: 'warn', title: 'No active sources connected', detail: 'Connect a git repo, URL, or document to start building context.', href: '/sources', action: 'Connect' });
     if (provider && !providerOk) items.push({ key: 'provider', tone: 'warn', title: `Embedding provider ${provider.status}`, detail: `${provider.embedding.provider}/${provider.embedding.model} · ${provider.embedding.namespace}`, href: '/config', action: 'Diagnose' });
-    if (failedResources.length > 0) items.push({ key: 'failed', tone: 'risk', title: `${failedResources.length} source${failedResources.length > 1 ? 's' : ''} failed to index`, detail: failedResources.map((r) => r.name).slice(0, 3).join(', '), href: '/maintenance', action: 'Reindex' });
+    if (failedResources.length > 0) items.push({ key: 'failed', tone: 'risk', title: `${failedResources.length} source${failedResources.length > 1 ? 's' : ''} failed to index`, detail: failedResources.map((r) => r.name).slice(0, 3).join(', '), href: '/sources', action: 'Open sources' });
     for (const item of reviewRisks.slice(0, 4)) {
       const reason = item.stale_reasons[0] ?? `${item.freshness_status}${item.freshness_age_days != null ? ` · ${item.freshness_age_days}d old` : ''}`;
       items.push({ key: `review-${item.resource.id}`, tone: 'warn', title: item.resource.name, detail: reason, meta: `${item.usage_count} uses`, href: '/quality', action: 'Open quality' });
@@ -126,7 +125,7 @@ export default function CommandCenterPage() {
 
     <section className="card">
       <div className="health-strip">
-        <div className="health-item"><span className="label">Session</span><span className="health-item-value">{signedIn ? <Chip tone="ready">{settings.bearer.trim() ? 'Token' : 'Email'}</Chip> : <Chip tone="risk">Signed out</Chip>}</span></div>
+        <div className="health-item"><span className="label">Session</span><span className="health-item-value">{signedIn ? <Chip tone="ready">Signed in</Chip> : <Chip tone="risk">Signed out</Chip>}</span></div>
         <div className="health-item"><span className="label">Provider</span><span className="health-item-value"><StatusChip value={provider?.status ?? (signedIn ? 'loading' : 'signed out')} /></span></div>
         <div className="health-item"><span className="label">Embedding</span><span className="health-item-value code">{provider ? `${provider.embedding.provider}/${provider.embedding.model}` : '—'}</span></div>
         <div className="health-item"><span className="label">Namespace</span><span className="health-item-value code">{provider?.embedding.namespace ?? '—'}</span></div>
@@ -154,7 +153,7 @@ export default function CommandCenterPage() {
             <Metric label="Graph" value={`${agent.graph_node_count}/${agent.graph_edge_count}`} hint="nodes / edges" />
           </div>
           <p className="muted">{agent.description || 'Generated project agent composed from active repo and document sources.'}</p>
-          <div className="code">Last indexed {fmt(agent.last_index_finished_at)} · {agent.resource_count} resources · MCP {agent.mcp_endpoint}</div>
+          <div className="muted">Last indexed {fmt(agent.last_index_finished_at)} · {agent.resource_count} resources</div>
         </> : <EmptyState text={signedIn ? 'No project agent yet. Connect and index sources, then generate the agent.' : 'Sign in to load the project agent.'} />}
       </SectionCard>
 
@@ -237,7 +236,7 @@ export default function CommandCenterPage() {
             </div>
             <div className="action-grid">
               <ActionLink href="/workbench" label="Try a query in Workbench" description="Preview the cited context packet for a query." tone="primary" />
-              <ActionLink href="/agent-files" label="Ship agent pack" description="Generate Hermes/Codex/Claude files and MCP config." />
+              <ActionLink href="/agent-profile" label="Prepare agent" description="Review the generated project agent before sharing it." />
             </div>
           </>}
       </SectionCard>

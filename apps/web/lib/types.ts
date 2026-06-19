@@ -2,8 +2,10 @@ export type ProviderHealth = { status: string; embedding: { namespace: string; d
 
 export type Workspace = { id: string; name: string; slug: string };
 export type Project = { id: string; workspace_id: string; name: string; description: string | null; visibility: string };
-export type User = { id: string; email: string; display_name: string | null; created_at: string | null };
+export type User = { id: string; email: string; display_name: string | null; is_active: boolean; is_platform_admin: boolean; created_at: string | null };
 export type WorkspaceMember = { id: string; workspace_id: string; user: User; role: string; created_at: string | null };
+export type CurrentUserResponse = { user: User; workspaces: Workspace[]; memberships: WorkspaceMember[]; projects_by_workspace: Record<string, Project[]>; default_workspace_id: string | null; default_project_id: string | null };
+export type LoginResponse = CurrentUserResponse & { session_token: string };
 export type AuditEvent = { id: string; workspace_id: string; actor_user_id: string | null; actor_token_id: string | null; action: string; target_type: string; target_id: string | null; target_ref: Record<string, unknown>; metadata: Record<string, unknown>; created_at: string };
 
 export type AgentProfile = {

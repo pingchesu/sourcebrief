@@ -1,39 +1,45 @@
 'use client';
 
-import { type FormEvent, useState } from 'react';
-import { PageHeader, Card, Field, EmptyState, StatusChip } from '../../components/ui';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { PageHeader, Card, Field } from '../../components/ui';
 import { usePlatform } from '../../lib/platform-context';
-import { DEFAULT_SETTINGS } from '../../lib/settings';
-import type { ApiToken, Resource, TokenCreateResponse } from '../../lib/types';
-import { short } from '../../lib/api';
-
-const SCOPES = 'project:read,project:query,resource:read,resource:write,resource:refresh,review:read,review:write';
+import type { Resource } from '../../lib/types';
 
 export default function ConfigPage() {
-  const { settings, setSettings, workspaces, projects, workspace, project, resources, client, reload, tokens } = usePlatform();
-  const [draft, setDraft] = useState(settings);
+  const { settings, workspaces, projectsByWorkspace, workspace, project, client, reload, chooseScope } = usePlatform();
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(settings.workspaceId);
+  const [selectedProjectId, setSelectedProjectId] = useState(settings.projectId);
+  const availableProjects = useMemo(() => projectsByWorkspace[selectedWorkspaceId] ?? [], [projectsByWorkspace, selectedWorkspaceId]);
   const [resourceType, setResourceType] = useState<'git' | 'url' | 'markdown' | 'upload'>('git');
-  const [resourceName, setResourceName] = useState('New Repo');
+  const [resourceName, setResourceName] = useState('New source');
   const [resourceUri, setResourceUri] = useState('https://github.com/owner/repo.git');
   const [branch, setBranch] = useState('main');
   const [frequency, setFrequency] = useState('daily');
   const [content, setContent] = useState('');
-  const [tokenName, setTokenName] = useState('Hermes console token');
-  const [tokenScopes, setTokenScopes] = useState(SCOPES);
-  const [tokenResourceIds, setTokenResourceIds] = useState<string[]>([]);
-  const [plaintextToken, setPlaintextToken] = useState('');
   const [busy, setBusy] = useState(false);
 
-  function saveSettings(event: FormEvent) { event.preventDefault(); setSettings(draft); void reload(); }
-  function chooseWorkspace(workspaceId: string) { const next = { ...draft, workspaceId }; setDraft(next); }
-  function chooseProject(projectId: string) { const next = { ...draft, projectId }; setDraft(next); }
-  async function addResource(event: FormEvent) { event.preventDefault(); setBusy(true); try { const source_config = resourceType === 'git' ? { url: resourceUri, branch } : resourceType === 'url' ? { url: resourceUri } : { content }; await client<Resource>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources`, { method: 'POST', body: JSON.stringify({ type: resourceType, name: resourceName, uri: resourceUri, update_frequency: frequency, source_config }) }); await reload(); } finally { setBusy(false); } }
-  async function createToken(event: FormEvent) { event.preventDefault(); setBusy(true); try { const created = await client<TokenCreateResponse>(`/workspaces/${settings.workspaceId}/api-tokens`, { method: 'POST', body: JSON.stringify({ name: tokenName, scopes: tokenScopes.split(',').map((s) => s.trim()).filter(Boolean), allowed_project_ids: [settings.projectId], allowed_resource_ids: tokenResourceIds.length ? tokenResourceIds : null }) }); setPlaintextToken(created.token); await reload(); } finally { setBusy(false); } }
-  async function revoke(id: string) { await client<ApiToken>(`/workspaces/${settings.workspaceId}/api-tokens/${id}`, { method: 'DELETE' }); await reload(); }
+  useEffect(() => { setSelectedWorkspaceId(settings.workspaceId); setSelectedProjectId(settings.projectId); }, [settings.workspaceId, settings.projectId]);
+  useEffect(() => {
+    if (!availableProjects.some((item) => item.id === selectedProjectId)) setSelectedProjectId(availableProjects[0]?.id ?? '');
+  }, [availableProjects, selectedProjectId]);
 
-  return <main className="page"><PageHeader eyebrow="Config" title="Platform configuration" description="Set up the workspace, project, sources, and API tokens by name. IDs stay tucked away as debug metadata." actions={<button className="btn secondary" onClick={() => { setDraft(DEFAULT_SETTINGS); setSettings(DEFAULT_SETTINGS); }}>Reset to defaults</button>} />
-    <div className="grid two"><Card><h2>Workspace / project selector</h2><p className="muted">Pick the workspace/project in product terms, then save. No one should have to know IDs for normal use.</p><form className="grid" onSubmit={saveSettings}><Field label="API base URL"><input className="input" value={draft.apiBaseUrl} onChange={(e) => setDraft({ ...draft, apiBaseUrl: e.target.value })} /></Field><Field label="Principal"><input className="input" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} /></Field><Field label="Bearer token"><input className="input" type="password" value={draft.bearer} onChange={(e) => setDraft({ ...draft, bearer: e.target.value })} /></Field><Field label="Workspace"><select className="input" value={draft.workspaceId} onChange={(e) => chooseWorkspace(e.target.value)}>{workspaces.length === 0 ? <option value={draft.workspaceId}>{workspace?.name ?? draft.workspaceId}</option> : workspaces.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.slug})</option>)}</select></Field><Field label="Project"><select className="input" value={draft.projectId} onChange={(e) => chooseProject(e.target.value)}>{projects.length === 0 ? <option value={draft.projectId}>{project?.name ?? draft.projectId}</option> : projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><details><summary>Debug IDs</summary><div className="code">workspace {draft.workspaceId}<br />project {draft.projectId}</div></details><button className="btn">Save and reload</button></form></Card>
-    <Card><h2>Add resource</h2><p className="muted">Add repos, URLs, markdown, or uploaded text as agent sources. Refresh/indexing turns them into reviewed runtime context.</p><form className="grid" onSubmit={addResource}><Field label="Type"><select className="input" value={resourceType} onChange={(e) => setResourceType(e.target.value as 'git' | 'url' | 'markdown' | 'upload')}><option value="git">Git repo</option><option value="url">URL</option><option value="markdown">Markdown</option><option value="upload">Upload text</option></select></Field><Field label="Name"><input className="input" value={resourceName} onChange={(e) => setResourceName(e.target.value)} /></Field><Field label="URI / URL"><input className="input" value={resourceUri} onChange={(e) => setResourceUri(e.target.value)} /></Field>{resourceType === 'git' ? <Field label="Branch/ref"><input className="input" value={branch} onChange={(e) => setBranch(e.target.value)} /></Field> : null}<Field label="Update frequency"><input className="input" value={frequency} onChange={(e) => setFrequency(e.target.value)} /></Field>{resourceType === 'markdown' || resourceType === 'upload' ? <Field label="Content"><textarea className="input" value={content} onChange={(e) => setContent(e.target.value)} /></Field> : null}<button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Add resource'}</button></form></Card></div>
-    <Card><h2>API tokens</h2><p className="muted">Tokens are how Hermes/Codex/Claude connect to ContextSmith. Scope them to a project and optionally to specific resources.</p><form className="grid" onSubmit={createToken}><Field label="Token name"><input className="input" value={tokenName} onChange={(e) => setTokenName(e.target.value)} /></Field><Field label="Scopes"><textarea className="input" value={tokenScopes} onChange={(e) => setTokenScopes(e.target.value)} /></Field><Field label="Optional resource bounds"><select className="input" multiple value={tokenResourceIds} onChange={(e) => setTokenResourceIds(Array.from(e.target.selectedOptions).map((option) => option.value))}>{resources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</select></Field><button className="btn" disabled={busy}>Create project token</button></form>{plaintextToken ? <pre className="code-block">{plaintextToken}</pre> : null}{tokens.length === 0 ? <EmptyState text="No tokens created yet." /> : <div className="table-wrap"><table><thead><tr><th>Name</th><th>Scopes</th><th>Status</th><th>Action</th></tr></thead><tbody>{tokens.map((token) => <tr key={token.id}><td><strong>{token.name}</strong><div className="code">{short(token.id)}</div></td><td className="code">{token.scopes.join(', ')}</td><td><StatusChip value={token.revoked_at ? 'revoked' : 'active'} /></td><td><button className="btn danger" disabled={Boolean(token.revoked_at)} onClick={() => revoke(token.id)}>Revoke</button></td></tr>)}</tbody></table></div>}</Card>
+  async function saveScope(event: FormEvent) {
+    event.preventDefault();
+    const next = chooseScope(selectedWorkspaceId, selectedProjectId);
+    await reload(next);
+  }
+
+  async function addResource(event: FormEvent) {
+    event.preventDefault(); setBusy(true);
+    try {
+      const source_config = resourceType === 'git' ? { url: resourceUri, branch } : resourceType === 'url' ? { url: resourceUri } : { content };
+      await client<Resource>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources`, { method: 'POST', body: JSON.stringify({ type: resourceType, name: resourceName, uri: resourceUri, update_frequency: frequency, source_config }) });
+      await reload();
+    } finally { setBusy(false); }
+  }
+
+  return <main className="page"><PageHeader eyebrow="Settings" title="Workspace settings" description="Choose the active workspace/project and connect new context sources. Account access is managed from Team Access." />
+    <div className="grid two"><Card><h2>Workspace and project</h2><p className="muted">Pick the active workspace and project by name.</p><form className="grid" onSubmit={saveScope}><Field label="Workspace"><select className="input" value={selectedWorkspaceId} onChange={(event) => setSelectedWorkspaceId(event.target.value)}>{workspaces.length === 0 ? <option value={settings.workspaceId}>{workspace?.name ?? 'No workspace loaded'}</option> : workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Project"><select className="input" value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value)}>{availableProjects.length === 0 ? <option value={settings.projectId}>{project?.name ?? 'No project loaded'}</option> : availableProjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><button className="btn" disabled={!selectedWorkspaceId || !selectedProjectId}>Save workspace</button></form></Card>
+    <Card><h2>Add source</h2><p className="muted">Add repos, URLs, markdown, or uploaded text as agent sources. Refreshing turns them into reviewed runtime context.</p><form className="grid" onSubmit={addResource}><Field label="Type"><select className="input" value={resourceType} onChange={(e) => setResourceType(e.target.value as 'git' | 'url' | 'markdown' | 'upload')}><option value="git">Git repo</option><option value="url">URL</option><option value="markdown">Markdown</option><option value="upload">Upload text</option></select></Field><Field label="Name"><input className="input" value={resourceName} onChange={(e) => setResourceName(e.target.value)} /></Field><Field label="URI / URL"><input className="input" value={resourceUri} onChange={(e) => setResourceUri(e.target.value)} /></Field>{resourceType === 'git' ? <Field label="Branch"><input className="input" value={branch} onChange={(e) => setBranch(e.target.value)} /></Field> : null}<Field label="Update cadence"><select className="input" value={frequency} onChange={(e) => setFrequency(e.target.value)}><option value="manual">Manual</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></Field>{resourceType === 'markdown' || resourceType === 'upload' ? <Field label="Content"><textarea className="input" value={content} onChange={(e) => setContent(e.target.value)} /></Field> : null}<button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Add source'}</button></form></Card></div>
   </main>;
 }
