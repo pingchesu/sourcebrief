@@ -35,9 +35,10 @@ Docs-only changes may use a lighter gate, but still require a clean branch, `git
 Preferred non-interactive invocation from Hermes:
 
 ```bash
-HOME=/home/joesu PATH=/home/joesu/.local/bin:$PATH \
-  claude -p --permission-mode acceptEdits --effort max "$(cat /tmp/prompt.txt)"
+claude -p --permission-mode acceptEdits --effort max "$(cat /tmp/prompt.txt)"
 ```
+
+If a local runner needs a custom `HOME`, `PATH`, or auth wrapper for Claude Code, configure that in the runner/session environment. Do not hard-code machine-specific paths in repository docs.
 
 Prompt requirements:
 
@@ -117,7 +118,7 @@ curl -fsS "$WEB_URL/api/health"
 
 Browser gate when frontend/auth/navigation changes:
 
-- Open `http://10.10.70.18:${SOURCEBRIEF_WEB_PORT:-13000}` or the relevant route. If local `.env` overrides `SOURCEBRIEF_WEB_PORT`, use that port.
+- Open `$WEB_URL` from the compose smoke gate, or another user-provided reachable URL for the same frontend instance.
 - Exercise the user-facing path, not just static rendering.
 - Check browser console for JavaScript errors.
 - Verify copy, navigation, loading/error states, and API behavior.
@@ -145,17 +146,20 @@ Mocks are acceptable only for unit-level edge cases that cannot reasonably hit r
 
 ## GitHub and PR operations
 
-Use the `pingchesu` GitHub identity without mutating global auth:
+Use the GitHub identity configured for the current checkout. Before mutating GitHub, verify the authenticated account and target repository:
 
 ```bash
-env -u GH_TOKEN GH_CONFIG_DIR=/home/joesu/.config/gh-pingchesu gh ...
+env -u GH_TOKEN gh auth status
+env -u GH_TOKEN gh repo view --json nameWithOwner,url,viewerPermission
 ```
+
+If a non-default GitHub account is required, set `GH_CONFIG_DIR` in the shell/session environment rather than hard-coding a personal config path in this file.
 
 For Git push over HTTPS, bypass ambient credential helpers:
 
 ```bash
 git -c credential.helper= \
-  -c credential.https://github.com.helper='!GH_CONFIG_DIR=/home/joesu/.config/gh-pingchesu gh auth git-credential' \
+  -c credential.https://github.com.helper='!gh auth git-credential' \
   push origin <branch>
 ```
 
@@ -185,7 +189,7 @@ After merging:
 
 Canonical repository:
 
-- `origin`: `https://github.com/pingchesu/sourcebrief.git`
+- `origin`: the canonical GitHub repository for this checkout, with repository slug `sourcebrief`
 - default branch: `main`
 
 Product/runtime names are canonical SourceBrief names:
