@@ -6,12 +6,14 @@ This directory contains user docs, operator docs, architecture notes, and produc
 
 - [Quick start](QUICKSTART.md) - run the local stack and get to the first product moment.
 - [Product walkthrough](WALKTHROUGH.md) - see real UI screenshots and a captured agent-context response.
+- [Agent runtime usage](AGENT_RUNTIME_USAGE.md) - use SourceBrief from Hermes, Claude Code, Codex, Cursor, MCP, and generated skills.
 - [Concepts](CONCEPTS.md) - learn the vocabulary: Source, Snapshot, Resource Map, Context Pack, Skill Pack, MCP tools.
 - [Guide](GUIDE.md) - walk through API, CLI, Git resources, MCP, and review workflows.
 - [Project status](STATUS.md) - what works today, what is experimental, and what is intentionally not ready.
 
 ## Agent/runtime integration
 
+- [Agent runtime usage](AGENT_RUNTIME_USAGE.md) - practical Hermes, Claude Code, Codex, Cursor, MCP, skill, and remote-code workflows.
 - [Guide](GUIDE.md) - `agent-context`, MCP calls, CLI workflow, and resource review.
 - [Remote repo agent skill pack spec](REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md) - adapter and package design notes.
 - [Context Artifact Compiler repo-agent spec](CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md) - repo agent lifecycle and compiler direction.

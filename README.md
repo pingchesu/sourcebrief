@@ -82,6 +82,18 @@ optional code symbols, and a token budget hint.
 
 That is the product bar: source-backed answers a coding agent can use without pretending it read the whole repo.
 
+## Use it with agents
+
+The UI is where humans connect and review context. The runtime value shows up when Hermes, Claude Code, Codex, Cursor, or another agent can ask SourceBrief for cited project evidence while working on an issue.
+
+Start with [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md) for the practical flows:
+
+- using SourceBrief while developing a project
+- using MCP from Hermes, Claude, Codex, or Cursor
+- handling remote indexed code safely
+- installing generated skills and agent packs
+- knowing where SourceBrief stops and the coding agent begins
+
 ## Quick start
 
 This is the shortest honest local path. It starts the real stack and opens the web console.
@@ -216,6 +228,7 @@ Read the full design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Start here:
 
 - [Quick start](docs/QUICKSTART.md) - run the local stack and get to the first useful product moment
+- [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md) - use SourceBrief from Hermes, Claude Code, Codex, Cursor, MCP, and generated skills
 - [Concepts](docs/CONCEPTS.md) - Resource, Snapshot, Resource Map, Context Pack, Skill Pack, MCP, and related terms
 - [Guide](docs/GUIDE.md) - end-to-end API, CLI, Git resource, MCP, and review workflows
 - [Architecture](docs/ARCHITECTURE.md) - system design and runtime components

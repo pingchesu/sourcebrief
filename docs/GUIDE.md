@@ -2,6 +2,8 @@
 
 This guide walks through the main SourceBrief workflow after the local stack is running. If you are new to the project, start with [Quick start](QUICKSTART.md) first.
 
+If you already understand the UI and want to connect Hermes, Claude Code, Codex, Cursor, MCP, or generated skills, read [Agent runtime usage](AGENT_RUNTIME_USAGE.md).
+
 ## 1. Start the stack
 
 ```bash

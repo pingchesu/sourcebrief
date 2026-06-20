@@ -6,6 +6,8 @@ For the full contributor/release gate, skip to [Full verification](#full-verific
 
 Want to see the intended result before running the stack yourself? Open the [product walkthrough](WALKTHROUGH.md) and the captured [agent-context output](examples/agent-context-output.md). Both were generated from a real local SourceBrief run.
 
+If your goal is to use SourceBrief from Hermes, Claude Code, Codex, Cursor, MCP, or generated skills, read [Agent runtime usage](AGENT_RUNTIME_USAGE.md) after the stack is running.
+
 ## Prerequisites
 
 Install:
