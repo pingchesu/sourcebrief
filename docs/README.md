@@ -5,6 +5,7 @@ This directory contains user docs, operator docs, architecture notes, and produc
 ## New users
 
 - [Quick start](QUICKSTART.md) - run the local stack and get to the first product moment.
+- [Product walkthrough](WALKTHROUGH.md) - see real UI screenshots and a captured agent-context response.
 - [Concepts](CONCEPTS.md) - learn the vocabulary: Source, Snapshot, Resource Map, Context Pack, Skill Pack, MCP tools.
 - [Guide](GUIDE.md) - walk through API, CLI, Git resources, MCP, and review workflows.
 - [Project status](STATUS.md) - what works today, what is experimental, and what is intentionally not ready.

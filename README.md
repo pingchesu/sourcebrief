@@ -10,6 +10,12 @@ Agents should not guess from whatever files happened to fit in the prompt. They 
 
 <img src="docs/assets/sourcebrief-context-flow.svg" alt="SourceBrief turns sources into reviewed context packs and serves them to agents through API and MCP" width="100%" />
 
+## See it running
+
+<img src="docs/assets/sourcebrief-product-walkthrough.gif" alt="Animated SourceBrief walkthrough showing Command Center, Sources, and Workbench citations" width="100%" />
+
+This walkthrough was captured from a real local SourceBrief stack with live API, workers, Postgres, Redis, two indexed resources, and a real `agent-context` response. See the full [product walkthrough](docs/WALKTHROUGH.md) and the captured [agent-context output](docs/examples/agent-context-output.md).
+
 ## Why SourceBrief exists
 
 AI coding agents are becoming daily engineering tools, but the context layer is still handled like a hack:

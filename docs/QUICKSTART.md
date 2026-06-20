@@ -4,6 +4,8 @@ This guide gets SourceBrief running locally and gets you to the first useful pro
 
 For the full contributor/release gate, skip to [Full verification](#full-verification). It is intentionally heavier than the quick start.
 
+Want to see the intended result before running the stack yourself? Open the [product walkthrough](WALKTHROUGH.md) and the captured [agent-context output](examples/agent-context-output.md). Both were generated from a real local SourceBrief run.
+
 ## Prerequisites
 
 Install:
