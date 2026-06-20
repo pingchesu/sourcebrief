@@ -1,4 +1,4 @@
-from contextsmith_shared.models import Workspace
+from sourcebrief_shared.models import Workspace
 
 
 def test_workspace_model_instantiates() -> None:

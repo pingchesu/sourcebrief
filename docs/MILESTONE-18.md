@@ -78,4 +78,4 @@ make release-gate
 - Human relevance grading beyond deterministic golden checks.
 - Large benchmark corpus.
 - Public internet security hardening.
-- Production mutation execution from ContextSmith.
+- Production mutation execution from SourceBrief.

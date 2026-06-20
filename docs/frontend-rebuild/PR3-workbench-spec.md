@@ -1,4 +1,4 @@
-# PR3 — ContextSmith Agent Workbench Spec
+# PR3 — SourceBrief Agent Workbench Spec
 
 > 延續 PR1（enterprise shell + Command Center + design primitives）與 PR2（Sources lifecycle hub）。本 PR **不動 backend**，僅把目前割裂的 `/repo-agents` 與 `/ask` 收斂成單一 canonical **Agent Workbench** (`/workbench`)。
 > 對應 PR1 IA 中 **Build context → Workbench** 與 **Ask & citations** 兩個入口（PR1 spec §4.2）。
@@ -155,7 +155,7 @@ PR3 **不**做以下事情：
 - 直接複用既有元件（`result` / `resources` / `title`）：runtime / citations / cited resources / symbols metric、instruction、context packet、citations 表、code symbols 表。
 
 **Advanced（折疊，預設關閉）**
-- **Drift audit**：`agent-card-summaries/run?dry_run=true`（POST，read-only）＋ 顯示 summaries。沿用 `/repo-agents` 文案（read-only、只寫 ContextSmith summary/audit 記錄）。
+- **Drift audit**：`agent-card-summaries/run?dry_run=true`（POST，read-only）＋ 顯示 summaries。沿用 `/repo-agents` 文案（read-only、只寫 SourceBrief summary/audit 記錄）。
 - **Opt-in patch / PR**（需選定 repo agent）：平移 `/repo-agents` 既有表單與 `remote-code/generate_patch`、`remote-code/open_pr`，**gating 文案、warning、預設 read-only 一字不改**（policy `patch_generation=enabled` + `patch:generate`；PR record 需 `open_pr=enabled` + `pr:write` + 明確 approval）。
 
 ### 4.5 狀態覆蓋（必須全部設計）

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make a new contributor/operator able to run ContextSmith reproducibly with only common open-source services: Docker Compose, Postgres/pgvector, Redis, API, worker, and web UI.
+Make a new contributor/operator able to run SourceBrief reproducibly with only common open-source services: Docker Compose, Postgres/pgvector, Redis, API, worker, and web UI.
 
 ## Shipped changes
 
@@ -39,7 +39,7 @@ open http://localhost:13000
 
 For a shorter running-stack check:
 
-> If you change `NEXT_PUBLIC_API_BASE_URL` or web/API ports, rebuild the frontend with `docker compose up -d --build`. For custom web ports, set `CONTEXTSMITH_CORS_ORIGINS` to the browser origins that should call the API.
+> If you change `NEXT_PUBLIC_API_BASE_URL` or web/API ports, rebuild the frontend with `docker compose up -d --build`. For custom web ports, set `SOURCEBRIEF_CORS_ORIGINS` to the browser origins that should call the API.
 
 ```bash
 make compose-up
@@ -69,29 +69,29 @@ Both paths use the same Alembic migration tree. `make verify` runs both so drift
 Default alpha deployments use deterministic local providers:
 
 ```env
-CONTEXTSMITH_EMBEDDING_PROVIDER=hashing
-CONTEXTSMITH_RERANK_PROVIDER=term-overlap
+SOURCEBRIEF_EMBEDDING_PROVIDER=hashing
+SOURCEBRIEF_RERANK_PROVIDER=term-overlap
 ```
 
 Provider-backed deployments should set endpoint/model/deployment-id together and then reindex resources:
 
 ```env
-CONTEXTSMITH_EMBEDDING_PROVIDER=openai-compatible
-CONTEXTSMITH_EMBEDDING_MODEL=bge-small-64
-CONTEXTSMITH_EMBEDDING_ENDPOINT=http://embedding-service:8000/v1/embeddings
-CONTEXTSMITH_EMBEDDING_DEPLOYMENT_ID=local-vllm-bge-small-64
+SOURCEBRIEF_EMBEDDING_PROVIDER=openai-compatible
+SOURCEBRIEF_EMBEDDING_MODEL=bge-small-64
+SOURCEBRIEF_EMBEDDING_ENDPOINT=http://embedding-service:8000/v1/embeddings
+SOURCEBRIEF_EMBEDDING_DEPLOYMENT_ID=local-vllm-bge-small-64
 ```
 
-ContextSmith MVP vector storage expects 64-dimensional embeddings. The `/provider-health` endpoint should return HTTP 200 before indexing with a provider-backed config.
+SourceBrief MVP vector storage expects 64-dimensional embeddings. The `/provider-health` endpoint should return HTTP 200 before indexing with a provider-backed config.
 
 ## Verification
 
 ```bash
-docker compose config >/tmp/contextsmith-compose.yaml
+docker compose config >/tmp/sourcebrief-compose.yaml
 python -m py_compile scripts/hermes_integration.py scripts/qa_smoke.py
 make lint
 .venv/bin/pytest tests/unit tests/integration -q
-CONTEXTSMITH_API_PORT=18123 CONTEXTSMITH_WEB_PORT=13123 make -n qa-smoke
+SOURCEBRIEF_API_PORT=18123 SOURCEBRIEF_WEB_PORT=13123 make -n qa-smoke
 make migrate-compose
 make qa-smoke
 ```
@@ -101,4 +101,4 @@ make qa-smoke
 - Kubernetes/Helm packaging.
 - Public internet hardening.
 - SSO/SCIM/enterprise auth.
-- Production mutation execution from ContextSmith.
+- Production mutation execution from SourceBrief.

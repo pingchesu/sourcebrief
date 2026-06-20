@@ -1,10 +1,10 @@
-"""Unit tests for contextsmith_worker.manifest — pure Python, no DB or network."""
+"""Unit tests for sourcebrief_worker.manifest — pure Python, no DB or network."""
 
 from __future__ import annotations
 
 import pytest
 
-from contextsmith_worker.manifest import (
+from sourcebrief_worker.manifest import (
     MAX_ARCHIVE_DEPTH,
     MAX_PATH_LENGTH,
     ManifestPathError,

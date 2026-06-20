@@ -6,29 +6,29 @@ Depends on: B0 context artifacts, B1 context packs, E0 graph versions, E1 graph 
 
 ## 1. Goal
 
-Teach runtime agents to inspect ContextSmith sources without local repository access by expanding the MCP tool surface from repo-code search primitives into artifact/pack/graph-aware tools.
+Teach runtime agents to inspect SourceBrief sources without local repository access by expanding the MCP tool surface from repo-code search primitives into artifact/pack/graph-aware tools.
 
 Milestone F ships read-only, permission-scoped tools:
 
-- `contextsmith.get_context_pack`
-- `contextsmith.list_sources`
-- `contextsmith.get_resource_map`
-- `contextsmith.search`
-- `contextsmith.read_section`
-- `contextsmith.get_graph_inventory`
-- `contextsmith.graph_query`
-- `contextsmith.graph_path`
+- `sourcebrief.get_context_pack`
+- `sourcebrief.list_sources`
+- `sourcebrief.get_resource_map`
+- `sourcebrief.search`
+- `sourcebrief.read_section`
+- `sourcebrief.get_graph_inventory`
+- `sourcebrief.graph_query`
+- `sourcebrief.graph_path`
 - freshness metadata on all relevant responses
 
 `list_sources` and `get_graph_inventory` are intentionally added as product/runtime discovery helpers so the rest of the milestone does not become UUID/key-first.
 
 Existing tools remain supported:
 
-- `contextsmith.get_agent_context`
-- `contextsmith.search_code`
-- `contextsmith.grep_code`
-- `contextsmith.read_file`
-- `contextsmith.find_symbol`
+- `sourcebrief.get_agent_context`
+- `sourcebrief.search_code`
+- `sourcebrief.grep_code`
+- `sourcebrief.read_file`
+- `sourcebrief.find_symbol`
 - opt-in patch/PR tools
 
 ## 2. Non-goals
@@ -43,7 +43,7 @@ Existing tools remain supported:
 
 ## 3. Existing surfaces and constraints
 
-Current MCP implementation is a minimal JSON-RPC endpoint in `apps/api/contextsmith_api/main.py`:
+Current MCP implementation is a minimal JSON-RPC endpoint in `apps/api/sourcebrief_api/main.py`:
 
 - `initialize`
 - `tools/list`
@@ -152,7 +152,7 @@ Rules:
 
 ## 9. Tool contracts
 
-### 9.1 `contextsmith.get_context_pack`
+### 9.1 `sourcebrief.get_context_pack`
 
 Purpose: fetch published context pack metadata, bounded artifact/source coverage, runtime guidance, and discovery inventory.
 
@@ -193,7 +193,7 @@ Rules:
 - If any covered resource is unauthorized, return 404/empty.
 - Respect `limit/cursor` for artifact and coverage arrays.
 
-### 9.2 `contextsmith.list_sources`
+### 9.2 `sourcebrief.list_sources`
 
 Purpose: product-safe discovery of authorized source resources and available artifact/graph summaries.
 
@@ -228,7 +228,7 @@ Rules:
 - Requires `resource:read`.
 - Does not include hidden project-wide counts.
 
-### 9.3 `contextsmith.get_resource_map`
+### 9.3 `sourcebrief.get_resource_map`
 
 Purpose: fetch the latest approved/published resource map artifact for one resource, using human or id discovery.
 
@@ -269,7 +269,7 @@ Rules:
 - If `source_snapshot_id` is specified, return the approved map for that snapshot and mark stale/current in freshness.
 - Bound artifact payload. If too large, return inventory/truncated guidance to `search`/`read_section`.
 
-### 9.4 `contextsmith.search`
+### 9.4 `sourcebrief.search`
 
 Purpose: search indexed sections/artifacts with citations, not just code files.
 
@@ -320,7 +320,7 @@ Rules:
 - If token cannot read full requested pack coverage, return 404/empty.
 - Do not return full source corpus.
 
-### 9.5 `contextsmith.read_section`
+### 9.5 `sourcebrief.read_section`
 
 Purpose: read exact cited section evidence by pinned locator.
 
@@ -377,7 +377,7 @@ Rules:
 - If reading a stale/deleted pinned section, return content if retained and include freshness warning; if scrubbed/unavailable, return structured not-found with no hidden leak.
 - Reject binary/oversized content and path traversal.
 
-### 9.6 `contextsmith.get_graph_inventory`
+### 9.6 `sourcebrief.get_graph_inventory`
 
 Purpose: discover authorized published resource graphs and merge graphs by human labels/keys.
 
@@ -402,7 +402,7 @@ Rules:
 - Merge graph rows are returned only if all input resources are authorized.
 - Does not expose hidden merge count.
 
-### 9.7 `contextsmith.graph_query`
+### 9.7 `sourcebrief.graph_query`
 
 Purpose: inspect published resource graph or published graph merge by human key.
 
@@ -432,7 +432,7 @@ Rules:
 - Enforce all covered input resources for merge graphs.
 - Return bounded nodes and adjacent edges with provenance/freshness.
 
-### 9.8 `contextsmith.graph_path`
+### 9.8 `sourcebrief.graph_path`
 
 Purpose: runtime path query over published graph/merge by node labels or keys.
 

@@ -1,4 +1,4 @@
-# ContextSmith alpha demo dataset
+# SourceBrief alpha demo dataset
 
 This directory documents the executable demo dataset used by `scripts/alpha_eval.py`.
 

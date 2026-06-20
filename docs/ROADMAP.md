@@ -1,10 +1,10 @@
-# ContextSmith Alpha Roadmap
+# SourceBrief Alpha Roadmap
 
 This roadmap scopes the remaining work after the M1-M10 MVP into a finite open-source SaaS alpha. Each milestone must ship through the established build cycle: feature branch, implementation, lint/typecheck/unit tests, real-service integration smoke, adversarial review, blocker fixes, PR, and merge.
 
 ## M11 — Alpha Auth / Service Tokens / Scope Enforcement
 
-Goal: make ContextSmith usable by Hermes and external agents without dev-only `X-User-Email`, while preserving tenant/project/resource boundaries.
+Goal: make SourceBrief usable by Hermes and external agents without dev-only `X-User-Email`, while preserving tenant/project/resource boundaries.
 
 Acceptance criteria:
 
@@ -13,7 +13,7 @@ Acceptance criteria:
 - Project/resource read/query/mutation endpoints enforce scopes consistently.
 - Resource-scoped tokens cannot list, search, retrieve context from, or explicitly request resources outside their allowlist.
 - Central MCP and `agent-context` use the same token boundary as REST.
-- CLI can create/list/revoke tokens and call APIs with `CONTEXTSMITH_TOKEN` / `--token`.
+- CLI can create/list/revoke tokens and call APIs with `SOURCEBRIEF_TOKEN` / `--token`.
 - Real-service integration proves scoped Hermes-style context retrieval and revocation.
 
 ## M12 — Scheduled Refresh / Reindex / Restore / Purge Lifecycle
@@ -67,15 +67,15 @@ Acceptance criteria:
 
 ## M16 — Hermes and MCP Integration Pack
 
-Goal: make ContextSmith directly consumable by Hermes as a project knowledge backend.
+Goal: make SourceBrief directly consumable by Hermes as a project knowledge backend.
 
 Acceptance criteria:
 
-- Documented Hermes configuration for ContextSmith MCP/REST usage.
+- Documented Hermes configuration for SourceBrief MCP/REST usage.
 - CLI script creates a Hermes-scoped token and validates `agent-context` with runtime=`hermes`.
 - MCP endpoint supports initialization, tool listing, and context tool calls with bearer token auth.
-- Integration smoke asks a real question through the ContextSmith service and verifies cited answer context.
-- Production action boundaries remain out of ContextSmith and delegated to typed MCP tools.
+- Integration smoke asks a real question through the SourceBrief service and verifies cited answer context.
+- Production action boundaries remain out of SourceBrief and delegated to typed MCP tools.
 
 ## M17 — Open-source Alpha Packaging / Deployment
 

@@ -14,10 +14,10 @@ from redis import Redis
 from rq import Queue
 from sqlalchemy import text
 
-from contextsmith_api.main import _bootstrap_default_admin, app
-from contextsmith_shared.config import get_settings
-from contextsmith_shared.db import get_engine
-from contextsmith_worker.jobs import run_index
+from sourcebrief_api.main import _bootstrap_default_admin, app
+from sourcebrief_shared.config import get_settings
+from sourcebrief_shared.db import get_engine
+from sourcebrief_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
 
@@ -33,14 +33,14 @@ def require_real_services() -> None:
 
 def login_admin(client: TestClient, monkeypatch: pytest.MonkeyPatch, prefix: str) -> tuple[str, str]:
     suffix = f"{prefix}-{int(time.time() * 1000)}"
-    email = f"{suffix}@contextsmith.local"
+    email = f"{suffix}@sourcebrief.local"
     password = f"{suffix}-password"
-    monkeypatch.setenv("CONTEXTSMITH_ADMIN_EMAIL", email)
-    monkeypatch.setenv("CONTEXTSMITH_ADMIN_PASSWORD", password)
-    monkeypatch.setenv("CONTEXTSMITH_ADMIN_DISPLAY_NAME", f"Admin {suffix}")
-    monkeypatch.setenv("CONTEXTSMITH_BOOTSTRAP_WORKSPACE_NAME", f"Workspace {suffix}")
-    monkeypatch.setenv("CONTEXTSMITH_BOOTSTRAP_WORKSPACE_SLUG", suffix)
-    monkeypatch.setenv("CONTEXTSMITH_BOOTSTRAP_PROJECT_NAME", f"Project {suffix}")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", email)
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", password)
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_DISPLAY_NAME", f"Admin {suffix}")
+    monkeypatch.setenv("SOURCEBRIEF_BOOTSTRAP_WORKSPACE_NAME", f"Workspace {suffix}")
+    monkeypatch.setenv("SOURCEBRIEF_BOOTSTRAP_WORKSPACE_SLUG", suffix)
+    monkeypatch.setenv("SOURCEBRIEF_BOOTSTRAP_PROJECT_NAME", f"Project {suffix}")
     _bootstrap_default_admin()
     response = client.post("/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, response.text
@@ -78,10 +78,10 @@ def upload_bundle(client: TestClient, workspace_id: str, project_id: str, token:
     return body
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_folder_bundle_manifest_diff_v1_v2(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "manifest-diff")
     workspace_id, project_id = scope.split(":")
@@ -195,10 +195,10 @@ def test_folder_bundle_manifest_diff_v1_v2(monkeypatch: pytest.MonkeyPatch, tmp_
     assert denied_diff.status_code == 404
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_section_absence_is_not_position_sensitive(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "section-shift")
     workspace_id, project_id = scope.split(":")
@@ -230,10 +230,10 @@ def test_section_absence_is_not_position_sensitive(monkeypatch: pytest.MonkeyPat
     assert body["sections_absent_count"] == 1
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_section_absence_hash_fallback_is_path_scoped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "section-path-scope")
     workspace_id, project_id = scope.split(":")
@@ -269,10 +269,10 @@ def test_section_absence_hash_fallback_is_path_scoped(monkeypatch: pytest.Monkey
     assert body["sections_absent_count"] == 2
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_resource_map_compile_review_and_scope(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "resource-map")
     workspace_id, project_id = scope.split(":")
@@ -350,7 +350,7 @@ def test_resource_map_compile_review_and_scope(monkeypatch: pytest.MonkeyPatch, 
     )
     assert denied_compile.status_code == 403
 
-    viewer_email = f"viewer-{int(time.time() * 1000)}@contextsmith.local"
+    viewer_email = f"viewer-{int(time.time() * 1000)}@sourcebrief.local"
     viewer_password = "viewer-password-123"
     viewer = client.post(
         f"/workspaces/{workspace_id}/members",
@@ -408,10 +408,10 @@ def test_resource_map_compile_review_and_scope(monkeypatch: pytest.MonkeyPatch, 
     assert approved_again.json()["status"] == "approved"
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_resource_map_missing_snapshot_sections_fails_idempotently(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "resource-map-corrupt")
     workspace_id, project_id = scope.split(":")
@@ -441,10 +441,10 @@ def test_resource_map_missing_snapshot_sections_fails_idempotently(monkeypatch: 
     assert "snapshot sections" in str(second.json()["detail"]).lower() or "sections" in str(second.json()["detail"]).lower()
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_context_pack_publish_runtime_rollback_and_purge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "context-pack")
     workspace_id, project_id = scope.split(":")
@@ -528,7 +528,7 @@ def test_context_pack_publish_runtime_rollback_and_purge(monkeypatch: pytest.Mon
     )
     assert denied_invalidate.status_code == 404
 
-    viewer_email = f"pack-viewer-{int(time.time() * 1000)}@contextsmith.local"
+    viewer_email = f"pack-viewer-{int(time.time() * 1000)}@sourcebrief.local"
     viewer_password = "viewer-password-123"
     viewer = client.post(
         f"/workspaces/{workspace_id}/members",
@@ -590,10 +590,10 @@ def test_context_pack_publish_runtime_rollback_and_purge(monkeypatch: pytest.Mon
     assert purged.status_code == 200, purged.text
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_manifest_diff_with_one_version_returns_conflict(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "manifest-diff-single")
     workspace_id, project_id = scope.split(":")
@@ -611,10 +611,10 @@ def test_real_services_reachable_for_manifest_diff() -> None:
     Queue("default", connection=Redis.from_url(get_settings().redis_url))
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "skill-export")
     workspace_id, project_id = scope.split(":")
@@ -626,7 +626,7 @@ def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: 
         "C Skill Export bundle",
         {
             "README.md": b"# Skill Export Source\nRuntime adapters must not copy this corpus sentence verbatim into package files.",
-            "docs/runtime.md": b"# Runtime\nUse pinned ContextSmith context with citations.",
+            "docs/runtime.md": b"# Runtime\nUse pinned SourceBrief context with citations.",
         },
     )
     resource_id = upload["resource"]["id"]
@@ -681,7 +681,7 @@ def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: 
     export = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{published_pack.json()['version']}/skill-exports",
         headers=auth_headers(token),
-        json={"export_type": "hermes_skill", "title": "Default runtime skill", "summary": "Use pinned ContextSmith runtime context."},
+        json={"export_type": "hermes_skill", "title": "Default runtime skill", "summary": "Use pinned SourceBrief runtime context."},
     )
     assert export.status_code == 200, export.text
     export_body = export.json()
@@ -690,7 +690,7 @@ def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: 
     file_names = {file["path"] for file in export_body["files"]}
     assert {"SKILL.md", "README.md", "manifest.json"}.issubset(file_names)
     joined = "\n".join(file.get("content") or "" for file in export_body["files"])
-    assert "contextsmith.get_agent_context" in joined
+    assert "sourcebrief.get_agent_context" in joined
     assert "context_pack_key" in joined
     assert "context_pack_version" in joined
     assert "context_pack_snapshot_pin_enforced" in joined
@@ -704,7 +704,7 @@ def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: 
     repeated = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/context-packs/default/versions/{published_pack.json()['version']}/skill-exports",
         headers=auth_headers(token),
-        json={"export_type": "hermes_skill", "title": "Default runtime skill", "summary": "Use pinned ContextSmith runtime context."},
+        json={"export_type": "hermes_skill", "title": "Default runtime skill", "summary": "Use pinned SourceBrief runtime context."},
     )
     assert repeated.status_code == 200, repeated.text
     assert repeated.json()["id"] == export_body["id"]
@@ -784,14 +784,14 @@ def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: 
     assert purged.status_code == 200, purged.text
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_repo_agent_v0_draft_publish_archive_scrub_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "repo-agent")
     workspace_id, project_id = scope.split(":")
-    monkeypatch.setenv("CONTEXTSMITH_ALLOW_LOCAL_GIT", "true")
+    monkeypatch.setenv("SOURCEBRIEF_ALLOW_LOCAL_GIT", "true")
     repo_dir = tmp_path / "repo-agent-fixture"
     repo_dir.mkdir()
     (repo_dir / "README.md").write_text("# Repo Agent\nThis repo has runtime instructions.\n", encoding="utf-8")
@@ -1030,11 +1030,11 @@ def test_repo_agent_v0_draft_publish_archive_scrub_lifecycle(monkeypatch: pytest
     assert tombstone_get.status_code == 404
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_graph_version_storage_e0_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
-    monkeypatch.setenv("CONTEXTSMITH_ALLOW_LOCAL_GIT", "true")
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_ALLOW_LOCAL_GIT", "true")
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "graph-version")
     workspace_id, project_id = scope.split(":")
@@ -1146,11 +1146,11 @@ def test_graph_version_storage_e0_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp
     assert "graphs" in purge_blocked.json()["detail"]
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
-    monkeypatch.setenv("CONTEXTSMITH_ALLOW_LOCAL_GIT", "true")
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_ALLOW_LOCAL_GIT", "true")
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "graph-merge")
     workspace_id, project_id = scope.split(":")
@@ -1203,7 +1203,7 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     graph_a_v1 = publish_resource_graph(resource_a, "merge-a-graph", "Merge A Graph")
     graph_b_v1 = publish_resource_graph(resource_b, "merge-b-graph", "Merge B Graph")
 
-    monkeypatch.setenv("CONTEXTSMITH_GRAPH_MERGE_MAX_INPUTS", "1")
+    monkeypatch.setenv("SOURCEBRIEF_GRAPH_MERGE_MAX_INPUTS", "1")
     too_many = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges",
         headers=auth_headers(token),
@@ -1211,8 +1211,8 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     )
     assert too_many.status_code == 422
     assert "too_many_inputs" in too_many.text
-    monkeypatch.setenv("CONTEXTSMITH_GRAPH_MERGE_MAX_INPUTS", "8")
-    monkeypatch.setenv("CONTEXTSMITH_GRAPH_MERGE_MAX_NODES", "1")
+    monkeypatch.setenv("SOURCEBRIEF_GRAPH_MERGE_MAX_INPUTS", "8")
+    monkeypatch.setenv("SOURCEBRIEF_GRAPH_MERGE_MAX_NODES", "1")
     too_large = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges",
         headers=auth_headers(token),
@@ -1220,7 +1220,7 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     )
     assert too_large.status_code == 413
     assert "merge_node_limit_exceeded" in too_large.text
-    monkeypatch.setenv("CONTEXTSMITH_GRAPH_MERGE_MAX_NODES", "10000")
+    monkeypatch.setenv("SOURCEBRIEF_GRAPH_MERGE_MAX_NODES", "10000")
 
     compiled_merge = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges",
@@ -1352,10 +1352,10 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert "graph_merges" in purge_blocked.json()["detail"]
 
 
-@pytest.mark.skipif(not os.getenv("CONTEXTSMITH_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
+@pytest.mark.skipif(not os.getenv("SOURCEBRIEF_RUN_REAL_INTEGRATION"), reason="requires real Postgres/Redis services")
 def test_expanded_mcp_runtime_tools_f(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "mcp-f")
     workspace_id, project_id = scope.split(":")
@@ -1430,46 +1430,46 @@ def test_expanded_mcp_runtime_tools_f(monkeypatch: pytest.MonkeyPatch, tmp_path:
     tools = mcp("tools/list")["result"]["tools"]
     tool_names = {tool["name"] for tool in tools}
     assert {
-        "contextsmith.get_context_pack",
-        "contextsmith.list_sources",
-        "contextsmith.get_resource_map",
-        "contextsmith.search",
-        "contextsmith.read_section",
-        "contextsmith.get_graph_inventory",
-        "contextsmith.graph_query",
-        "contextsmith.graph_path",
+        "sourcebrief.get_context_pack",
+        "sourcebrief.list_sources",
+        "sourcebrief.get_resource_map",
+        "sourcebrief.search",
+        "sourcebrief.read_section",
+        "sourcebrief.get_graph_inventory",
+        "sourcebrief.graph_query",
+        "sourcebrief.graph_path",
     }.issubset(tool_names)
 
-    sources = call("contextsmith.list_sources", {"query": "F MCP", "limit": 10})
+    sources = call("sourcebrief.list_sources", {"query": "F MCP", "limit": 10})
     assert sources["sources"]
     assert sources["sources"][0]["resource_id"] == resource_id
 
-    pack = call("contextsmith.get_context_pack", {"pack_key": "default", "include_graph_inventory": True})
+    pack = call("sourcebrief.get_context_pack", {"pack_key": "default", "include_graph_inventory": True})
     assert pack["pack"]["status"] == "published"
     assert pack["freshness"]["resources"]
     assert pack["artifacts"][0]["citation_locators"]
 
-    resource_map = call("contextsmith.get_resource_map", {"resource_ref": "F MCP Runtime", "limit": 10})
+    resource_map = call("sourcebrief.get_resource_map", {"resource_ref": "F MCP Runtime", "limit": 10})
     assert resource_map["artifact"]["id"] == artifact_id
     locator = resource_map["citations"][0]["locator"]
     assert locator["context_artifact_citation_id"]
 
-    search = call("contextsmith.search", {"query": "pinned runtime evidence", "context_pack_key": "default", "top_k": 3})
+    search = call("sourcebrief.search", {"query": "pinned runtime evidence", "context_pack_key": "default", "top_k": 3})
     assert search["hits"]
     assert search["hits"][0]["source_snapshot_id"]
 
-    section = call("contextsmith.read_section", {"resource_id": resource_id, "context_artifact_citation_id": locator["context_artifact_citation_id"], "context_pack_key": "default", "context_pack_version": 1})
+    section = call("sourcebrief.read_section", {"resource_id": resource_id, "context_artifact_citation_id": locator["context_artifact_citation_id"], "context_pack_key": "default", "context_pack_version": 1})
     assert "get_context_pack" in section["content"] or "runtime" in section["content"].lower()
     assert section["locator"]["context_artifact_citation_id"] == locator["context_artifact_citation_id"]
     assert section["freshness"]["resources"]
 
-    malformed = mcp("tools/call", {"name": "contextsmith.read_section", "arguments": {"resource_id": "not-a-uuid"}})
+    malformed = mcp("tools/call", {"name": "sourcebrief.read_section", "arguments": {"resource_id": "not-a-uuid"}})
     assert malformed["result"].get("isError") is True
     assert malformed["result"]["structuredContent"]["status_code"] == 422
 
-    graph_inventory = call("contextsmith.get_graph_inventory", {"query": "runtime", "kind": "all"})
+    graph_inventory = call("sourcebrief.get_graph_inventory", {"query": "runtime", "kind": "all"})
     assert any(graph["graph_key"] == "runtime-mcp-graph" for graph in graph_inventory["resource_graphs"])
-    graph_query = call("contextsmith.graph_query", {"graph_key": "runtime-mcp-graph", "graph_kind": "resource", "query": "README", "limit": 10})
+    graph_query = call("sourcebrief.graph_query", {"graph_key": "runtime-mcp-graph", "graph_kind": "resource", "query": "README", "limit": 10})
     assert graph_query["graph"]["status"] == "published"
     assert graph_query["freshness"]["resources"]
 
@@ -1479,6 +1479,6 @@ def test_expanded_mcp_runtime_tools_f(monkeypatch: pytest.MonkeyPatch, tmp_path:
         json={"name": "mcp f denied", "scopes": ["resource:read", "project:query"], "allowed_project_ids": [project_id], "allowed_resource_ids": []},
     )
     assert denied_token.status_code == 201, denied_token.text
-    denied = mcp("tools/call", {"name": "contextsmith.get_context_pack", "arguments": {"pack_key": "default"}}, bearer=denied_token.json()["token"])
+    denied = mcp("tools/call", {"name": "sourcebrief.get_context_pack", "arguments": {"pack_key": "default"}}, bearer=denied_token.json()["token"])
     assert denied["result"].get("isError") is True
     assert "not found" in json.dumps(denied["result"]["structuredContent"]).lower()

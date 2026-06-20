@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from contextsmith_shared.models import ResourceManifestFile
-from contextsmith_worker.manifest_diff import build_manifest_diff, page_diff_rows
+from sourcebrief_shared.models import ResourceManifestFile
+from sourcebrief_worker.manifest_diff import build_manifest_diff, page_diff_rows
 
 
 def file_row(path: str, content_hash: str, *, status: str = "pending", warnings: list[str] | None = None, size: int = 1) -> ResourceManifestFile:

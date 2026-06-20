@@ -1,9 +1,9 @@
 # A2: Multipart Zip Folder Upload — Implementation Spec
 
-Status: Draft  
-Date: 2026-06-19  
-Owner: ContextSmith platform  
-Parent spec: `docs/CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md` §27 Milestone A2  
+Status: Draft
+Date: 2026-06-19
+Owner: SourceBrief platform
+Parent spec: `docs/CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md` §27 Milestone A2
 A1 spec: `docs/context-artifact-compiler/A1-manifest-model-spec.md`
 
 ---
@@ -99,7 +99,7 @@ POST /workspaces/{workspace_id}/projects/{project_id}/resources/upload-folder-bu
 
 `ResourceRead` is the existing Pydantic schema. `IndexRunRead` is the existing schema. The response combines both so the frontend can begin polling the run status without a second request.
 
-**New Pydantic schema** in `apps/api/contextsmith_api/schemas.py`:
+**New Pydantic schema** in `apps/api/sourcebrief_api/schemas.py`:
 
 ```python
 class FolderBundleUploadResponse(BaseModel):
@@ -168,7 +168,7 @@ Returns the most recent `ResourceManifest` for the resource (by `created_at DESC
 
 `files` is the full list of `ResourceManifestFile` rows (up to `HARD_MAX_MANIFEST_FILE_COUNT`; in practice capped by quota at extraction time). No separate pagination for A2. If needed in the future, a `?page=` query parameter can be added without breaking the spec.
 
-**New Pydantic schemas** in `apps/api/contextsmith_api/schemas.py`:
+**New Pydantic schemas** in `apps/api/sourcebrief_api/schemas.py`:
 
 ```python
 class ResourceManifestFileRead(BaseModel):
@@ -208,7 +208,7 @@ The API writes the zip to a controlled staging path before enqueuing the job. Th
 {_work_base()}/uploads/{resource_id}.zip
 ```
 
-`_work_base()` is the existing helper in `ingestion.py` that returns `CONTEXTSMITH_WORK_DIR` or `/tmp/contextsmith-ingest`.
+`_work_base()` is the existing helper in `ingestion.py` that returns `SOURCEBRIEF_WORK_DIR` or `/tmp/sourcebrief-ingest`.
 
 The API creates `{_work_base()}/uploads/` on first use (with `os.makedirs(..., exist_ok=True)`).
 
@@ -229,7 +229,7 @@ source_config = {
 
 ### 4.2 New module: `bundle_ingest.py`
 
-Location: `packages/worker/contextsmith_worker/bundle_ingest.py`
+Location: `packages/worker/sourcebrief_worker/bundle_ingest.py`
 
 This module contains all zip-specific logic. It imports A1 helpers from `manifest.py` but has no knowledge of the ORM — it returns plain dicts that `ingestion.py` and `manifest_store.py` consume.
 
@@ -329,7 +329,7 @@ Add `_collect_folder_bundle(resource: Resource) -> tuple[list[dict], str, str, d
 
 ```python
 def _collect_folder_bundle(resource: Resource) -> tuple[list[dict], str, str, dict]:
-    from contextsmith_worker.bundle_ingest import (
+    from sourcebrief_worker.bundle_ingest import (
         extract_zip_to_sandbox, ZipRejectionError,
         HARD_MAX_ZIP_UPLOAD_BYTES,
     )
@@ -419,7 +419,7 @@ After the snapshot + chunks section of `ingest_resource` (after `build_graph_ind
 
 ```python
 if rtype in FOLDER_BUNDLE_TYPES:
-    from contextsmith_worker.manifest_store import ManifestFileInput, create_resource_manifest
+    from sourcebrief_worker.manifest_store import ManifestFileInput, create_resource_manifest
     create_resource_manifest(
         session,
         workspace_id=resource.workspace_id,
@@ -434,7 +434,7 @@ if rtype in FOLDER_BUNDLE_TYPES:
 
 ### 4.4 `manifest_store.create_resource_manifest` (A1 already exists; use actual signature)
 
-The A1 implementation defines this in `packages/worker/contextsmith_worker/manifest_store.py`:
+The A1 implementation defines this in `packages/worker/sourcebrief_worker/manifest_store.py`:
 
 ```python
 def create_resource_manifest(
@@ -468,13 +468,13 @@ Add A2-owned stale upload cleanup, not just an operator note:
 Operators can still purge manually if needed:
 
 ```bash
-find "$(printenv CONTEXTSMITH_WORK_DIR || echo /tmp/contextsmith-ingest)/uploads" \
+find "$(printenv SOURCEBRIEF_WORK_DIR || echo /tmp/sourcebrief-ingest)/uploads" \
   \( -name "*.zip" -o -name ".incoming-*.zip" \) -mtime +1 -delete
 ```
 
 ### 4.6 Shared filesystem deployment precondition
 
-A2's staging design requires API and worker containers to share the same `CONTEXTSMITH_WORK_DIR` volume. This is an explicit deployment contract:
+A2's staging design requires API and worker containers to share the same `SOURCEBRIEF_WORK_DIR` volume. This is an explicit deployment contract:
 
 - `docker-compose.yml` must mount the same named volume/path into `api`, `worker-default`, and `worker-maintenance` if it does not already.
 - Add a lightweight startup/health helper `validate_upload_staging_dir()` that creates `{work_base}/uploads`, writes and removes a tiny probe file, and verifies free disk is above a conservative threshold (for local dev, at least `HARD_MAX_ZIP_UPLOAD_BYTES`).
@@ -526,7 +526,7 @@ No new Alembic migration is required for A2. All tables already exist after A1.
 
 **No new type enum or migration** — `type` is a `Text` column; adding `"folder_bundle"` as a string value requires no schema change.
 
-**New constant** in `apps/api/contextsmith_api/constants.py`:
+**New constant** in `apps/api/sourcebrief_api/constants.py`:
 
 ```python
 FOLDER_BUNDLE_RESOURCE_TYPES = {"folder_bundle"}
@@ -534,7 +534,7 @@ FOLDER_BUNDLE_RESOURCE_TYPES = {"folder_bundle"}
 
 This is used in the upload endpoint to gate `_validate_source_config` (which does not apply to folder bundles — source_config is built programmatically by the endpoint, not derived from the JSON body).
 
-`packages/worker/contextsmith_worker/ingestion.py` should define its own matching connector set or import the API constant only if that does not introduce an API→worker dependency cycle. Prefer keeping the worker-side set local (`FOLDER_BUNDLE_TYPES = {"folder_bundle"}`) as existing ingestion connector sets are local.
+`packages/worker/sourcebrief_worker/ingestion.py` should define its own matching connector set or import the API constant only if that does not introduce an API→worker dependency cycle. Prefer keeping the worker-side set local (`FOLDER_BUNDLE_TYPES = {"folder_bundle"}`) as existing ingestion connector sets are local.
 
 ---
 
@@ -628,7 +628,7 @@ When `type === 'folder_bundle'`:
 </Field>
 ```
 
-`defaultUri` for `folder_bundle` returns `'upload://folder.zip'`.  
+`defaultUri` for `folder_bundle` returns `'upload://folder.zip'`.
 `defaultName` for `folder_bundle` returns `'New folder bundle'`.
 
 ### 7.4 Submit handler for folder bundle
@@ -727,15 +727,15 @@ export type ResourceManifestFile = {
 
 | File | Action | Description |
 |---|---|---|
-| `packages/worker/contextsmith_worker/bundle_ingest.py` | Create | Zip extraction sandbox, staging-dir validation, stale upload cleanup, `validate_zip_before_extract`, `extract_zip_to_sandbox`, `_safe_extract_dest`, `ZipRejectionError` |
-| `packages/worker/contextsmith_worker/ingestion.py` | Modify | Add `FOLDER_BUNDLE_TYPES`, `_collect_folder_bundle`, dispatch branch and post-snapshot manifest creation in `ingest_resource` |
-| `packages/worker/contextsmith_worker/manifest_store.py` | Use existing | Use `ManifestFileInput` + `create_resource_manifest`; do not change A1 signature unless implementation proves a narrow adapter belongs there |
-| `apps/api/contextsmith_api/main.py` | Modify | Add `upload_folder_bundle` endpoint; add `get_resource_manifest` endpoint; import `FolderBundleUploadResponse`, `ResourceManifestRead` |
-| `apps/api/contextsmith_api/schemas.py` | Modify | Add `FolderBundleUploadResponse`, `ResourceManifestRead`, `ResourceManifestFileRead` |
-| `apps/api/contextsmith_api/constants.py` | Modify | Add `FOLDER_BUNDLE_RESOURCE_TYPES = {"folder_bundle"}` |
+| `packages/worker/sourcebrief_worker/bundle_ingest.py` | Create | Zip extraction sandbox, staging-dir validation, stale upload cleanup, `validate_zip_before_extract`, `extract_zip_to_sandbox`, `_safe_extract_dest`, `ZipRejectionError` |
+| `packages/worker/sourcebrief_worker/ingestion.py` | Modify | Add `FOLDER_BUNDLE_TYPES`, `_collect_folder_bundle`, dispatch branch and post-snapshot manifest creation in `ingest_resource` |
+| `packages/worker/sourcebrief_worker/manifest_store.py` | Use existing | Use `ManifestFileInput` + `create_resource_manifest`; do not change A1 signature unless implementation proves a narrow adapter belongs there |
+| `apps/api/sourcebrief_api/main.py` | Modify | Add `upload_folder_bundle` endpoint; add `get_resource_manifest` endpoint; import `FolderBundleUploadResponse`, `ResourceManifestRead` |
+| `apps/api/sourcebrief_api/schemas.py` | Modify | Add `FolderBundleUploadResponse`, `ResourceManifestRead`, `ResourceManifestFileRead` |
+| `apps/api/sourcebrief_api/constants.py` | Modify | Add `FOLDER_BUNDLE_RESOURCE_TYPES = {"folder_bundle"}` |
 | `apps/web/app/sources/page.tsx` | Modify | Add `folder_bundle` type, zip file picker, FormData upload, manifest summary card |
 | `apps/web/lib/types.ts` | Modify | Add `ResourceManifest`, `ResourceManifestFile` types |
-| `docker-compose.yml` | Verify/modify | Ensure API and workers share `CONTEXTSMITH_WORK_DIR` volume for staged uploads |
+| `docker-compose.yml` | Verify/modify | Ensure API and workers share `SOURCEBRIEF_WORK_DIR` volume for staged uploads |
 | `tests/unit/test_bundle_ingest.py` | Create | Unit tests for all zip-bomb, traversal, symlink, nested archive cases |
 | `tests/integration/test_folder_bundle_flow.py` | Create | Integration tests: API upload → RQ job → DB state → manifest endpoint |
 
@@ -749,7 +749,7 @@ No migration file required.
 
 All tests use synthetic in-memory zips created with `zipfile.ZipFile(io.BytesIO(), "w")`. No database, no network, no filesystem writes (except `tempfile.mkdtemp` for extraction sandbox tests).
 
-**Import only**: `contextsmith_worker.bundle_ingest`, `contextsmith_worker.manifest` (A1).
+**Import only**: `sourcebrief_worker.bundle_ingest`, `sourcebrief_worker.manifest` (A1).
 
 | Test ID | Scenario | Expected |
 |---|---|---|
@@ -805,7 +805,7 @@ Use real Postgres via the existing integration test session fixture. Synthesize 
 
 ### 9.3 Malicious archive generation
 
-Generate malicious zip payloads in-memory in unit/integration tests unless a tiny committed fixture is materially clearer. Do **not** commit large zip bombs or `HARD_MAX_MANIFEST_FILE_COUNT + 1` archives. For manual QA, a helper script may generate files under `/tmp/contextsmith-malicious-zips/`.
+Generate malicious zip payloads in-memory in unit/integration tests unless a tiny committed fixture is materially clearer. Do **not** commit large zip bombs or `HARD_MAX_MANIFEST_FILE_COUNT + 1` archives. For manual QA, a helper script may generate files under `/tmp/sourcebrief-malicious-zips/`.
 
 | Filename | Description |
 |---|---|
@@ -817,7 +817,7 @@ Generate malicious zip payloads in-memory in unit/integration tests unless a tin
 | `nested.zip` | Outer zip containing an inner `inner.zip` entry |
 | `deep_path.zip` | Entry with `MAX_ARCHIVE_DEPTH + 1` directory components |
 
-Optional generation script: `tests/fixtures/generate_malicious_zips.py`. It must default to `/tmp/contextsmith-malicious-zips/` and must not be required for automated tests.
+Optional generation script: `tests/fixtures/generate_malicious_zips.py`. It must default to `/tmp/sourcebrief-malicious-zips/` and must not be required for automated tests.
 
 ### 9.4 Browser / API real-data QA checklist
 
@@ -846,7 +846,7 @@ curl -s \
   -H "Authorization: Bearer ***" | jq '{file_count, unsupported_file_count, parser_warning_count}'
 
 # Verify staging zip was cleaned up
-ls "$(printenv CONTEXTSMITH_WORK_DIR || echo /tmp/contextsmith-ingest)/uploads/"
+ls "$(printenv SOURCEBRIEF_WORK_DIR || echo /tmp/sourcebrief-ingest)/uploads/"
 
 # Verify audit events
 psql "$DATABASE_URL" -c "SELECT action, target_type FROM audit_events WHERE action IN ('resource.upload','manifest.created') ORDER BY created_at DESC LIMIT 5;"
@@ -890,7 +890,7 @@ DELETE FROM resources WHERE id = :resource_id;
 **Staging file cleanup** (if worker crashed mid-job):
 
 ```bash
-find "$(printenv CONTEXTSMITH_WORK_DIR || echo /tmp/contextsmith-ingest)/uploads" \
+find "$(printenv SOURCEBRIEF_WORK_DIR || echo /tmp/sourcebrief-ingest)/uploads" \
   -name "*.zip" -mtime +1 -delete
 ```
 
@@ -927,7 +927,7 @@ find "$(printenv CONTEXTSMITH_WORK_DIR || echo /tmp/contextsmith-ingest)/uploads
 - [ ] API structural validation rejects malicious archives before Resource/IndexRun creation
 - [ ] Enqueue failure does not leave active Resource rows or staged zip files
 - [ ] Stale upload cleanup deletes old staged files under uploads dir only
-- [ ] API and worker validate `CONTEXTSMITH_WORK_DIR/uploads` readiness/free disk before use
+- [ ] API and worker validate `SOURCEBRIEF_WORK_DIR/uploads` readiness/free disk before use
 - [ ] Structured logs include `ZipRejectionError.reason` and upload/extraction cleanup outcomes
 
 **Functional**

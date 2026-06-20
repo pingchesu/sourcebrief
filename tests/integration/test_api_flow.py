@@ -9,9 +9,9 @@ from redis import Redis
 from rq import Queue, SimpleWorker
 from sqlalchemy import text
 
-from contextsmith_api.main import app
-from contextsmith_shared.config import get_settings
-from contextsmith_shared.db import get_engine
+from sourcebrief_api.main import app
+from sourcebrief_shared.config import get_settings
+from sourcebrief_shared.db import get_engine
 
 pytestmark = pytest.mark.integration
 
@@ -73,8 +73,8 @@ def create_flow(client: TestClient, email_prefix: str) -> tuple[dict[str, str], 
 
 
 def test_provider_health_returns_503_on_failed_provider(monkeypatch) -> None:
-    monkeypatch.setenv("CONTEXTSMITH_EMBEDDING_PROVIDER", "vllm")
-    monkeypatch.delenv("CONTEXTSMITH_EMBEDDING_ENDPOINT", raising=False)
+    monkeypatch.setenv("SOURCEBRIEF_EMBEDDING_PROVIDER", "vllm")
+    monkeypatch.delenv("SOURCEBRIEF_EMBEDDING_ENDPOINT", raising=False)
     response = TestClient(app).get("/provider-health")
     assert response.status_code == 503
     assert response.json()["status"] == "failed"
@@ -86,18 +86,18 @@ def test_workspace_project_resource_refresh_flow() -> None:
     health = TestClient(app).get("/provider-health")
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
-    assert health.json()["embedding"]["namespace"] == "hashing:contextsmith-hashing-v1:d64:l2"
+    assert health.json()["embedding"]["namespace"] == "hashing:sourcebrief-hashing-v1:d64:l2"
     assert health.json()["embedding"]["dev_quality"] is True
-    old_dev_auth = os.environ.get("CONTEXTSMITH_DEV_AUTH")
-    os.environ["CONTEXTSMITH_DEV_AUTH"] = "false"
+    old_dev_auth = os.environ.get("SOURCEBRIEF_DEV_AUTH")
+    os.environ["SOURCEBRIEF_DEV_AUTH"] = "false"
     try:
         unauthenticated = TestClient(app).post("/workspaces", json={"name": "No Auth", "slug": f"no-auth-{int(time.time() * 1000)}"})
         assert unauthenticated.status_code == 401
     finally:
         if old_dev_auth is None:
-            os.environ["CONTEXTSMITH_DEV_AUTH"] = "true"
+            os.environ["SOURCEBRIEF_DEV_AUTH"] = "true"
         else:
-            os.environ["CONTEXTSMITH_DEV_AUTH"] = old_dev_auth
+            os.environ["SOURCEBRIEF_DEV_AUTH"] = old_dev_auth
 
     client = TestClient(app)
     headers, workspace_id, project_id, resource_id = create_flow(client, "owner")

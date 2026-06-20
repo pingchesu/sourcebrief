@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextsmith_shared.embeddings import (
+from sourcebrief_shared.embeddings import (
     EmbeddingConfig,
     embed_text,
     embedding_namespace,
@@ -36,7 +36,7 @@ def test_configurable_hashing_dimensions_and_rerank() -> None:
     config = EmbeddingConfig(provider="hashing", dimensions=16)
     vector = embed_text("graph retrieval", config=config)
     assert len(vector) == 16
-    assert embedding_namespace(config) == "hashing:contextsmith-hashing-v1:d16:l2"
+    assert embedding_namespace(config) == "hashing:sourcebrief-hashing-v1:d16:l2"
     assert rerank_score("graph retrieval", "retrieval uses graph nodes") == 1.0
 
 
@@ -59,12 +59,12 @@ def test_rerank_normalization_and_provider_health(monkeypatch) -> None:
     )
     assert embedding_namespace(remote_config) == "vllm:bge-m3:d64:l2:dep-prod-a"
 
-    monkeypatch.delenv("CONTEXTSMITH_EMBEDDING_DEPLOYMENT_ID", raising=False)
-    monkeypatch.setenv("CONTEXTSMITH_EMBEDDING_PROVIDER", "vllm")
-    monkeypatch.setenv("CONTEXTSMITH_EMBEDDING_MODEL", "bge-m3")
-    monkeypatch.setenv("CONTEXTSMITH_EMBEDDING_ENDPOINT", "http://embed-a.local/v1/embeddings")
+    monkeypatch.delenv("SOURCEBRIEF_EMBEDDING_DEPLOYMENT_ID", raising=False)
+    monkeypatch.setenv("SOURCEBRIEF_EMBEDDING_PROVIDER", "vllm")
+    monkeypatch.setenv("SOURCEBRIEF_EMBEDDING_MODEL", "bge-m3")
+    monkeypatch.setenv("SOURCEBRIEF_EMBEDDING_ENDPOINT", "http://embed-a.local/v1/embeddings")
     first = embedding_namespace()
-    monkeypatch.setenv("CONTEXTSMITH_EMBEDDING_ENDPOINT", "http://embed-b.local/v1/embeddings")
+    monkeypatch.setenv("SOURCEBRIEF_EMBEDDING_ENDPOINT", "http://embed-b.local/v1/embeddings")
     second = embedding_namespace()
     assert first != second
     assert first.startswith("vllm:bge-m3:d64:l2:dep-endpoint-")

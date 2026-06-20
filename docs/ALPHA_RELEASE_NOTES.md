@@ -1,8 +1,8 @@
-# ContextSmith Alpha Release Notes
+# SourceBrief Alpha Release Notes
 
 ## Shipped capabilities
 
-ContextSmith alpha is an open-source, multi-tenant, project-based context platform for agent runtimes.
+SourceBrief alpha is an open-source, multi-tenant, project-based context platform for agent runtimes.
 
 ### Core platform
 
@@ -46,7 +46,7 @@ ContextSmith alpha is an open-source, multi-tenant, project-based context platfo
 - Public internet hardening.
 - Enterprise SSO/SCIM.
 - Fine-grained ABAC beyond current workspace/project/resource token allowlists.
-- Production mutation execution from ContextSmith.
+- Production mutation execution from SourceBrief.
 - Per-repo MCP servers.
 - Unbounded connector/plugin marketplace.
 - Large-scale semantic quality benchmark corpus.

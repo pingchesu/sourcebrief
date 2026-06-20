@@ -2,7 +2,7 @@
 
 ## Goal
 
-Expand resource sources beyond inline docs/git without turning ContextSmith workers into unsafe egress or local-file readers. M13 adds bounded URL and upload connectors plus a pre-index secret redaction pass.
+Expand resource sources beyond inline docs/git without turning SourceBrief workers into unsafe egress or local-file readers. M13 adds bounded URL and upload connectors plus a pre-index secret redaction pass.
 
 ## Delivered behavior
 
@@ -38,7 +38,7 @@ This is not a DLP product. It is a practical pre-index safety net to avoid accid
 Create a URL resource (send your bearer token in the Authorization header):
 
 ```bash
-curl -X POST "$CONTEXTSMITH_API/workspaces/$WS/projects/$PROJECT/resources" \
+curl -X POST "$SOURCEBRIEF_API/workspaces/$WS/projects/$PROJECT/resources" \
   -H "Content-Type: application/json" \
   --data @url-resource.json
 ```
@@ -57,7 +57,7 @@ curl -X POST "$CONTEXTSMITH_API/workspaces/$WS/projects/$PROJECT/resources" \
 Create an upload resource:
 
 ```bash
-curl -X POST "$CONTEXTSMITH_API/workspaces/$WS/projects/$PROJECT/resources" \
+curl -X POST "$SOURCEBRIEF_API/workspaces/$WS/projects/$PROJECT/resources" \
   -H "Content-Type: application/json" \
   --data @upload-resource.json
 ```
@@ -76,13 +76,13 @@ curl -X POST "$CONTEXTSMITH_API/workspaces/$WS/projects/$PROJECT/resources" \
 ## CLI examples
 
 ```bash
-contextsmith resource add-url \
+sourcebrief resource add-url \
   --workspace-id $WS --project-id $PROJECT \
   --name "Architecture doc" \
   --url https://example.com/architecture.html \
   --refresh --wait
 
-contextsmith resource add-upload \
+sourcebrief resource add-upload \
   --workspace-id $WS --project-id $PROJECT \
   --name "Runbook upload" \
   --path ./runbook.md \

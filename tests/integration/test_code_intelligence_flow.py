@@ -11,11 +11,11 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import text
 
-from contextsmith_api.main import app
-from contextsmith_shared.config import get_settings
-from contextsmith_shared.db import get_engine, get_sessionmaker
-from contextsmith_shared.models import IndexRun
-from contextsmith_worker.jobs import run_index
+from sourcebrief_api.main import app
+from sourcebrief_shared.config import get_settings
+from sourcebrief_shared.db import get_engine, get_sessionmaker
+from sourcebrief_shared.models import IndexRun
+from sourcebrief_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
 
@@ -127,7 +127,7 @@ def test_git_ingestion_extracts_and_searches_code_symbols(tmp_path) -> None:
     headers, workspace_id, project_id = make_project(client, "m4-code")
     repo_path = str(tmp_path / "code-repo")
     commit = build_code_repo(repo_path)
-    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
+    os.environ["SOURCEBRIEF_ALLOW_LOCAL_GIT"] = "true"
     resource_id = add_resource(
         client,
         workspace_id,
@@ -179,7 +179,7 @@ def test_code_search_uses_current_snapshot_and_resource_filter(tmp_path) -> None
     headers, workspace_id, project_id = make_project(client, "m4-current")
     repo_a = str(tmp_path / "repo-a")
     build_code_repo(repo_a)
-    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
+    os.environ["SOURCEBRIEF_ALLOW_LOCAL_GIT"] = "true"
     resource_a = add_resource(
         client,
         workspace_id,
@@ -328,7 +328,7 @@ def test_repo_agent_brief_and_retrieval_eval_are_productized(tmp_path) -> None:
     headers, workspace_id, project_id = make_project(client, "mature-alpha")
     repo_path = str(tmp_path / "brief-repo")
     build_code_repo(repo_path)
-    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
+    os.environ["SOURCEBRIEF_ALLOW_LOCAL_GIT"] = "true"
     resource_id = add_resource(
         client,
         workspace_id,
@@ -527,8 +527,8 @@ def test_repo_agent_brief_and_retrieval_eval_are_productized(tmp_path) -> None:
     )
     assert mcp_tools.status_code == 200, mcp_tools.text
     tools = {tool["name"]: tool for tool in mcp_tools.json()["result"]["tools"]}
-    assert "profile" in tools["contextsmith.get_agent_context"]["inputSchema"]["properties"]
-    assert "profile" not in tools["contextsmith.search_code"]["inputSchema"]["properties"]
+    assert "profile" in tools["sourcebrief.get_agent_context"]["inputSchema"]["properties"]
+    assert "profile" not in tools["sourcebrief.search_code"]["inputSchema"]["properties"]
 
     forbidden = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",

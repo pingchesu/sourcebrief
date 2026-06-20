@@ -4,7 +4,7 @@ import importlib
 import json
 from typing import Any
 
-cli = importlib.import_module("contextsmith_cli.main")
+cli = importlib.import_module("sourcebrief_cli.main")
 cli_main = cli.main
 
 
@@ -43,9 +43,9 @@ class FakeClient:
         if method == "POST" and path.endswith("/search"):
             return {"query": body["query"], "count": 1, "hits": [{"path": "README.md", "snippet": "demo"}]}
         if method == "GET" and path == "/workspaces/ws-1/agents":
-            return [{"project_id": "proj-1", "name": "ContextSmith repo", "resource_count": 1}]
+            return [{"project_id": "proj-1", "name": "SourceBrief repo", "resource_count": 1}]
         if method == "GET" and path == "/workspaces/ws-1/projects/proj-1/agent-profile":
-            return {"project_id": "proj-1", "name": "ContextSmith repo", "graph_node_count": 3}
+            return {"project_id": "proj-1", "name": "SourceBrief repo", "graph_node_count": 3}
         if method == "GET" and path.endswith("/graph?limit=50"):
             return {"node_count": 2, "edge_count": 1, "nodes": [], "edges": []}
         if method == "POST" and path == "/workspaces/ws-1/api-tokens":
@@ -66,7 +66,7 @@ class FakeClient:
 
 def patch_client(monkeypatch):
     FakeClient.instances.clear()
-    monkeypatch.setattr(cli, "ContextSmithClient", FakeClient)
+    monkeypatch.setattr(cli, "SourceBriefClient", FakeClient)
 
 
 def test_add_repo_builds_git_resource_and_waits(monkeypatch, capsys):
@@ -85,9 +85,9 @@ def test_add_repo_builds_git_resource_and_waits(monkeypatch, capsys):
             "--project-id",
             "proj-1",
             "--name",
-            "ContextSmith repo",
+            "SourceBrief repo",
             "--repo-url",
-            "https://github.com/pingchesu/contextsmith.git",
+            "https://github.com/pingchesu/sourcebrief.git",
             "--branch",
             "main",
             "--max-files",
@@ -107,11 +107,11 @@ def test_add_repo_builds_git_resource_and_waits(monkeypatch, capsys):
     assert expected == {201}
     assert body == {
         "type": "git",
-        "name": "ContextSmith repo",
-        "uri": "https://github.com/pingchesu/contextsmith.git",
+        "name": "SourceBrief repo",
+        "uri": "https://github.com/pingchesu/sourcebrief.git",
         "update_frequency": "manual",
         "source_config": {
-            "url": "https://github.com/pingchesu/contextsmith.git",
+            "url": "https://github.com/pingchesu/sourcebrief.git",
             "branch": "main",
             "max_repo_files": 25,
         },

@@ -1,10 +1,10 @@
-# ContextSmith
+# SourceBrief
 
 > Forge trusted context for every agent.
 
-ContextSmith is an open-source context platform for teams that want their agents to answer from the right repos, docs, runbooks, and project knowledge without copying everything into prompts by hand.
+SourceBrief is an open-source context platform for teams that want their agents to answer from the right repos, docs, runbooks, and project knowledge without copying everything into prompts by hand.
 
-Create a project, attach resources, let ContextSmith index them, then call the project like an agent context provider through HTTP or MCP.
+Create a project, attach resources, let SourceBrief index them, then call the project like an agent context provider through HTTP or MCP.
 
 ```text
 repos + docs + runbooks
@@ -20,7 +20,7 @@ agent-ready context for Hermes, Claude, Codex, Cursor, or your own app
 
 Most agent stacks fail in the same boring way: the model is fine, but the context is stale, incomplete, or impossible to audit.
 
-ContextSmith focuses on the missing layer between "a pile of knowledge" and "an agent I can trust":
+SourceBrief focuses on the missing layer between "a pile of knowledge" and "an agent I can trust":
 
 - Turn a repo or document set into a queryable project agent.
 - Query across repos, docs, and runbooks in one place.
@@ -31,7 +31,7 @@ ContextSmith focuses on the missing layer between "a pile of knowledge" and "an 
 
 ## Current status
 
-ContextSmith is an early MVP. The core path is working:
+SourceBrief is an early MVP. The core path is working:
 
 - multi-tenant workspaces and projects
 - resource ingestion for markdown documents and git repositories
@@ -74,11 +74,18 @@ Prerequisites:
 Clone the repo:
 
 ```bash
-git clone https://github.com/pingchesu/contextsmith.git
-cd contextsmith
+git clone https://github.com/pingchesu/sourcebrief.git
+cd sourcebrief
 ```
 
 ## Quick start
+
+Create local configuration and set the bootstrap administrator password:
+
+```bash
+cp .env.example .env
+# edit SOURCEBRIEF_ADMIN_PASSWORD before first startup
+```
 
 Run the full stack and smoke test:
 
@@ -114,14 +121,14 @@ See the full setup guide: [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
 
 ## Five-minute CLI demo
 
-ContextSmith ships a CLI after local install. `make verify` installs it into `.venv/bin/contextsmith`.
+SourceBrief ships a CLI after local install. `make verify` installs it into `.venv/bin/sourcebrief`.
 
 ```bash
-export CONTEXTSMITH_API_URL=http://localhost:18000
-export CONTEXTSMITH_EMAIL=demo@example.com
+export SOURCEBRIEF_API_URL=http://localhost:18000
+export SOURCEBRIEF_EMAIL=demo@example.com
 
-contextsmith workspace create --name Demo --slug demo
-contextsmith project create \
+sourcebrief workspace create --name Demo --slug demo
+sourcebrief project create \
   --workspace-id <workspace-id> \
   --name "Demo Project" \
   --description "Repo and runbook context"
@@ -130,11 +137,11 @@ contextsmith project create \
 Add a repository resource and wait for indexing:
 
 ```bash
-contextsmith resource add-repo \
+sourcebrief resource add-repo \
   --workspace-id <workspace-id> \
   --project-id <project-id> \
-  --name "ContextSmith repo" \
-  --repo-url https://github.com/pingchesu/contextsmith.git \
+  --name "SourceBrief repo" \
+  --repo-url https://github.com/pingchesu/sourcebrief.git \
   --branch main \
   --refresh \
   --wait
@@ -143,20 +150,20 @@ contextsmith resource add-repo \
 Search it and request Hermes-shaped context:
 
 ```bash
-contextsmith search \
+sourcebrief search \
   --workspace-id <workspace-id> \
   --project-id <project-id> \
   --query "agent-context API"
 
-contextsmith agent-context \
+sourcebrief agent-context \
   --workspace-id <workspace-id> \
   --project-id <project-id> \
   --runtime hermes \
-  --query "how does ContextSmith expose agent context?"
+  --query "how does SourceBrief expose agent context?"
 
-contextsmith agent list --workspace-id <workspace-id>
-contextsmith agent profile --workspace-id <workspace-id> --project-id <project-id>
-contextsmith --json resource graph --workspace-id <workspace-id> --project-id <project-id> --resource-id <resource-id>
+sourcebrief agent list --workspace-id <workspace-id>
+sourcebrief agent profile --workspace-id <workspace-id> --project-id <project-id>
+sourcebrief --json resource graph --workspace-id <workspace-id> --project-id <project-id> --resource-id <resource-id>
 ```
 
 To validate a Hermes MCP integration token for that project:
@@ -177,7 +184,7 @@ The API/curl walkthrough and a longer repo example live in [`docs/GUIDE.md`](doc
 
 ### Repo-as-agent
 
-Attach one or more repositories to a project. ContextSmith indexes source files, extracts code symbols, preserves commit citations, and returns scoped context for coding agents.
+Attach one or more repositories to a project. SourceBrief indexes source files, extracts code symbols, preserves commit citations, and returns scoped context for coding agents.
 
 ### Team knowledge base
 
@@ -185,11 +192,11 @@ Attach docs, runbooks, decision records, and operating notes. Users query one pr
 
 ### Cross-resource debugging
 
-Ask a question that spans code, docs, and runbooks. ContextSmith returns cited chunks and code symbols so the caller can inspect where the answer came from.
+Ask a question that spans code, docs, and runbooks. SourceBrief returns cited chunks and code symbols so the caller can inspect where the answer came from.
 
 ### Agent runtime integration
 
-Call ContextSmith from Hermes, Claude Code, Codex, Cursor, your own API service, or any MCP-compatible client. ContextSmith provides context; production actions stay behind separate typed tools and approval flows.
+Call SourceBrief from Hermes, Claude Code, Codex, Cursor, your own API service, or any MCP-compatible client. SourceBrief provides context; production actions stay behind separate typed tools and approval flows.
 
 ## How it works
 
@@ -232,7 +239,7 @@ Architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The
 
 ## Tech stack
 
-ContextSmith intentionally stays on common infrastructure:
+SourceBrief intentionally stays on common infrastructure:
 
 - FastAPI
 - PostgreSQL + pgvector

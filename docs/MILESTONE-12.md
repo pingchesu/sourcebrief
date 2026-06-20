@@ -32,32 +32,32 @@ Invalid/unknown values behave as manual for scheduling. Future UI should validat
 ```bash
 # Find due refreshes without enqueuing jobs
 curl -X POST \
-  "$CONTEXTSMITH_API/workspaces/$WS/projects/$PROJECT/scheduled-refreshes?dry_run=true" \
+  "$SOURCEBRIEF_API/workspaces/$WS/projects/$PROJECT/scheduled-refreshes?dry_run=true" \
   -H "Authorization: Bearer TOKEN"
 
 # Enqueue due refreshes for a project
 curl -X POST \
-  "$CONTEXTSMITH_API/workspaces/$WS/projects/$PROJECT/scheduled-refreshes" \
+  "$SOURCEBRIEF_API/workspaces/$WS/projects/$PROJECT/scheduled-refreshes" \
   -H "Authorization: Bearer TOKEN"
 
 # Restore archived or soft-deleted resource
 curl -X POST \
-  "$CONTEXTSMITH_API/workspaces/$WS/projects/$PROJECT/resources/$RESOURCE/restore" \
+  "$SOURCEBRIEF_API/workspaces/$WS/projects/$PROJECT/resources/$RESOURCE/restore" \
   -H "Authorization: Bearer TOKEN"
 
 # Hard purge after soft delete
 curl -X POST \
-  "$CONTEXTSMITH_API/workspaces/$WS/projects/$PROJECT/resources/$RESOURCE/purge" \
+  "$SOURCEBRIEF_API/workspaces/$WS/projects/$PROJECT/resources/$RESOURCE/purge" \
   -H "Authorization: Bearer TOKEN"
 ```
 
 ## CLI examples
 
 ```bash
-contextsmith resource schedule-due --workspace-id $WS --project-id $PROJECT --dry-run
-contextsmith resource schedule-due --workspace-id $WS --project-id $PROJECT
-contextsmith resource restore --workspace-id $WS --project-id $PROJECT --resource-id $RESOURCE
-contextsmith resource purge --workspace-id $WS --project-id $PROJECT --resource-id $RESOURCE
+sourcebrief resource schedule-due --workspace-id $WS --project-id $PROJECT --dry-run
+sourcebrief resource schedule-due --workspace-id $WS --project-id $PROJECT
+sourcebrief resource restore --workspace-id $WS --project-id $PROJECT --resource-id $RESOURCE
+sourcebrief resource purge --workspace-id $WS --project-id $PROJECT --resource-id $RESOURCE
 ```
 
 ## Safety and boundaries

@@ -16,7 +16,7 @@ export default function LoginPage() {
   }
 
   return <main className="page">
-    <PageHeader eyebrow="Account" title="Sign in to ContextSmith" description="Use your ContextSmith account. Admin users can invite teammates and assign workspace roles after signing in." />
+    <PageHeader eyebrow="Account" title="Sign in to SourceBrief" description="Use your SourceBrief account. Admin users can invite teammates and assign workspace roles after signing in." />
     <div className="grid four">
       <Metric label="Account" value={currentUser?.display_name || currentUser?.email || 'Signed out'} />
       <Metric label="Workspace" value={workspace?.name ?? '—'} />

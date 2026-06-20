@@ -1,4 +1,4 @@
-# PR5 — ContextSmith Ship / Admin Cleanup & Final IA Polish Spec
+# PR5 — SourceBrief Ship / Admin Cleanup & Final IA Polish Spec
 
 > 延續 PR1（enterprise shell + Command Center + design primitives）、PR2（Sources lifecycle hub `/sources`）、PR3（Agent Workbench `/workbench`）、PR4（Quality gate `/quality`）。本 PR **不動 backend**，是 frontend rebuild 的**收尾**：把產品最後的 rough edges 收乾淨，讓整套 console 從第一頁到最後一頁都像「完成品」而非「API demo 拼盤」。
 > PR5 不新增大功能，重點是：**(a) Command Center 深連結全部指向 canonical 路由**（不再二次轉址）、**(b) Ship（agent pack handoff）surface 文案/順序收斂**、**(c) Operations / Admin / Session 群組去除開發備註式文案、命名一致**、**(d) 確認 AppShell nav 與全站不暴露 endpoint 名稱 / UUID-first workflow**。

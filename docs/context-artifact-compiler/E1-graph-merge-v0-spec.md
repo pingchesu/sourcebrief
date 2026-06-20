@@ -8,7 +8,7 @@ Depends on: E0 graph version storage (`0020_e0_graph_versions`).
 
 Add first-class **project-scoped graph merge** over published resource graph versions. E1 lets a user merge two or more resource graphs into a durable merged graph version, inspect node/edge provenance, review ambiguous reconcile candidates, view graph diffs, and query deterministic paths between human-selected nodes.
 
-This is the Graphify-style merge primitive the product needs, implemented inside ContextSmith with tenant scoping, review gates, provenance, authorization, and UI—not as an offline JSON utility.
+This is the Graphify-style merge primitive the product needs, implemented inside SourceBrief with tenant scoping, review gates, provenance, authorization, and UI—not as an offline JSON utility.
 
 ## 2. Non-goals
 

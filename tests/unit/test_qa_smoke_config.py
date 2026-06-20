@@ -13,7 +13,21 @@ def load_qa_smoke():
     return module
 
 
-def test_qa_smoke_urls_follow_env(monkeypatch):
+def test_qa_smoke_urls_follow_sourcebrief_env(monkeypatch):
+    monkeypatch.setenv("SOURCEBRIEF_API_URL", "http://localhost:18123")
+    monkeypatch.setenv("SOURCEBRIEF_WEB_URL", "http://localhost:13123")
+    monkeypatch.delenv("CONTEXTSMITH_API_URL", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_WEB_URL", raising=False)
+
+    module = load_qa_smoke()
+
+    assert module.BASE == "http://localhost:18123"
+    assert module.FRONTEND == "http://localhost:13123"
+
+
+def test_qa_smoke_urls_follow_contextsmith_legacy_env_as_fallback(monkeypatch):
+    monkeypatch.delenv("SOURCEBRIEF_API_URL", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_WEB_URL", raising=False)
     monkeypatch.setenv("CONTEXTSMITH_API_URL", "http://localhost:18123")
     monkeypatch.setenv("CONTEXTSMITH_WEB_URL", "http://localhost:13123")
 
@@ -24,6 +38,8 @@ def test_qa_smoke_urls_follow_env(monkeypatch):
 
 
 def test_qa_smoke_urls_fall_back_to_make_vars(monkeypatch):
+    monkeypatch.delenv("SOURCEBRIEF_API_URL", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_WEB_URL", raising=False)
     monkeypatch.delenv("CONTEXTSMITH_API_URL", raising=False)
     monkeypatch.delenv("CONTEXTSMITH_WEB_URL", raising=False)
     monkeypatch.setenv("API_URL", "http://localhost:18234")

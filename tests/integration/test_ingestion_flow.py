@@ -12,12 +12,12 @@ from redis import Redis
 from rq import Queue, SimpleWorker
 from sqlalchemy import text
 
-from contextsmith_api.auth import get_or_create_user
-from contextsmith_api.main import app
-from contextsmith_shared.config import get_settings
-from contextsmith_shared.db import get_engine, get_sessionmaker
-from contextsmith_shared.models import IndexRun, Project, WorkspaceMembership
-from contextsmith_worker.jobs import run_index
+from sourcebrief_api.auth import get_or_create_user
+from sourcebrief_api.main import app
+from sourcebrief_shared.config import get_settings
+from sourcebrief_shared.db import get_engine, get_sessionmaker
+from sourcebrief_shared.models import IndexRun, Project, WorkspaceMembership
+from sourcebrief_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
 
@@ -394,7 +394,7 @@ def test_git_ingestion_indexes_text_files_with_commit_citation(tmp_path) -> None
     repo_path = str(tmp_path / "fixture-repo")
     os.makedirs(repo_path, exist_ok=True)
     commit = _build_fixture_repo(repo_path)
-    os.environ["CONTEXTSMITH_ALLOW_LOCAL_GIT"] = "true"
+    os.environ["SOURCEBRIEF_ALLOW_LOCAL_GIT"] = "true"
 
     resource_id = add_resource(
         client,

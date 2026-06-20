@@ -1,12 +1,12 @@
-# ContextSmith Product and Architecture Specification
+# SourceBrief Product and Architecture Specification
 
-Status: Draft v0.2  
-Repository: `pingchesu/contextsmith`  
+Status: Draft v0.2
+Repository: `pingchesu/sourcebrief`
 Primary goal: build an open-source, multi-tenant service platform that turns repositories, documents, runbooks, URLs, and arbitrary resources into versioned, reviewable, queryable knowledge agents usable by multiple agent runtimes.
 
 ## 1. Executive Summary
 
-ContextSmith is an open-source agent context platform.
+SourceBrief is an open-source agent context platform.
 
 It lets users create a Project, attach resources such as Git repositories, documents, runbooks, URLs, incident exports, and knowledge files, configure refresh schedules, and automatically produce indexed artifacts that can be used by agents through HTTP APIs, a web UI, a central MCP server, and runtime adapters such as Hermes, Claude Code, Codex, Cursor, or future SDKs.
 
@@ -31,7 +31,7 @@ MVP scoping note: V0 is retrieval-first. It must reliably create versioned, perm
 
 ## 2. Product Definition
 
-ContextSmith is a multi-tenant Project-based platform where every Project can become a knowledge agent.
+SourceBrief is a multi-tenant Project-based platform where every Project can become a knowledge agent.
 
 A Project may include:
 
@@ -124,7 +124,7 @@ Queries a project agent for code understanding, bug localization, PR review, arc
 
 ### 5.4 SRE / Operator
 
-Queries runbooks, incident history, service docs, and repository context. Uses ContextSmith for static knowledge, while live production reads/mutations go through separate approved typed tools.
+Queries runbooks, incident history, service docs, and repository context. Uses SourceBrief for static knowledge, while live production reads/mutations go through separate approved typed tools.
 
 ### 5.5 Business / Product User
 
@@ -132,7 +132,7 @@ Queries product flows, business process docs, ownership, operational impact, and
 
 ### 5.6 External Agent Runtime
 
-Hermes, Claude Code, Codex, Cursor, or a custom application calls ContextSmith through HTTP API, MCP tools, or context packet export.
+Hermes, Claude Code, Codex, Cursor, or a custom application calls SourceBrief through HTTP API, MCP tools, or context packet export.
 
 ## 6. Core Concepts
 
@@ -1088,7 +1088,7 @@ Uses business docs, domain/process graph, code-service mapping, and reviewed sum
 
 ### 14.6 Ops Runbook Mode
 
-Uses runbooks, service docs, incident history, and static repo context. Live production operations must go through external typed tools and approval flows outside ContextSmith.
+Uses runbooks, service docs, incident history, and static repo context. Live production operations must go through external typed tools and approval flows outside SourceBrief.
 
 ### 14.7 Cross-Resource Mode
 
@@ -1414,7 +1414,7 @@ Every tool call must enforce token/user permissions.
 
 ### 19.4 Hermes Adapter
 
-Hermes can call ContextSmith as external knowledge/context provider. ContextSmith does not replace Hermes approval, production tools, or typed MCP operations.
+Hermes can call SourceBrief as external knowledge/context provider. SourceBrief does not replace Hermes approval, production tools, or typed MCP operations.
 
 ### 19.5 Claude Code / Codex / Cursor
 
@@ -1427,11 +1427,11 @@ Provide:
 
 ## 20. Production Discipline
 
-ContextSmith can know runbooks and repository code. It should not become a production mutation engine.
+SourceBrief can know runbooks and repository code. It should not become a production mutation engine.
 
 For production workflows:
 
-1. ContextSmith retrieves static knowledge and runbooks.
+1. SourceBrief retrieves static knowledge and runbooks.
 2. External typed tools query live state, e.g. Grafana, Prometheus, Teleport, OpenSearch, GitHub.
 3. Production action approval is handled by the calling runtime or external workflow.
 4. Answers must separate static knowledge, historical evidence, live evidence, hypotheses, and required verification.
@@ -1690,7 +1690,7 @@ PostgreSQL plus pgvector minimizes operational dependencies for open-source SaaS
 
 ### 26.3 RQ as the V0 background job engine
 
-ContextSmith V0 uses RQ because the workload is mostly long-running, retryable, resource-scoped indexing/cleanup jobs rather than complex distributed workflows. RQ keeps the open-source deployment small by reusing Redis, matches the Python/FastAPI stack, and has precedent in production open-source systems such as CVAT. PostgreSQL remains the durable source of truth through `index_runs`; RQ/Redis is only the execution queue.
+SourceBrief V0 uses RQ because the workload is mostly long-running, retryable, resource-scoped indexing/cleanup jobs rather than complex distributed workflows. RQ keeps the open-source deployment small by reusing Redis, matches the Python/FastAPI stack, and has precedent in production open-source systems such as CVAT. PostgreSQL remains the durable source of truth through `index_runs`; RQ/Redis is only the execution queue.
 
 ### 26.4 Central MCP over per-repo MCP
 
@@ -1758,20 +1758,20 @@ The following choices are fixed for MVP to avoid ambiguity:
 2. Should Graphify/LightRAG/CodeGraph concepts be implemented natively first or wrapped as optional workers?
 3. How much of PDF parsing should be in V0?
 4. Should Hindsight be optional integration in V1 or only design inspiration until later?
-5. What should be the first demo dataset: ContextSmith repo itself, Hermes Agent, or a small public multi-repo project?
+5. What should be the first demo dataset: SourceBrief repo itself, Hermes Agent, or a small public multi-repo project?
 
 ## 30. Initial Demo Scenario
 
 Recommended first demo:
 
 1. Create workspace `demo`.
-2. Create project `ContextSmith`.
-3. Add the `pingchesu/contextsmith` repository.
+2. Create project `SourceBrief`.
+3. Add the `pingchesu/sourcebrief` repository.
 4. Add a markdown runbook resource.
 5. Configure daily update.
 6. Run initial indexing.
 7. Ask:
-   - "What is ContextSmith's core architecture?"
+   - "What is SourceBrief's core architecture?"
    - "Which resources explain multi-tenant permission filtering?"
    - "Build a context packet for implementing resource deletion."
 8. Show:

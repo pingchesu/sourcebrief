@@ -12,4 +12,4 @@ COPY packages ./packages
 COPY migrations ./migrations
 COPY alembic.ini ./
 RUN pip install --no-cache-dir -e .
-CMD ["uvicorn", "contextsmith_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "sourcebrief_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

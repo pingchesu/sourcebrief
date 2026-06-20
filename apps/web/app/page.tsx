@@ -53,7 +53,7 @@ export default function CommandCenterPage() {
       return items;
     }
     if (!signedIn) {
-      items.push({ key: 'session', tone: 'risk', title: 'No active session', detail: 'Sign in with your ContextSmith account to load this workspace.', href: '/login', action: 'Sign in' });
+      items.push({ key: 'session', tone: 'risk', title: 'No active session', detail: 'Sign in with your SourceBrief account to load this workspace.', href: '/login', action: 'Sign in' });
       return items;
     }
     if (!workspace || !project) items.push({ key: 'scope', tone: 'risk', title: 'Workspace or project not loaded', detail: 'Choose your workspace and project in Settings.', href: '/config', action: 'Open settings' });

@@ -12,10 +12,10 @@ from typing import Any, cast
 
 import requests
 
-BASE = os.getenv("CONTEXTSMITH_API_URL") or os.getenv("API_URL") or "http://localhost:18000"
-FRONTEND = os.getenv("CONTEXTSMITH_WEB_URL") or os.getenv("WEB_URL") or "http://localhost:13000"
+BASE = os.getenv("SOURCEBRIEF_API_URL") or os.getenv("CONTEXTSMITH_API_URL") or os.getenv("API_URL") or "http://localhost:18000"
+FRONTEND = os.getenv("SOURCEBRIEF_WEB_URL") or os.getenv("CONTEXTSMITH_WEB_URL") or os.getenv("WEB_URL") or "http://localhost:13000"
 HEADERS = {"X-User-Email": f"qa-{int(time.time())}@example.com"}
-MARKER = "contextsmithqamarker"
+MARKER = "sourcebriefqamarker"
 TOKEN_PATTERN = re.compile(r"cs_[A-Za-z0-9_-]{20,}")
 
 
@@ -134,7 +134,7 @@ def main() -> None:
     provider_health = request("GET", "/provider-health", 200)
     if provider_health is None:
         fail("provider health returned empty response")
-    expected_namespace = "hashing:contextsmith-hashing-v1:d64:l2"
+    expected_namespace = "hashing:sourcebrief-hashing-v1:d64:l2"
     if provider_health.get("status") != "ok" or provider_health["embedding"].get("namespace") != expected_namespace:
         fail(f"provider health missing expected namespace: {provider_health}")
     if provider_health["embedding"].get("dev_quality") is not True:
@@ -147,7 +147,7 @@ def main() -> None:
         "POST",
         f"/workspaces/{ws}/projects",
         201,
-        json={"name": "ContextSmith QA", "description": "smoke"},
+        json={"name": "SourceBrief QA", "description": "smoke"},
         headers=HEADERS,
     )
     proj = project["id"]
@@ -183,7 +183,7 @@ def main() -> None:
         fail(f"token list missing token metadata or leaked plaintext: {token_list}")
     content = (
         "# QA Runbook\n\n"
-        "ContextSmith QA verifies resource ingestion and lexical search. "
+        "SourceBrief QA verifies resource ingestion and lexical search. "
         f"The unique marker {MARKER} appears exactly once in this document.\n"
     )
     resource = request(
@@ -423,7 +423,7 @@ def main() -> None:
         [
             sys.executable,
             "-m",
-            "contextsmith_cli.main",
+            "sourcebrief_cli.main",
             "--api-url",
             BASE,
             "--email",
@@ -510,7 +510,7 @@ def main() -> None:
         json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
         headers=HEADERS,
     )
-    if mcp_tools["result"]["tools"][0]["name"] != "contextsmith.get_agent_context":
+    if mcp_tools["result"]["tools"][0]["name"] != "sourcebrief.get_agent_context":
         fail(f"MCP tools/list missing context tool: {mcp_tools}")
     mcp_call = request(
         "POST",
@@ -520,7 +520,7 @@ def main() -> None:
             "jsonrpc": "2.0",
             "id": 2,
             "method": "tools/call",
-            "params": {"name": "contextsmith.get_agent_context", "arguments": {"query": "smoke_symbol", "runtime": "codex"}},
+            "params": {"name": "sourcebrief.get_agent_context", "arguments": {"query": "smoke_symbol", "runtime": "codex"}},
         },
         headers=HEADERS,
     )
@@ -558,11 +558,11 @@ def main() -> None:
     hermes_output = json.loads(hermes_check.stdout)
     if TOKEN_PATTERN.search(hermes_check.stdout):
         fail(f"Hermes integration script leaked plaintext token in redacted output: {hermes_check.stdout}")
-    if hermes_output["status"] != "ok" or "contextsmith.get_agent_context" not in hermes_output["mcp"]["tool_names"]:
+    if hermes_output["status"] != "ok" or "sourcebrief.get_agent_context" not in hermes_output["mcp"]["tool_names"]:
         fail(f"Hermes integration script returned invalid output: {hermes_output}")
     if hermes_output.get("token") != "<redacted>":
         fail(f"Hermes integration script did not redact token field: {hermes_output}")
-    header = hermes_output["hermes_config"]["mcp_servers"]["contextsmith"]["headers"]["Authorization"]
+    header = hermes_output["hermes_config"]["mcp_servers"]["sourcebrief"]["headers"]["Authorization"]
     if header != "Bearer <redacted>":
         fail(f"Hermes integration script did not redact config header: {hermes_output}")
     expected_scopes = {"project:read", "project:query", "resource:read", "review:read"}

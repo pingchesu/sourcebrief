@@ -1,4 +1,4 @@
-# ContextSmith Alpha Operations Runbook
+# SourceBrief Alpha Operations Runbook
 
 This runbook is for the open-source alpha Docker Compose deployment. It assumes the default local ports from `.env.example` unless overridden. `make` includes `.env` automatically when the file exists, so port/database overrides apply to the Makefile targets as well as Docker Compose.
 
@@ -27,22 +27,22 @@ docker compose down --remove-orphans --volumes
 ## Configuration notes
 
 - `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` drive both the Postgres container and the default API/worker database URL.
-- Set `CONTEXTSMITH_DATABASE_URL` only when intentionally pointing API/workers at a non-compose database.
+- Set `SOURCEBRIEF_DATABASE_URL` only when intentionally pointing API/workers at a non-compose database.
 - `NEXT_PUBLIC_API_BASE_URL` is baked into the Next.js client at build time. After changing it, run `docker compose up -d --build`.
-- If `CONTEXTSMITH_WEB_PORT` changes, update `CONTEXTSMITH_CORS_ORIGINS` to include the browser origin, for example `http://localhost:13100,http://127.0.0.1:13100`.
+- If `SOURCEBRIEF_WEB_PORT` changes, update `SOURCEBRIEF_CORS_ORIGINS` to include the browser origin, for example `http://localhost:13100,http://127.0.0.1:13100`.
 
 ## Health checks
 
 ```bash
-curl -fsS http://localhost:${CONTEXTSMITH_API_PORT:-18000}/healthz
-curl -fsS http://localhost:${CONTEXTSMITH_API_PORT:-18000}/readyz
-curl -fsS http://localhost:${CONTEXTSMITH_WEB_PORT:-13000}/api/health
+curl -fsS http://localhost:${SOURCEBRIEF_API_PORT:-18000}/healthz
+curl -fsS http://localhost:${SOURCEBRIEF_API_PORT:-18000}/readyz
+curl -fsS http://localhost:${SOURCEBRIEF_WEB_PORT:-13000}/api/health
 ```
 
 Provider health:
 
 ```bash
-curl -fsS http://localhost:${CONTEXTSMITH_API_PORT:-18000}/provider-health | python -m json.tool
+curl -fsS http://localhost:${SOURCEBRIEF_API_PORT:-18000}/provider-health | python -m json.tool
 ```
 
 `/provider-health` returns HTTP 503 when a provider-backed embedding/rerank endpoint is configured but unavailable.
@@ -89,7 +89,7 @@ make migrate-compose
 Inspect current revision:
 
 ```bash
-DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://contextsmith:contextsmith@localhost:${CONTEXTSMITH_POSTGRES_PORT:-55432}/contextsmith} \
+DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://sourcebrief:sourcebrief@localhost:${SOURCEBRIEF_POSTGRES_PORT:-55432}/sourcebrief} \
   .venv/bin/alembic current
 
 docker compose exec -T api alembic current
@@ -98,7 +98,7 @@ docker compose exec -T api alembic current
 Rollback one revision in a local alpha environment only:
 
 ```bash
-DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://contextsmith:contextsmith@localhost:${CONTEXTSMITH_POSTGRES_PORT:-55432}/contextsmith} \
+DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://sourcebrief:sourcebrief@localhost:${SOURCEBRIEF_POSTGRES_PORT:-55432}/sourcebrief} \
   .venv/bin/alembic downgrade -1
 ```
 
@@ -123,14 +123,14 @@ docker compose logs --tail=100 worker-default worker-maintenance
 Recent index runs:
 
 ```bash
-docker compose exec -T postgres psql -U contextsmith -d contextsmith -c \
+docker compose exec -T postgres psql -U sourcebrief -d sourcebrief -c \
   "select id, resource_id, trigger, status, error_message, started_at, finished_at from index_runs order by created_at desc limit 20;"
 ```
 
 Stuck queued/running runs:
 
 ```bash
-docker compose exec -T postgres psql -U contextsmith -d contextsmith -c \
+docker compose exec -T postgres psql -U sourcebrief -d sourcebrief -c \
   "select id, resource_id, trigger, status, created_at, started_at, error_message from index_runs where status in ('queued','running') order by created_at asc;"
 ```
 
@@ -151,13 +151,13 @@ docker compose exec -T postgres psql -U contextsmith -d contextsmith -c \
 3. Check provider health if embeddings/rerank are provider-backed:
 
    ```bash
-   curl -fsS http://localhost:${CONTEXTSMITH_API_PORT:-18000}/provider-health | python -m json.tool
+   curl -fsS http://localhost:${SOURCEBRIEF_API_PORT:-18000}/provider-health | python -m json.tool
    ```
 
 4. If the run failed due a transient dependency, refresh the resource again from UI or CLI:
 
    ```bash
-   contextsmith resource refresh --workspace-id <workspace> --project-id <project> --resource-id <resource> --wait
+   sourcebrief resource refresh --workspace-id <workspace> --project-id <project> --resource-id <resource> --wait
    ```
 
 5. If a run remains `queued` with no worker activity, restart workers only:
@@ -200,4 +200,4 @@ make qa-smoke
 
 ## Production boundary reminder
 
-ContextSmith returns static/cited context. It does not execute production mutations. Live operations must remain behind separate typed MCP tools, approval, and evidence workflows.
+SourceBrief returns static/cited context. It does not execute production mutations. Live operations must remain behind separate typed MCP tools, approval, and evidence workflows.

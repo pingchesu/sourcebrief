@@ -5,7 +5,7 @@ Parent spec: [`docs/SPEC.md`](./SPEC.md)
 
 ## 1. Intent
 
-Milestone 1 establishes the executable architecture for ContextSmith before feature work expands.
+Milestone 1 establishes the executable architecture for SourceBrief before feature work expands.
 
 The goal is not just to create models or unit tests. The goal is to prove that the platform can boot as a real multi-service system and execute a thin end-to-end workflow through the API, database, Redis/RQ worker, and frontend/runtime shell.
 
@@ -74,20 +74,20 @@ Do not add external services beyond Postgres/pgvector, Redis, API, worker, front
 Recommended initial layout:
 
 ```text
-contextsmith/
+sourcebrief/
   apps/
     api/
-      contextsmith_api/
+      sourcebrief_api/
       tests/
     web/
       app/
       tests/
   packages/
     worker/
-      contextsmith_worker/
+      sourcebrief_worker/
       tests/
     shared/
-      contextsmith_shared/
+      sourcebrief_shared/
       tests/
   migrations/
   docker/

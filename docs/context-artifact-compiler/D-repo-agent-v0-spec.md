@@ -146,7 +146,7 @@ Volatile fields like created time, reviewer, status, and title are excluded.
    - manifest file counts / changed files from latest diff if available;
    - context pack version/hash;
    - optional skill export version/hash;
-   - runtime tool contract: use ContextSmith APIs/MCP; read-only by default;
+   - runtime tool contract: use SourceBrief APIs/MCP; read-only by default;
    - freshness timestamp.
 6. Build diff against current published repo-agent version:
    - source snapshot changed;
@@ -168,7 +168,7 @@ Volatile fields like created time, reviewer, status, and title are excluded.
 V0 `refresh` endpoint is synchronous for repo-agent version compile, not a full Git webhook worker.
 
 - It does **not** clone or index Git by itself.
-- It checks latest completed index state already present in ContextSmith.
+- It checks latest completed index state already present in SourceBrief.
 - It compiles a new repo-agent draft from the latest published Context Pack and optional approved Skill Export.
 - It returns `{status: "draft"|"failed"|"unchanged", version, job_like_summary}`.
 - If latest resource snapshot is stale relative to source update policy, UI shows “Source needs reindex first” and links to the Source update action.

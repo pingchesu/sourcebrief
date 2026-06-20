@@ -6,7 +6,7 @@ Parent milestones: A1 manifest/path safety, A2 folder bundle upload, A3 manifest
 
 ## 1. Goal
 
-A4 turns file-level manifest data into reusable section-level evidence. When a user uploads a new folder-bundle version, ContextSmith should reuse unchanged extraction results, re-extract only changed/added files, and make reuse/impact visible to operators.
+A4 turns file-level manifest data into reusable section-level evidence. When a user uploads a new folder-bundle version, SourceBrief should reuse unchanged extraction results, re-extract only changed/added files, and make reuse/impact visible to operators.
 
 A4 is the bridge from source snapshots to deterministic context artifacts. It does **not** introduce LLM summaries, generated skills, resource maps, embeddings, or auto-publish.
 
@@ -310,7 +310,7 @@ Operator surface:
 - Source detail Section extraction panel shows failed/partial state if counters are unavailable.
 - Logs include resource/version labels and run ID, never raw content.
 
-Owner: ContextSmith platform/worker owner.
+Owner: SourceBrief platform/worker owner.
 
 Runbook path:
 

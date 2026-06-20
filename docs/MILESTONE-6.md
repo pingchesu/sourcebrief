@@ -1,6 +1,6 @@
 # Milestone 6: Agent Integrations
 
-Milestone 6 makes each ContextSmith project usable as a permission-scoped agent
+Milestone 6 makes each SourceBrief project usable as a permission-scoped agent
 context provider for API clients, Hermes, Claude, Codex, Cursor, and a central
 MCP integration.
 
@@ -15,7 +15,7 @@ Implemented in this milestone:
   - supports runtime profiles: `api`, `hermes`, `claude`, `codex`, `cursor`
 - `POST /mcp/{workspace_id}/{project_id}`
   - minimal central JSON-RPC/MCP-compatible endpoint
-  - exposes one typed tool: `contextsmith.get_agent_context`
+  - exposes one typed tool: `sourcebrief.get_agent_context`
   - intentionally does not expose production actions; external operations stay
     behind dedicated MCP tools and approval flows
 - Permission-scoped behavior for both API and MCP paths.
@@ -58,9 +58,9 @@ The central MCP endpoint exposes only context retrieval:
 
 - `initialize`
 - `tools/list`
-- `tools/call` with `contextsmith.get_agent_context`
+- `tools/call` with `sourcebrief.get_agent_context`
 
-This follows the product constraint that ContextSmith should not create one MCP
+This follows the product constraint that SourceBrief should not create one MCP
 server per repo and should not allow repo agents to own production mutation
 boundaries.
 

@@ -1,6 +1,6 @@
 # Quick start
 
-This guide gets ContextSmith running locally with the real services used by the test suite.
+This guide gets SourceBrief running locally with the real services used by the test suite.
 
 ## Prerequisites
 
@@ -27,21 +27,22 @@ git --version
 ## Clone
 
 ```bash
-git clone https://github.com/pingchesu/contextsmith.git
-cd contextsmith
+git clone https://github.com/pingchesu/sourcebrief.git
+cd sourcebrief
 ```
 
 ## Configure environment
 
-The defaults work without a `.env`, but new operators should start from the documented template:
+Create a local `.env` before starting Docker Compose. The API bootstraps the first administrator from `SOURCEBRIEF_ADMIN_EMAIL` and `SOURCEBRIEF_ADMIN_PASSWORD`, so clean installs need those values present:
 
 ```bash
 cp .env.example .env
+# edit SOURCEBRIEF_ADMIN_PASSWORD before first startup
 ```
 
-The template keeps the local deterministic hashing/term-overlap providers enabled. It also documents optional HuggingFace/vLLM/SGLang/OpenAI-compatible embedding and rerank endpoints.
+The template keeps the local deterministic hashing/term-overlap providers enabled. It also documents the admin bootstrap account, local ports, browser-visible API URL, and optional HuggingFace/vLLM/SGLang/OpenAI-compatible embedding and rerank endpoints.
 
-`make` and Docker Compose both read `.env`. If you change frontend/API ports, also update `NEXT_PUBLIC_API_BASE_URL` and `CONTEXTSMITH_CORS_ORIGINS`, then rebuild with `docker compose up -d --build` because the browser API URL is compiled into the Next.js client.
+`make` and Docker Compose both read `.env`. If you change frontend/API ports, also update `NEXT_PUBLIC_API_BASE_URL` and `SOURCEBRIEF_CORS_ORIGINS`, then rebuild with `docker compose up -d --build` because the browser API URL is compiled into the Next.js client.
 
 ## Run the full acceptance gate
 
@@ -123,21 +124,21 @@ make clean
 After `make verify`, the stack has already exercised this path through `scripts/qa_smoke.py`. To run it yourself:
 
 ```bash
-export CONTEXTSMITH_API_URL=http://localhost:18000
-export CONTEXTSMITH_EMAIL=demo@example.com
+export SOURCEBRIEF_API_URL=http://localhost:18000
+export SOURCEBRIEF_EMAIL=demo@example.com
 export PATH="$PWD/.venv/bin:$PATH"
 
-WORKSPACE_ID=$(contextsmith --json workspace create --name Demo --slug "demo-$(date +%s)" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-PROJECT_ID=$(contextsmith --json project create --workspace-id "$WORKSPACE_ID" --name "Demo Project" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-RESOURCE_JSON=$(contextsmith --json resource add-repo --workspace-id "$WORKSPACE_ID" --project-id "$PROJECT_ID" --name ContextSmith --repo-url https://github.com/pingchesu/contextsmith.git --branch main --refresh --wait)
+WORKSPACE_ID=$(sourcebrief --json workspace create --name Demo --slug "demo-$(date +%s)" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+PROJECT_ID=$(sourcebrief --json project create --workspace-id "$WORKSPACE_ID" --name "Demo Project" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+RESOURCE_JSON=$(sourcebrief --json resource add-repo --workspace-id "$WORKSPACE_ID" --project-id "$PROJECT_ID" --name SourceBrief --repo-url https://github.com/pingchesu/sourcebrief.git --branch main --refresh --wait)
 RESOURCE_ID=$(printf '%s' "$RESOURCE_JSON" | python -c 'import json,sys; print(json.load(sys.stdin)["resource"]["id"])')
 
-contextsmith agent-context \
+sourcebrief agent-context \
   --workspace-id "$WORKSPACE_ID" \
   --project-id "$PROJECT_ID" \
   --resource-id "$RESOURCE_ID" \
   --runtime hermes \
-  --query "how does ContextSmith expose agent context?"
+  --query "how does SourceBrief expose agent context?"
 ```
 
 For Hermes MCP config/token validation:
@@ -166,7 +167,7 @@ The first request from an email creates or resolves the local user. Workspace an
 
 ### Port already in use
 
-ContextSmith uses ports `18000`, `13000`, `55432`, and `6380`. Stop the conflicting process or edit `docker-compose.yml`.
+SourceBrief uses ports `18000`, `13000`, `55432`, and `6380`. Stop the conflicting process or edit `docker-compose.yml`.
 
 ### Docker services are stale
 
@@ -192,18 +193,18 @@ make test-integration
 
 ## CLI check
 
-The local package installs the `contextsmith` CLI:
+The local package installs the `sourcebrief` CLI:
 
 ```bash
-contextsmith --help
-contextsmith health
+sourcebrief --help
+sourcebrief health
 ```
 
 The CLI reads these environment variables:
 
 ```bash
-export CONTEXTSMITH_API_URL=http://localhost:18000
-export CONTEXTSMITH_EMAIL=demo@example.com
+export SOURCEBRIEF_API_URL=http://localhost:18000
+export SOURCEBRIEF_EMAIL=demo@example.com
 ```
 
 ## What next?

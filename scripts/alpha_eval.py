@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the ContextSmith alpha evaluation/release dataset.
+"""Run the SourceBrief alpha evaluation/release dataset.
 
 The eval intentionally uses the public API and worker-backed indexing path. It
 creates a small repo, a runbook document, a foreign tenant document, and then
@@ -20,8 +20,8 @@ from typing import Any
 
 import requests
 
-BASE = os.getenv("CONTEXTSMITH_API_URL") or os.getenv("API_URL") or "http://localhost:18000"
-EMAIL = os.getenv("CONTEXTSMITH_EVAL_EMAIL", f"alpha-eval-{int(time.time())}@example.com")
+BASE = os.getenv("SOURCEBRIEF_API_URL") or os.getenv("CONTEXTSMITH_API_URL") or os.getenv("API_URL") or "http://localhost:18000"
+EMAIL = os.getenv("SOURCEBRIEF_EVAL_EMAIL", os.getenv("CONTEXTSMITH_EVAL_EMAIL", f"alpha-eval-{int(time.time())}@example.com"))
 HEADERS = {"X-User-Email": EMAIL}
 DATASET = Path("demo/alpha/golden_questions.json")
 DEFAULT_REPORT = Path("artifacts/alpha-eval-report.json")
@@ -66,7 +66,7 @@ def build_repo_fixture(ts: int) -> tuple[str, str]:
         "# Alpha Eval Repo\n\n"
         "This repository documents the Python function alpha_repo_symbol in src/context_agent.py. "
         "alpha_repo_symbol returns the repository agent context marker for repo-focused evaluation. "
-        "ContextSmith exposes repository agent context through REST and central MCP tools.\n",
+        "SourceBrief exposes repository agent context through REST and central MCP tools.\n",
         encoding="utf-8",
     )
     (repo_path / "src").mkdir()
@@ -307,7 +307,7 @@ def assert_no_cross_tenant_leak(workspace_id: str, project_id: str, foreign_mark
 
 
 def main() -> None:
-    report_path = Path(os.getenv("CONTEXTSMITH_ALPHA_EVAL_REPORT", str(DEFAULT_REPORT)))
+    report_path = Path(os.getenv("SOURCEBRIEF_ALPHA_EVAL_REPORT", str(DEFAULT_REPORT)))
     ts = int(time.time() * 1000)
     golden_questions = json.loads(DATASET.read_text())
 

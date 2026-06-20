@@ -1,9 +1,9 @@
 # A1: Manifest Model and Path Normalization — Implementation Spec
 
-Status: Draft  
-Date: 2026-06-19  
-Owner: ContextSmith platform  
-Parent spec: `docs/CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md` §27 Milestone A1  
+Status: Draft
+Date: 2026-06-19
+Owner: SourceBrief platform
+Parent spec: `docs/CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md` §27 Milestone A1
 
 ---
 
@@ -15,7 +15,7 @@ Add the `resource_manifests` and `resource_manifest_files` tables plus pure path
 
 - SQLAlchemy ORM models for `ResourceManifest` and `ResourceManifestFile`
 - Alembic migration `0014_a1_manifest_model`
-- New helper module `packages/worker/contextsmith_worker/manifest.py`:
+- New helper module `packages/worker/sourcebrief_worker/manifest.py`:
   - `ManifestPathError` typed exception
   - `normalize_path(raw)` — POSIX-safe canonical form
   - `validate_archive_entry(name, entry_type, depth)` — reject symlinks, device files, deep nesting
@@ -113,10 +113,10 @@ One row per file within a manifest. This is the structured row from §10.3 of th
 
 | File | Action | Description |
 |---|---|---|
-| `packages/shared/contextsmith_shared/models.py` | Modify | Append `ResourceManifest` and `ResourceManifestFile` ORM classes |
+| `packages/shared/sourcebrief_shared/models.py` | Modify | Append `ResourceManifest` and `ResourceManifestFile` ORM classes |
 | `migrations/versions/0014_a1_manifest_model.py` | Create | Alembic migration creating both tables + all indexes |
-| `packages/worker/contextsmith_worker/manifest.py` | Create | Pure helper module (no DB, no network) |
-| `packages/worker/contextsmith_worker/manifest_store.py` | Create | Transactional DB helper for manifest + file rows + audit event |
+| `packages/worker/sourcebrief_worker/manifest.py` | Create | Pure helper module (no DB, no network) |
+| `packages/worker/sourcebrief_worker/manifest_store.py` | Create | Transactional DB helper for manifest + file rows + audit event |
 | `tests/unit/test_manifest.py` | Create | Unit tests for helpers |
 | `tests/integration/test_manifest_flow.py` | Create | Integration tests against real DB |
 
@@ -126,7 +126,7 @@ No other files require changes. No API router, no worker job, no frontend.
 
 ## 5. Helper module: `manifest.py`
 
-Location: `packages/worker/contextsmith_worker/manifest.py`
+Location: `packages/worker/sourcebrief_worker/manifest.py`
 
 This module must have **no** database imports, no network imports, no subprocess calls, and no filesystem reads beyond what is passed in as function arguments. Every function must be fully testable without a running server.
 
@@ -218,7 +218,7 @@ Callers can catch `ManifestPathError` specifically and inspect `.reason` for str
 
 ## 6. ORM model additions
 
-Add the following to the **bottom** of `packages/shared/contextsmith_shared/models.py`, after `AuditEvent`, following the existing style (`uuid_pk()` helper, `Mapped[]` annotations, `JSONB` for structured columns, `BigInteger` import added where needed):
+Add the following to the **bottom** of `packages/shared/sourcebrief_shared/models.py`, after `AuditEvent`, following the existing style (`uuid_pk()` helper, `Mapped[]` annotations, `JSONB` for structured columns, `BigInteger` import added where needed):
 
 ```python
 from sqlalchemy import BigInteger  # add to existing import line
@@ -315,7 +315,7 @@ A manifest endpoint (`GET /workspaces/{workspace_id}/projects/{project_id}/resou
 
 ### 9.1 Unit tests — `tests/unit/test_manifest.py`
 
-All tests are pure Python. Import only `contextsmith_worker.manifest`. No database, no fixtures, no network.
+All tests are pure Python. Import only `sourcebrief_worker.manifest`. No database, no fixtures, no network.
 
 | Test ID | Function under test | Scenario | Expected outcome |
 |---|---|---|---|

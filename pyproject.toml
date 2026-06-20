@@ -1,5 +1,5 @@
 [project]
-name = "contextsmith"
+name = "sourcebrief"
 version = "0.1.0"
 description = "Open-source multi-tenant agent context platform"
 requires-python = ">=3.11"
@@ -31,11 +31,12 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-contextsmith = "contextsmith_cli.main:main"
+sourcebrief = "sourcebrief_cli.main:main"
+contextsmith = "sourcebrief_cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["apps/api", "packages/shared", "packages/worker", "packages/cli"]
-include = ["contextsmith_api*", "contextsmith_shared*", "contextsmith_worker*", "contextsmith_cli*"]
+include = ["sourcebrief_api*", "sourcebrief_shared*", "sourcebrief_worker*", "sourcebrief_cli*"]
 
 [tool.ruff]
 line-length = 100

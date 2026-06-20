@@ -2,7 +2,7 @@
 
 ## Goal
 
-Enable Hermes and external agents to query ContextSmith with bearer API tokens instead of dev-only `X-User-Email`, while enforcing workspace, project, resource, and scope boundaries consistently.
+Enable Hermes and external agents to query SourceBrief with bearer API tokens instead of dev-only `X-User-Email`, while enforcing workspace, project, resource, and scope boundaries consistently.
 
 ## Delivered behavior
 
@@ -15,7 +15,7 @@ Enable Hermes and external agents to query ContextSmith with bearer API tokens i
   - `expires_at`
   - `revoked_at`
   - `last_used_at`
-- Dev/user auth through `X-User-Email` is available only when `CONTEXTSMITH_DEV_AUTH=true` is explicitly set for local alpha flows.
+- Dev/user auth through `X-User-Email` is available only when `SOURCEBRIEF_DEV_AUTH=true` is explicitly set for local alpha flows.
 - Service tokens cannot create tenant-root workspaces or mint child tokens.
 - Service tokens cannot create projects; project creation remains user/admin driven in M11.
 - Resource-scoped write tokens cannot create new resources outside their declared resource allowlist.
@@ -35,14 +35,14 @@ Current alpha scopes:
 - `review:write` — resource review mutations.
 - `token:admin` — create/list/revoke tokens and admin-like project/profile/audit operations.
 
-`X-User-Email` local users are treated as alpha dev users with all scopes only when `CONTEXTSMITH_DEV_AUTH=true`. The default runtime rejects missing bearer auth; production auth remains a future milestone/non-goal for M11. The point here is service-token boundaries for agents/Hermes.
+`X-User-Email` local users are treated as alpha dev users with all scopes only when `SOURCEBRIEF_DEV_AUTH=true`. The default runtime rejects missing bearer auth; production auth remains a future milestone/non-goal for M11. The point here is service-token boundaries for agents/Hermes.
 
 ## REST examples
 
 Create a Hermes-scoped token:
 
 ```bash
-contextsmith token create \
+sourcebrief token create \
   --workspace-id "$WORKSPACE_ID" \
   --name "Hermes project query" \
   --scope project:query,resource:read \
@@ -54,7 +54,7 @@ contextsmith token create \
 Use it:
 
 ```bash
-CONTEXTSMITH_TOKEN="cs_..." contextsmith agent-context \
+SOURCEBRIEF_TOKEN="cs_..." sourcebrief agent-context \
   --workspace-id "$WORKSPACE_ID" \
   --project-id "$PROJECT_ID" \
   --runtime hermes \
@@ -65,7 +65,7 @@ CONTEXTSMITH_TOKEN="cs_..." contextsmith agent-context \
 Revoke it:
 
 ```bash
-contextsmith token revoke --workspace-id "$WORKSPACE_ID" --token-id "$TOKEN_ID" --json
+sourcebrief token revoke --workspace-id "$WORKSPACE_ID" --token-id "$TOKEN_ID" --json
 ```
 
 ## Security and operational notes

@@ -9,12 +9,12 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import text
 
-from contextsmith_api.auth import get_or_create_user
-from contextsmith_api.main import app
-from contextsmith_shared.config import get_settings
-from contextsmith_shared.db import get_engine, get_sessionmaker
-from contextsmith_shared.models import IndexRun, Project, WorkspaceMembership
-from contextsmith_worker.jobs import run_index
+from sourcebrief_api.auth import get_or_create_user
+from sourcebrief_api.main import app
+from sourcebrief_shared.config import get_settings
+from sourcebrief_shared.db import get_engine, get_sessionmaker
+from sourcebrief_shared.models import IndexRun, Project, WorkspaceMembership
+from sourcebrief_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
 
@@ -145,7 +145,7 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
         headers=headers,
     )
     assert tools.status_code == 200, tools.text
-    assert tools.json()["result"]["tools"][0]["name"] == "contextsmith.get_agent_context"
+    assert tools.json()["result"]["tools"][0]["name"] == "sourcebrief.get_agent_context"
 
     call = client.post(
         f"/mcp/{workspace_id}/{project_id}",
@@ -154,7 +154,7 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
             "id": 2,
             "method": "tools/call",
             "params": {
-                "name": "contextsmith.get_agent_context",
+                "name": "sourcebrief.get_agent_context",
                 "arguments": {"query": "falconagent", "runtime": "codex", "resource_ids": [resource_id]},
             },
         },
@@ -330,7 +330,7 @@ def test_mcp_json_rpc_error_semantics() -> None:
             "jsonrpc": "2.0",
             "id": 11,
             "method": "tools/call",
-            "params": {"name": "contextsmith.get_agent_context", "arguments": {}},
+            "params": {"name": "sourcebrief.get_agent_context", "arguments": {}},
         },
         headers=headers,
     )
@@ -343,7 +343,7 @@ def test_mcp_json_rpc_error_semantics() -> None:
             "jsonrpc": "2.0",
             "id": 12,
             "method": "tools/call",
-            "params": {"name": "contextsmith.get_agent_context", "arguments": {"query": "x", "runtime": "root"}},
+            "params": {"name": "sourcebrief.get_agent_context", "arguments": {"query": "x", "runtime": "root"}},
         },
         headers=headers,
     )
@@ -357,7 +357,7 @@ def test_mcp_json_rpc_error_semantics() -> None:
             "id": 13,
             "method": "tools/call",
             "params": {
-                "name": "contextsmith.get_agent_context",
+                "name": "sourcebrief.get_agent_context",
                 "arguments": {"query": "x", "resource_ids": ["not-a-uuid"]},
             },
         },

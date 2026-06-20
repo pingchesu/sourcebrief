@@ -13,9 +13,9 @@ import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
-from contextsmith_api.main import _purge_resource_artifacts
-from contextsmith_shared.db import get_engine, get_sessionmaker
-from contextsmith_shared.models import (
+from sourcebrief_api.main import _purge_resource_artifacts
+from sourcebrief_shared.db import get_engine, get_sessionmaker
+from sourcebrief_shared.models import (
     AuditEvent,
     Project,
     Resource,
@@ -25,8 +25,8 @@ from contextsmith_shared.models import (
     User,
     Workspace,
 )
-from contextsmith_worker.manifest import compute_manifest_hash
-from contextsmith_worker.manifest_store import ManifestFileInput, create_resource_manifest
+from sourcebrief_worker.manifest import compute_manifest_hash
+from sourcebrief_worker.manifest_store import ManifestFileInput, create_resource_manifest
 
 pytestmark = pytest.mark.integration
 

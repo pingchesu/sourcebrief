@@ -1,6 +1,6 @@
 # Architecture
 
-ContextSmith is a multi-tenant context platform. It turns project resources into versioned, cited, agent-ready context.
+SourceBrief is a multi-tenant context platform. It turns project resources into versioned, cited, agent-ready context.
 
 ## Design goals
 
@@ -8,7 +8,7 @@ ContextSmith is a multi-tenant context platform. It turns project resources into
 - Make tenant and project boundaries part of the data model from day one.
 - Treat indexed context as versioned artifacts, not mutable prompt text.
 - Return citations for every retrieved answer path.
-- Keep production actions outside repo agents. ContextSmith provides context; typed external tools handle mutations.
+- Keep production actions outside repo agents. SourceBrief provides context; typed external tools handle mutations.
 - Support multiple agent runtimes through HTTP and one central MCP endpoint.
 
 ## Runtime components
@@ -109,7 +109,7 @@ Document resources currently support inline markdown content. Git resources supp
 
 ## Retrieval path
 
-ContextSmith combines multiple retrieval signals:
+SourceBrief combines multiple retrieval signals:
 
 - lexical search over chunks
 - vector search through pgvector
@@ -147,7 +147,7 @@ Supported runtime profiles:
 
 ## MCP path
 
-ContextSmith exposes one central MCP-style endpoint:
+SourceBrief exposes one central MCP-style endpoint:
 
 ```text
 POST /mcp/{workspace_id}/{project_id}
@@ -161,7 +161,7 @@ Implemented methods:
 
 Tool exposed:
 
-- `contextsmith.get_agent_context`
+- `sourcebrief.get_agent_context`
 
 This is intentionally not one MCP server per repo. A project is the boundary; a project can contain many repos and resources.
 
@@ -179,7 +179,7 @@ The profile is intentionally metadata and policy only. Production actions still 
 
 ## Review and drift control
 
-ContextSmith tracks:
+SourceBrief tracks:
 
 - resource usage count
 - retrieval hit count
@@ -210,7 +210,7 @@ Current local development uses `X-User-Email` as a dev auth header. The data mod
 
 Non-negotiable design rule:
 
-> ContextSmith can provide context to agents. It should not let repo agents own production mutation boundaries.
+> SourceBrief can provide context to agents. It should not let repo agents own production mutation boundaries.
 
 Production actions should stay behind dedicated typed MCP tools, explicit approval, and evidence/rollback workflows.
 

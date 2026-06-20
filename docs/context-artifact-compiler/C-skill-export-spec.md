@@ -6,7 +6,7 @@ Depends on: B0 Resource Map artifacts, B1 Context Pack versions
 
 ## 1. Goal
 
-Export published Context Packs into thin, auditable runtime adapters. A generated skill is **not** a copy of the source corpus and not the canonical system of record. It is an instruction package that teaches an agent how to call ContextSmith with a pinned pack selector and how to cite returned evidence.
+Export published Context Packs into thin, auditable runtime adapters. A generated skill is **not** a copy of the source corpus and not the canonical system of record. It is an instruction package that teaches an agent how to call SourceBrief with a pinned pack selector and how to cite returned evidence.
 
 ## 2. Non-goals
 
@@ -43,7 +43,7 @@ The generated instructions must tell agents to verify:
 
 MCP:
 
-- Only mention the actual stable tool name if this repo/runtime advertises it: `contextsmith.get_agent_context`.
+- Only mention the actual stable tool name if this repo/runtime advertises it: `sourcebrief.get_agent_context`.
 - Do **not** mention future tools such as `get_context_pack`, `search`, or `read_section` until live `tools/list` exposes them.
 - README may say “future MCP tools may add resource-map drilldown,” but not instruct agents to call them.
 
@@ -134,7 +134,7 @@ Rules:
 Allowed files:
 
 1. `SKILL.md`
-   - frontmatter with name, description, contextsmith metadata.
+   - frontmatter with name, description, sourcebrief metadata.
    - trigger conditions.
    - exact REST and MCP fallback contract using `context_pack_key` + integer `context_pack_version`.
    - required verification of `context_pack_snapshot_pin_enforced=true`.
@@ -146,7 +146,7 @@ Allowed files:
    - package hash, export status, approval metadata, pack key/version/hash/status, source coverage counts, file hashes, generated_at, generator version.
 3. `README.md`
    - install/use instructions.
-   - explicit statement: no source corpus is embedded; ContextSmith access is required.
+   - explicit statement: no source corpus is embedded; SourceBrief access is required.
    - copy/install only if export status is `approved`.
 
 Positive content whitelist:
@@ -154,7 +154,7 @@ Positive content whitelist:
 - pack key/version/hash/status
 - resource names and counts
 - artifact hashes/counts
-- ContextSmith API route shape without token
+- SourceBrief API route shape without token
 - citation policy/instructions
 - package metadata
 
@@ -174,7 +174,7 @@ Validation must pass before approval.
 Leak scan fails on:
 
 - `/home/`, `/tmp/`, `/var/lib/`, `/qa-fixtures/`, `file://`
-- `CONTEXTSMITH_ADMIN_PASSWORD`, `session_token`, `cs_`, `Bearer `
+- `SOURCEBRIEF_ADMIN_PASSWORD`, `session_token`, `cs_`, `Bearer `
 - private-key markers
 - source text markers from citations/chunks/snapshot file content
 - any generated file above conservative size cap (`SKILL.md` 24KB, README 12KB, manifest 24KB)

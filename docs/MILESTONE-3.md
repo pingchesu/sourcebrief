@@ -1,6 +1,6 @@
 # Milestone 3: Embeddings, Hybrid Retrieval, and Context Packets
 
-Milestone 3 turns ContextSmith from a lexical search prototype into a retrieval
+Milestone 3 turns SourceBrief from a lexical search prototype into a retrieval
 pipeline that can serve agent-ready context packets.
 
 ## Scope

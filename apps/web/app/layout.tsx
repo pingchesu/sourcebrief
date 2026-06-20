@@ -5,7 +5,7 @@ import { AppShell } from '../components/AppShell';
 import { PlatformProvider } from '../lib/platform-context';
 
 export const metadata: Metadata = {
-  title: 'ContextSmith',
+  title: 'SourceBrief',
   description: 'Enterprise knowledge-agent platform console',
 };
 

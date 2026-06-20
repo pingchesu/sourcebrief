@@ -107,7 +107,7 @@ Unauthorized access returns `404` (non-leaking), consistent with M1 and SPEC §1
   before git runs). Workers should still run with deployment-level egress policy;
   this is a preflight guard, not a complete network sandbox.
 - **Local sources gated** — local `file://`/path sources are disabled unless the
-  worker has `CONTEXTSMITH_ALLOW_LOCAL_GIT=true` (used only by local
+  worker has `SOURCEBRIEF_ALLOW_LOCAL_GIT=true` (used only by local
   development/QA Compose), so an untrusted SaaS user cannot point ingestion at
   arbitrary worker filesystem paths.
 - **Secret-safe snapshot metadata** — git snapshot metadata stores a sanitized

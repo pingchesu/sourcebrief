@@ -248,6 +248,6 @@ Use real Postgres/API/worker, no mocks:
 - Alembic downgrade/upgrade `0019_d_repo_agents <-> 0020_e0_graph_versions`.
 - `ruff`, `mypy`.
 - `npm --prefix apps/web run lint` and `build`.
-- `CONTEXTSMITH_RUN_REAL_INTEGRATION=1 pytest tests/integration/test_manifest_diff_flow.py -q` or split E0 integration file.
+- `SOURCEBRIEF_RUN_REAL_INTEGRATION=1 pytest tests/integration/test_manifest_diff_flow.py -q` or split E0 integration file.
 - Live compose rebuild + API smoke + browser QA on `/graphs`.
 - Hermes adversarial backend/product review must PASS before PR.

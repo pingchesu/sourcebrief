@@ -44,7 +44,7 @@ A pack version can be:
 
 Only `published` versions are runtime-selectable.
 
-ContextSmith must show latest/current pack by key with status, version, hash, created/published times, artifact count, resource coverage, validation state, and rollback/invalidated state.
+SourceBrief must show latest/current pack by key with status, version, hash, created/published times, artifact count, resource coverage, validation state, and rollback/invalidated state.
 
 ### 3.3 Publish
 

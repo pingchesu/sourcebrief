@@ -1,6 +1,6 @@
 # Milestone 5: Review and Lifecycle
 
-Milestone 5 adds resource governance so ContextSmith can control drift instead
+Milestone 5 adds resource governance so SourceBrief can control drift instead
 of only ingesting more context.
 
 ## Scope

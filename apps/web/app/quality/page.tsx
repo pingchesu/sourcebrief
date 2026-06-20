@@ -437,7 +437,7 @@ export default function QualityPage() {
           <span>Drift findings{drift ? ` (${driftFindings.length} flagged of ${drift.summaries.length})` : ''}</span><span className="code">{driftOpen ? 'hide' : 'show'}</span>
         </button>
         {driftOpen ? <div className="grid" style={{ marginTop: 12 }}>
-          <p className="muted">Read-only drift audit over source agent cards (stale runbooks, missing entrypoints, orphaned files). Scanning records only a ContextSmith audit summary — it never modifies your sources.</p>
+          <p className="muted">Read-only drift audit over source agent cards (stale runbooks, missing entrypoints, orphaned files). Scanning records only a SourceBrief audit summary — it never modifies your sources.</p>
           <div className="toolbar"><button className="btn secondary" disabled={driftBusy || !signedIn} onClick={() => void runDriftScan()}>{driftBusy ? 'Scanning…' : 'Run drift scan (dry run)'}</button></div>
           {driftError ? <div className="notice error">{driftError}</div> : null}
           {!drift

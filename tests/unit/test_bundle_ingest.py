@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from contextsmith_worker.bundle_ingest import (
+from sourcebrief_worker.bundle_ingest import (
     ZipRejectionError,
     assert_under_uploads,
     cleanup_stale_uploads,

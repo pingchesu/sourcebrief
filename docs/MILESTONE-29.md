@@ -5,8 +5,8 @@ Phase 6 adds a guarded patch/PR workflow for repo agents without changing the pl
 ## Scope
 
 - Add `patch_proposals` and `pr_requests` records for durable auditability.
-- Add `contextsmith.generate_patch` as an HTTP/MCP tool that builds unified diffs from authorized indexed snapshot files.
-- Add `contextsmith.open_pr` as an HTTP/MCP tool that records explicit PR approval metadata.
+- Add `sourcebrief.generate_patch` as an HTTP/MCP tool that builds unified diffs from authorized indexed snapshot files.
+- Add `sourcebrief.open_pr` as an HTTP/MCP tool that records explicit PR approval metadata.
 - Surface an opt-in patch/PR panel on the Repo Agents page.
 - Advertise patch/PR as optional capabilities in generated Skill Packs while preserving the read-only default contract.
 

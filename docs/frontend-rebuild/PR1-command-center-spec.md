@@ -1,8 +1,8 @@
-# PR1 — ContextSmith Enterprise Command Center Spec
+# PR1 — SourceBrief Enterprise Command Center Spec
 
 ## 1. Problem Statement
 
-目前 ContextSmith 前端像是後端 API surface 的展示台，而不是企業級成熟產品。使用者進入系統後，看到的是一組以內部模組命名的 navigation：Dashboard、Import Resources、Repo Agents、Quality Evals、Agent Files、Git Env、Maintenance、Project Agent、Resources、Review Center、Ask / Citations、Login / Logout、Config、User Management、Admin。
+目前 SourceBrief 前端像是後端 API surface 的展示台，而不是企業級成熟產品。使用者進入系統後，看到的是一組以內部模組命名的 navigation：Dashboard、Import Resources、Repo Agents、Quality Evals、Agent Files、Git Env、Maintenance、Project Agent、Resources、Review Center、Ask / Citations、Login / Logout、Config、User Management、Admin。
 
 這造成三個核心問題：
 
@@ -14,7 +14,7 @@ PR1 目標是建立新的 enterprise-grade frontend 基礎：新的 App Shell、
 
 ## 2. Product Goal
 
-ContextSmith 前端應該成為 **Agent Context Operating Console**：讓團隊管理 repo/document sources、觀察 context freshness 與品質、查詢 cited context，最後輸出可被 Hermes/Codex/Claude 使用的 agent pack。
+SourceBrief 前端應該成為 **Agent Context Operating Console**：讓團隊管理 repo/document sources、觀察 context freshness 與品質、查詢 cited context，最後輸出可被 Hermes/Codex/Claude 使用的 agent pack。
 
 首頁要回答：
 

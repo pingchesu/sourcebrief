@@ -2,12 +2,12 @@
 
 ## Goal
 
-Make a ContextSmith project directly consumable by Hermes as a read-only project knowledge backend, without creating one MCP server per repo and without allowing production mutations through repo agents.
+Make a SourceBrief project directly consumable by Hermes as a read-only project knowledge backend, without creating one MCP server per repo and without allowing production mutations through repo agents.
 
 ## Shipped artifacts
 
 - `scripts/hermes_integration.py`
-  - creates a Hermes-scoped ContextSmith bearer token, unless `--token` is supplied
+  - creates a Hermes-scoped SourceBrief bearer token, unless `--token` is supplied
   - restricts created-token scopes to read-only/project-query scopes
   - validates the created token's scopes and project/resource allowlists
   - proves the token cannot create child tokens, create resources, refresh resources, or mutate resource review state
@@ -19,7 +19,7 @@ Make a ContextSmith project directly consumable by Hermes as a read-only project
 - Existing central MCP endpoint: `POST /mcp/{workspace_id}/{project_id}`
   - `initialize`
   - `tools/list`
-  - `tools/call` for `contextsmith.get_agent_context`
+  - `tools/call` for `sourcebrief.get_agent_context`
 - Existing REST endpoint: `POST /workspaces/{workspace_id}/projects/{project_id}/agent-context`
 - QA smoke executes the Hermes integration script against the real Docker Compose stack.
 
@@ -51,10 +51,10 @@ Paste the emitted `hermes_config.mcp_servers` block into the target Hermes profi
 
 ```yaml
 mcp_servers:
-  contextsmith:
+  sourcebrief:
     url: "http://localhost:18000/mcp/<workspace_uuid>/<project_uuid>"
     headers:
-      Authorization: "Bearer <contextsmith_token>"
+      Authorization: "Bearer <sourcebrief_token>"
     timeout: 120
     connect_timeout: 30
 ```
@@ -64,13 +64,13 @@ Then either restart Hermes, or for a running gateway that supports reload, ask t
 After discovery, Hermes registers the tool with the usual prefixing convention:
 
 ```text
-mcp_contextsmith_contextsmith_get_agent_context
+mcp_sourcebrief_sourcebrief_get_agent_context
 ```
 
 Ask Hermes a question like:
 
 ```text
-Use ContextSmith to answer: how does this project handle refresh scheduling? Include citations.
+Use SourceBrief to answer: how does this project handle refresh scheduling? Include citations.
 ```
 
 ## REST fallback for Hermes or other agents
@@ -78,7 +78,7 @@ Use ContextSmith to answer: how does this project handle refresh scheduling? Inc
 If MCP discovery is not available, agents can call REST directly:
 
 ```bash
-export CS_AUTH_HEADER='Authorization: Bearer <contextsmith_token>'
+export CS_AUTH_HEADER='Authorization: Bearer <sourcebrief_token>'
 curl -sS \
   -H "$CS_AUTH_HEADER" \
   -H "Content-Type: application/json" \
@@ -88,13 +88,13 @@ curl -sS \
 
 ## Production boundary
 
-ContextSmith is a **read-only context provider** for agents.
+SourceBrief is a **read-only context provider** for agents.
 
 - It can return cited project/resource context.
 - It can expose review/usage metadata to help humans clean drift.
 - It does **not** execute production mutations.
 - Prod actions must continue through Hermes approval, typed external MCP tools, and evidence workflows.
-- ContextSmith does not hold AWS/Teleport/customer production credentials.
+- SourceBrief does not hold AWS/Teleport/customer production credentials.
 
 ## Verification
 
@@ -113,5 +113,5 @@ Real-service smoke verifies:
 - The script proves child-token creation, resource creation, refresh, and review mutation are denied.
 - REST `agent-context` returns `runtime=hermes` with citations and context text.
 - MCP `initialize`, `tools/list`, and `tools/call` work with bearer token auth.
-- The tool list includes `contextsmith.get_agent_context`.
+- The tool list includes `sourcebrief.get_agent_context`.
 - The script emits Hermes config without leaking plaintext `cs_...` tokens when `--redact-token` is used.

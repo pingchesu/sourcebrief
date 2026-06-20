@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-kicker">CONTEXTSMITH</div><div className="brand-title">Context Console</div></div>
+      <div className="brand"><div className="brand-kicker">SOURCEBRIEF</div><div className="brand-title">Context Console</div></div>
       <nav className="nav" aria-label="Primary">
         {NAV_SECTIONS.map((section, index) => <div key={section.label ?? `section-${index}`} className={`nav-section ${section.secondary ? 'secondary' : ''}`.trim()}>
           {section.label ? <div className="nav-section-label">{section.label}</div> : null}
@@ -41,7 +41,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <section className="main">
       <header className="topbar">
         <div className="topbar-identity">
-          <strong>{workspace?.name ?? 'ContextSmith'}{project ? ` · ${project.name}` : ''}</strong>
+          <strong>{workspace?.name ?? 'SourceBrief'}{project ? ` · ${project.name}` : ''}</strong>
           <div className="topbar-meta"><span>{agent?.name ?? (signedIn ? 'Agent loading…' : 'No active session')}</span><span>{signedIn ? `Signed in as ${principal}` : 'No active session'}</span><span>{provider ? `${provider.embedding.provider}/${provider.embedding.model}` : 'provider not loaded'}</span>{error ? <span style={{ color: 'var(--risk)' }}>{error}</span> : null}</div>
         </div>
         <div className="toolbar"><span className={`chip ${providerChipClass}`.trim()}>{providerStatus}</span><Link className="btn secondary" href="/login">Account</Link><button className="btn secondary" onClick={() => reload()} disabled={loading || !signedIn}>{loading ? 'Loading…' : 'Reload'}</button></div>

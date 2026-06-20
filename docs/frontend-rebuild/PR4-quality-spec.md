@@ -1,4 +1,4 @@
-# PR4 — ContextSmith Quality Gate Spec
+# PR4 — SourceBrief Quality Gate Spec
 
 > 延續 PR1（enterprise shell + Command Center + design primitives）、PR2（Sources lifecycle hub）、PR3（Agent Workbench）。本 PR **不動 backend**，僅把目前割裂的 `/review`（resource review / freshness）與 `/evals`（retrieval eval runs）收斂成單一 canonical **Quality** gate dashboard (`/quality`)。
 > 對應 PR1 IA 中 **Assure quality** 群組（PR1 spec §4.2）的兩個入口。

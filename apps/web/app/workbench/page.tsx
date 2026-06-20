@@ -166,10 +166,10 @@ export default function WorkbenchPage() {
         body: JSON.stringify({
           resource_id: selectedAgent.id,
           scope: patchScope,
-          source_branch: `contextsmith/${selectedAgent.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'repo'}-patch`,
+          source_branch: `sourcebrief/${selectedAgent.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'repo'}-patch`,
           target_branch: brief?.branch ?? 'main',
           base_commit: brief?.commit ?? undefined,
-          files: [{ path: patchPath, start_line: 1, end_line: 1, new_content: patchContent || '# Proposed ContextSmith patch', rationale: 'Operator-entered patch proposal' }],
+          files: [{ path: patchPath, start_line: 1, end_line: 1, new_content: patchContent || '# Proposed SourceBrief patch', rationale: 'Operator-entered patch proposal' }],
         }),
       });
       setPatchProposal(value);
@@ -183,7 +183,7 @@ export default function WorkbenchPage() {
     try {
       const value = await client<PrRequest>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/remote-code/open_pr`, {
         method: 'POST',
-        body: JSON.stringify({ patch_proposal_id: patchProposal.id, source_branch: patchProposal.source_branch ?? 'contextsmith/patch', target_branch: patchProposal.target_branch ?? 'main', approval_note: `Approved patch proposal ${patchProposal.id}` }),
+        body: JSON.stringify({ patch_proposal_id: patchProposal.id, source_branch: patchProposal.source_branch ?? 'sourcebrief/patch', target_branch: patchProposal.target_branch ?? 'main', approval_note: `Approved patch proposal ${patchProposal.id}` }),
       });
       setPrRecord(value);
     } catch (err) { setPatchError(String(err)); }

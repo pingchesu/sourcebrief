@@ -9,13 +9,13 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import text
 
-import contextsmith_api.main as api_main
-import contextsmith_api.retrieval as retrieval_module
-from contextsmith_api.main import app
-from contextsmith_shared.config import get_settings
-from contextsmith_shared.db import get_engine, get_sessionmaker
-from contextsmith_shared.models import IndexRun
-from contextsmith_worker.jobs import run_index
+import sourcebrief_api.main as api_main
+import sourcebrief_api.retrieval as retrieval_module
+from sourcebrief_api.main import app
+from sourcebrief_shared.config import get_settings
+from sourcebrief_shared.db import get_engine, get_sessionmaker
+from sourcebrief_shared.models import IndexRun
+from sourcebrief_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
 
@@ -106,13 +106,13 @@ def test_context_packet_hybrid_retrieval_records_analytics() -> None:
     assert body["query_run_id"]
     assert body["id"]
     assert body["provider"] == "hashing"
-    assert body["model"] == "contextsmith-hashing-v1"
-    assert body["diagnostics"]["embedding_namespace"] == "hashing:contextsmith-hashing-v1:d64:l2"
+    assert body["model"] == "sourcebrief-hashing-v1"
+    assert body["diagnostics"]["embedding_namespace"] == "hashing:sourcebrief-hashing-v1:d64:l2"
     assert body["diagnostics"]["embedding_normalized"] is True
     assert body["diagnostics"]["rerank_score_range"] == [0.0, 1.0]
     assert body["diagnostics"]["vector_status"] == "ok"
     assert body["diagnostics"]["matching_embedding_count"] >= 1
-    assert body["diagnostics"]["available_embedding_namespaces"] == ["hashing:contextsmith-hashing-v1:d64:l2"]
+    assert body["diagnostics"]["available_embedding_namespaces"] == ["hashing:sourcebrief-hashing-v1:d64:l2"]
     assert body["count"] >= 1
     item = body["items"][0]
     assert item["resource_id"] == resource_id
@@ -134,7 +134,7 @@ def test_context_packet_hybrid_retrieval_records_analytics() -> None:
         ]
         assert query_rows[0]["hit_count"] == body["count"]
         assert query_rows[0]["status"] == "succeeded"
-        assert query_rows[0]["metadata"]["embedding_namespace"] == "hashing:contextsmith-hashing-v1:d64:l2"
+        assert query_rows[0]["metadata"]["embedding_namespace"] == "hashing:sourcebrief-hashing-v1:d64:l2"
         embedding_rows = [
             dict(row)
             for row in session.execute(
@@ -148,7 +148,7 @@ def test_context_packet_hybrid_retrieval_records_analytics() -> None:
             .all()
         ]
         assert embedding_rows
-        assert {row["namespace"] for row in embedding_rows} == {"hashing:contextsmith-hashing-v1:d64:l2"}
+        assert {row["namespace"] for row in embedding_rows} == {"hashing:sourcebrief-hashing-v1:d64:l2"}
         assert all(row["normalized"] is True for row in embedding_rows)
         hit_count = session.execute(
             text("SELECT count(*) FROM retrieval_hits WHERE query_run_id = CAST(:id AS uuid)"),

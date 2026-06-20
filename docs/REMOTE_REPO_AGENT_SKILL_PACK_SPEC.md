@@ -1,34 +1,34 @@
 # Remote Repo Agent Skill Pack Specification
 
-Status: Draft v0.2 after adversarial review  
-Owner: ContextSmith platform  
-Related milestones: M16, M23, proposed M24-M26  
-Primary decision: package repo agents as remote ContextSmith capabilities plus thin runtime-specific local adapters.
+Status: Draft v0.2 after adversarial review
+Owner: SourceBrief platform
+Related milestones: M16, M23, proposed M24-M26
+Primary decision: package repo agents as remote SourceBrief capabilities plus thin runtime-specific local adapters.
 
 Adversarial review result: first pass BLOCK. This version incorporates the required contract clarifications: Hermes raw skill installs are single-file installs, MCP configuration is a separate mandatory step, public skill packs must not advertise unavailable tools, remote code tools require exact schemas/security gates, and the drift auditor is read-only by default.
 
 ## 1. Problem
 
-ContextSmith currently turns repositories into indexed project resources and can generate preliminary agent files. That is enough for a local demo, but not enough for real agent runtime use.
+SourceBrief currently turns repositories into indexed project resources and can generate preliminary agent files. That is enough for a local demo, but not enough for real agent runtime use.
 
 In the real deployment shape:
 
-- Hermes, Codex, or Claude may run on a different machine from ContextSmith.
+- Hermes, Codex, or Claude may run on a different machine from SourceBrief.
 - The source repository may live in GitHub, a worker checkout, a bundle, or object storage, not on the agent runtime filesystem.
-- A path shown by ContextSmith may be provenance, not a path the runtime can `grep`, `cat`, or edit.
+- A path shown by SourceBrief may be provenance, not a path the runtime can `grep`, `cat`, or edit.
 - Local skills/instructions can teach an agent how to behave, but they cannot carry a large repo index, symbol graph, embeddings, eval history, or authorization policy.
 
-The product gap is that a user wants to install a repo agent into Hermes/Codex/Claude as a first-class capability, while the data and code intelligence remain remotely hosted by ContextSmith.
+The product gap is that a user wants to install a repo agent into Hermes/Codex/Claude as a first-class capability, while the data and code intelligence remain remotely hosted by SourceBrief.
 
 ## 2. Goal
 
-ContextSmith should package each repo/project agent as an installable **Remote Repo Agent Skill Pack**.
+SourceBrief should package each repo/project agent as an installable **Remote Repo Agent Skill Pack**.
 
-The skill pack gives a local runtime a small operating manual and connection contract. The actual code intelligence remains in ContextSmith and is accessed through remote MCP/HTTP tools.
+The skill pack gives a local runtime a small operating manual and connection contract. The actual code intelligence remains in SourceBrief and is accessed through remote MCP/HTTP tools.
 
 One sentence:
 
-> ContextSmith packages a repository or project into an installable remote repo agent: the local runtime installs a small Skill Pack from GitHub, and uses ContextSmith MCP tools for indexed context, code search, grep, file reads, symbol lookup, eval-backed operating guidance, and optional patch generation.
+> SourceBrief packages a repository or project into an installable remote repo agent: the local runtime installs a small Skill Pack from GitHub, and uses SourceBrief MCP tools for indexed context, code search, grep, file reads, symbol lookup, eval-backed operating guidance, and optional patch generation.
 
 ## 3. Non-goals
 
@@ -36,7 +36,7 @@ One sentence:
 - Do not copy vector indexes, embeddings, symbol graphs, or eval histories into the skill package.
 - Do not expose backend worker checkout paths as runtime-accessible paths.
 - Do not require Milvus, Qdrant, Neo4j, or a new mandatory storage service.
-- Do not make per-repo MCP servers mandatory; keep the central ContextSmith MCP server as the default.
+- Do not make per-repo MCP servers mandatory; keep the central SourceBrief MCP server as the default.
 - Do not enable production mutation, remote writes, test execution, PR creation, or deployment by default.
 - Do not silently mutate the user's active Hermes profile or Claude/Codex config from the web UI.
 
@@ -65,7 +65,7 @@ The Skill Pack is what a local runtime downloads, checks out, or partially insta
 
 It contains:
 
-- `contextsmith-agent.yaml` manifest.
+- `sourcebrief-agent.yaml` manifest.
 - `hermes/SKILL.md` for Hermes skill installation.
 - `codex/AGENTS.md` for Codex instruction loading.
 - `claude/CLAUDE.md` and/or Claude skill package metadata.
@@ -77,13 +77,13 @@ It does not contain full source code or index data.
 
 ### 4.3 Remote Tool Surface
 
-The Remote Tool Surface is the MCP/HTTP capability boundary hosted by ContextSmith.
+The Remote Tool Surface is the MCP/HTTP capability boundary hosted by SourceBrief.
 
 Capability tiers:
 
 | Tier | Tools | Public adapter claim |
 |---|---|---|
-| Context-only | `contextsmith.get_agent_context` | Repo agent can answer with context packets only. |
+| Context-only | `sourcebrief.get_agent_context` | Repo agent can answer with context packets only. |
 | Remote code read | `search_code`, `grep_code`, `read_file`, `find_symbol` | Repo agent can perform follow-up code inspection without local repo access. |
 | Patch assist | `generate_patch` | Repo agent can draft patches, still read-only by default. |
 | Write/PR | `open_pr` or source-control write tools | Disabled unless explicitly configured and approved. |
@@ -98,7 +98,7 @@ Rules:
 
 1. Repository paths in citations are `repo_relative_path`, not local runtime paths.
 2. Backend paths such as worker checkout directories, bundle mount paths, or ingestion temp paths must never be presented as paths the local agent can access.
-3. If the runtime needs follow-up evidence, it must use ContextSmith remote tools, not local filesystem commands.
+3. If the runtime needs follow-up evidence, it must use SourceBrief remote tools, not local filesystem commands.
 4. All answers must cite repo/resource identity and indexed commit/snapshot when available.
 5. If the indexed commit is stale or unknown, the runtime must say so.
 6. Production/runtime state is out of scope unless a separate live operations tool provides it.
@@ -109,7 +109,7 @@ Rules:
 
 ### 6.1 Hermes reality
 
-`hermes skills install <identifier>` installs a single skill identifier or a direct HTTP(S) URL to a `SKILL.md` file. Installing `hermes/SKILL.md` from GitHub does **not** install the whole Skill Pack repository, `contextsmith-agent.yaml`, `mcp.json`, README, or other adapters.
+`hermes skills install <identifier>` installs a single skill identifier or a direct HTTP(S) URL to a `SKILL.md` file. Installing `hermes/SKILL.md` from GitHub does **not** install the whole Skill Pack repository, `sourcebrief-agent.yaml`, `mcp.json`, README, or other adapters.
 
 Therefore Hermes installation has two mandatory steps:
 
@@ -119,9 +119,9 @@ Therefore Hermes installation has two mandatory steps:
    hermes skills install https://raw.githubusercontent.com/<org>/<agent-pack>/<tag-or-sha>/hermes/SKILL.md --name <agent-slug>
    ```
 
-2. Configure the ContextSmith MCP server separately in the active Hermes profile, using a scoped token generated by ContextSmith.
+2. Configure the SourceBrief MCP server separately in the active Hermes profile, using a scoped token generated by SourceBrief.
 
-The Hermes skill must be self-contained for runtime-critical behavior: remote-only warning, when to use the agent, which ContextSmith MCP tools to call, citation policy, stale-index behavior, and mutation boundary. It may link to the full manifest for human inspection, but it must not depend on the manifest being locally installed.
+The Hermes skill must be self-contained for runtime-critical behavior: remote-only warning, when to use the agent, which SourceBrief MCP tools to call, citation policy, stale-index behavior, and mutation boundary. It may link to the full manifest for human inspection, but it must not depend on the manifest being locally installed.
 
 GitHub raw URLs should be pinned to tags or commit SHAs for reproducibility. `main` installs are allowed only for development and must be labeled mutable.
 
@@ -132,8 +132,8 @@ Codex consumes the adapter by loading `codex/AGENTS.md` from a checked-out Skill
 Acceptance smoke must prove:
 
 - Codex is run in a directory with only the Skill Pack, not the target source repo.
-- The instructions tell Codex to use ContextSmith remote tools.
-- A follow-up code inspection succeeds through ContextSmith once remote code tools exist.
+- The instructions tell Codex to use SourceBrief remote tools.
+- A follow-up code inspection succeeds through SourceBrief once remote code tools exist.
 
 ### 6.3 Claude
 
@@ -155,7 +155,7 @@ Acceptance smoke must prove:
 
 ## 7. Manifest schema v1
 
-`contextsmith-agent.yaml` is the canonical portable manifest for generated adapters.
+`sourcebrief-agent.yaml` is the canonical portable manifest for generated adapters.
 
 The implementation must provide a machine-validated JSON Schema or equivalent Pydantic model. The schema must define required fields, defaults, enum values, version negotiation, and backward compatibility behavior.
 
@@ -163,10 +163,10 @@ Required top-level fields:
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `kind` | string | yes | Must be `contextsmith.repo-agent`. |
+| `kind` | string | yes | Must be `sourcebrief.repo-agent`. |
 | `version` | integer | yes | Starts at `1`. Unknown major versions are rejected. |
 | `identity` | object | yes | Name, slug, workspace/project IDs, optional card URL. |
-| `contextsmith` | object | yes | API/MCP endpoints and auth placeholder metadata. |
+| `sourcebrief` | object | yes | API/MCP endpoints and auth placeholder metadata. |
 | `runtime_access` | object | yes | Must include mode and local access booleans. |
 | `capabilities` | object | yes | Required/optional capability names actually available. |
 | `sources` | array | yes | Authorized resources only. |
@@ -178,21 +178,21 @@ Required top-level fields:
 Example:
 
 ```yaml
-kind: contextsmith.repo-agent
+kind: sourcebrief.repo-agent
 version: 1
 identity:
   name: AngiKnowledge Repo Agent
   slug: angiknowledge-repo-agent
   workspace_id: ws_xxx
   project_id: prj_xxx
-  agent_card_url: https://contextsmith.example.com/workspaces/ws_xxx/projects/prj_xxx/agents/card
-contextsmith:
-  api_base_url: https://contextsmith.example.com
-  mcp_endpoint: https://contextsmith.example.com/mcp/ws_xxx/prj_xxx
-  agent_context_endpoint: https://contextsmith.example.com/workspaces/ws_xxx/projects/prj_xxx/agent-context
+  agent_card_url: https://sourcebrief.example.com/workspaces/ws_xxx/projects/prj_xxx/agents/card
+sourcebrief:
+  api_base_url: https://sourcebrief.example.com
+  mcp_endpoint: https://sourcebrief.example.com/mcp/ws_xxx/prj_xxx
+  agent_context_endpoint: https://sourcebrief.example.com/workspaces/ws_xxx/projects/prj_xxx/agent-context
   auth:
     type: bearer
-    token_env: CONTEXTSMITH_TOKEN
+    token_env: SOURCEBRIEF_TOKEN
 runtime_access:
   mode: remote_only
   local_repo_required: false
@@ -258,7 +258,7 @@ It must not include:
 
 `codex/AGENTS.md` must express the same contract in Codex-friendly form:
 
-- Use ContextSmith remote tools for repo context.
+- Use SourceBrief remote tools for repo context.
 - Do not assume repo files are in the current working directory.
 - Prefer remote `grep_code`/`read_file` follow-ups when those tools are available.
 - Cite repo-relative paths and indexed commits.
@@ -279,14 +279,14 @@ All runtime adapters must be generated from the same manifest and must preserve 
 
 ## 9. GitHub distribution model
 
-ContextSmith should support exporting or publishing a Skill Pack to GitHub.
+SourceBrief should support exporting or publishing a Skill Pack to GitHub.
 
 Recommended repository layout:
 
 ```text
 <agent-pack>/
   README.md
-  contextsmith-agent.yaml
+  sourcebrief-agent.yaml
   mcp.json
   hermes/
     SKILL.md
@@ -301,7 +301,7 @@ Recommended repository layout:
 
 Publishing modes:
 
-1. Download zip from ContextSmith UI.
+1. Download zip from SourceBrief UI.
 2. Copy generated files manually.
 3. Open a PR to a configured GitHub repository.
 4. Later: publish to a registry compatible with `hermes skills install` discovery.
@@ -316,7 +316,7 @@ Security rules:
 
 ## 10. Remote tool contracts
 
-Remote tools make repo agents usable when Hermes and ContextSmith run on different machines.
+Remote tools make repo agents usable when Hermes and SourceBrief run on different machines.
 
 All tools must share these rules:
 
@@ -540,7 +540,7 @@ Validation/error mapping:
 
 ### 10.6 Future mutation tools
 
-`generate_patch` and `open_pr` must not be exposed by MCP `tools/list`, advertised in public adapters, or marked as available in `contextsmith-agent.yaml` until a separate contract defines their request/response schemas, approval model, branch freshness checks, audit events, and rollback behavior. Phase 6 may add that contract; before Phase 6, these names are roadmap placeholders only.
+`generate_patch` and `open_pr` must not be exposed by MCP `tools/list`, advertised in public adapters, or marked as available in `sourcebrief-agent.yaml` until a separate contract defines their request/response schemas, approval model, branch freshness checks, audit events, and rollback behavior. Phase 6 may add that contract; before Phase 6, these names are roadmap placeholders only.
 
 ## 11. Agent Card Drift Auditor
 
@@ -630,7 +630,7 @@ Acceptance criteria:
 
 ### Phase 1 — Manifest and context-only adapter generation
 
-Goal: make ContextSmith generate a portable Skill Pack without pretending remote code tools already exist.
+Goal: make SourceBrief generate a portable Skill Pack without pretending remote code tools already exist.
 
 Deliverables:
 
@@ -643,7 +643,7 @@ Deliverables:
 
 Acceptance criteria:
 
-- Generated artifacts are all derived from `contextsmith-agent.yaml`.
+- Generated artifacts are all derived from `sourcebrief-agent.yaml`.
 - Generated Hermes skill includes `remote_only`, no local grep, separate MCP config requirement, and context-only workflow unless remote tools are live.
 - Generated Codex/Claude adapters preserve the same safety boundaries.
 - Generated artifacts contain no backend local paths or plaintext tokens.
@@ -778,12 +778,12 @@ Ownership/RACI:
 
 | Area | Responsible | Accountable | Notes |
 |---|---|---|---|
-| ContextSmith MCP uptime | Platform operator | Workspace/platform admin | Include health, logs, rate limits. |
+| SourceBrief MCP uptime | Platform operator | Workspace/platform admin | Include health, logs, rate limits. |
 | Index freshness | Project maintainer | Workspace admin | Auditor reports drift; maintainer approves refresh policy. |
-| Generated adapter correctness | ContextSmith platform | Platform maintainer | Covered by parity and leak tests. |
-| GitHub publishing | User/project maintainer | Repo owner | ContextSmith may draft PRs only with approval. |
+| Generated adapter correctness | SourceBrief platform | Platform maintainer | Covered by parity and leak tests. |
+| GitHub publishing | User/project maintainer | Repo owner | SourceBrief may draft PRs only with approval. |
 | Token lifecycle | Workspace admin | Workspace admin | Expiry/revocation/scopes required. |
-| Local runtime config | User/operator | User/operator | ContextSmith provides snippets, not silent mutation. |
+| Local runtime config | User/operator | User/operator | SourceBrief provides snippets, not silent mutation. |
 | Incident response | Platform operator | Workspace/platform admin | Define support path per deployment. |
 
 Initial SLO targets for alpha should be modest and configurable:
@@ -815,11 +815,11 @@ Required checks:
 
 ## 15. Open decisions
 
-1. Should ContextSmith create one skill pack repo per project, or one monorepo containing many generated agent packs?
-2. Should `hermes skills install` point directly to `hermes/SKILL.md`, or should ContextSmith publish to a Hermes-compatible registry later?
+1. Should SourceBrief create one skill pack repo per project, or one monorepo containing many generated agent packs?
+2. Should `hermes skills install` point directly to `hermes/SKILL.md`, or should SourceBrief publish to a Hermes-compatible registry later?
 3. What is the exact Claude skill package layout we want to support after alpha: `CLAUDE.md` only or Claude's skill bundle format?
-4. Should Skill Pack publishing be built into ContextSmith or left as generated files plus user-managed GitHub workflow for alpha?
-5. Should drift findings become ContextSmith Review Items, GitHub PRs, Slack summaries, or all three by default?
+4. Should Skill Pack publishing be built into SourceBrief or left as generated files plus user-managed GitHub workflow for alpha?
+5. Should drift findings become SourceBrief Review Items, GitHub PRs, Slack summaries, or all three by default?
 
 ## 16. Risks and mitigations
 
@@ -841,13 +841,13 @@ Required checks:
 
 A user can:
 
-1. Create a ContextSmith project with one or more Git resources.
+1. Create a SourceBrief project with one or more Git resources.
 2. Index the repos and see Agent Card readiness.
 3. Generate a Skill Pack.
 4. Publish or download the Skill Pack.
 5. Install the Hermes skill from a pinned GitHub raw URL.
 6. Configure MCP with a scoped token as a separate step.
 7. Ask Hermes a repo question from a different machine or directory with no local repo checkout.
-8. Hermes retrieves context, then performs follow-up remote grep/read via ContextSmith.
+8. Hermes retrieves context, then performs follow-up remote grep/read via SourceBrief.
 9. Hermes cites repo-relative paths and indexed commits.
-10. ContextSmith cron later summarizes whether the Agent Card or Skill Pack needs adjustment.
+10. SourceBrief cron later summarizes whether the Agent Card or Skill Pack needs adjustment.

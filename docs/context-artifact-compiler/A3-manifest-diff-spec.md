@@ -6,7 +6,7 @@ Parent milestones: A1 manifest model/path normalization, A2 manual folder-bundle
 
 ## 1. Goal
 
-A3 adds a deterministic manifest diff layer so ContextSmith can answer: "what changed between the current folder/source snapshot and the prior one?" without forcing users to paste internal IDs.
+A3 adds a deterministic manifest diff layer so SourceBrief can answer: "what changed between the current folder/source snapshot and the prior one?" without forcing users to paste internal IDs.
 
 The diff is file-level only in A3. It compares two resource manifests by normalized path, content hash, status, and warning state, then exposes changed/added/deleted/unchanged files through API and Sources UI.
 
@@ -65,7 +65,7 @@ For `folder_bundle` resources:
 
 ```json
 {
-  "staged_zip_path": "/var/lib/contextsmith/work/uploads/<resource-id>.zip",
+  "staged_zip_path": "/var/lib/sourcebrief/work/uploads/<resource-id>.zip",
   "original_filename": "docs.zip",
   "source_family_id": "<uuid>",
   "source_family_label": "Product docs",
@@ -150,7 +150,7 @@ Do not overclaim section/citation impact.
 
 ### 7.1 New shared/worker helper
 
-Create `packages/worker/contextsmith_worker/manifest_diff.py` or shared module if API imports it directly.
+Create `packages/worker/sourcebrief_worker/manifest_diff.py` or shared module if API imports it directly.
 
 Functions:
 
@@ -179,7 +179,7 @@ Keep this pure and unit-testable.
 
 ### 7.2 API schemas
 
-Add to `apps/api/contextsmith_api/schemas.py`:
+Add to `apps/api/sourcebrief_api/schemas.py`:
 
 ```python
 class ManifestDiffRowRead(BaseModel): ...

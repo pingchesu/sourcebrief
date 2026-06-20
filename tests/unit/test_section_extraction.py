@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from contextsmith_worker.ingestion import redact_secrets
-from contextsmith_worker.section_extraction import extract_sections
+from sourcebrief_worker.ingestion import redact_secrets
+from sourcebrief_worker.section_extraction import extract_sections
 
 
 def test_markdown_sections_are_deterministic_and_repeated_blocks_are_distinct() -> None:

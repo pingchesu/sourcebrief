@@ -4,7 +4,7 @@ This milestone group turns the M1-M6 resource/context substrate into a project-a
 
 ## M7 — Agent Registry & Agent Profile
 
-Every project now has a central `agent_profile` owned by ContextSmith, not by the source repository.
+Every project now has a central `agent_profile` owned by SourceBrief, not by the source repository.
 
 - `GET /workspaces/{workspace_id}/agents` lists all project agents in a workspace.
 - `GET /workspaces/{workspace_id}/projects/{project_id}/agent-profile` returns one project agent profile plus live index stats.
@@ -12,7 +12,7 @@ Every project now has a central `agent_profile` owned by ContextSmith, not by th
 - Agent profiles are auto-created when a project is created or first read.
 - `agent-context` appends the profile system prompt to the runtime instruction packet.
 
-Design boundary: repo owners do not need to commit `AGENTS.md`; ContextSmith keeps agent identity, prompt, policy, and runtime endpoints in the platform registry.
+Design boundary: repo owners do not need to commit `AGENTS.md`; SourceBrief keeps agent identity, prompt, policy, and runtime endpoints in the platform registry.
 
 ## M8 — Providerized Embedding/Rerank
 
@@ -21,17 +21,17 @@ The default development path remains deterministic/offline, but embedding and re
 Environment knobs:
 
 ```bash
-CONTEXTSMITH_EMBEDDING_PROVIDER=hashing          # default deterministic dev provider
-CONTEXTSMITH_EMBEDDING_PROVIDER=http             # OpenAI-compatible HTTP service
-CONTEXTSMITH_EMBEDDING_MODEL=text-embedding-model
-CONTEXTSMITH_EMBEDDING_ENDPOINT=http://localhost:8000/v1/embeddings
-CONTEXTSMITH_EMBEDDING_API_KEY=...
+SOURCEBRIEF_EMBEDDING_PROVIDER=hashing          # default deterministic dev provider
+SOURCEBRIEF_EMBEDDING_PROVIDER=http             # OpenAI-compatible HTTP service
+SOURCEBRIEF_EMBEDDING_MODEL=text-embedding-model
+SOURCEBRIEF_EMBEDDING_ENDPOINT=http://localhost:8000/v1/embeddings
+SOURCEBRIEF_EMBEDDING_API_KEY=...
 
-CONTEXTSMITH_RERANK_PROVIDER=term-overlap        # default deterministic dev reranker
-CONTEXTSMITH_RERANK_PROVIDER=http
-CONTEXTSMITH_RERANK_MODEL=bge-reranker
-CONTEXTSMITH_RERANK_ENDPOINT=http://localhost:8001/rerank
-CONTEXTSMITH_RERANK_API_KEY=...
+SOURCEBRIEF_RERANK_PROVIDER=term-overlap        # default deterministic dev reranker
+SOURCEBRIEF_RERANK_PROVIDER=http
+SOURCEBRIEF_RERANK_MODEL=bge-reranker
+SOURCEBRIEF_RERANK_ENDPOINT=http://localhost:8001/rerank
+SOURCEBRIEF_RERANK_API_KEY=...
 ```
 
 The HTTP adapters accept common HuggingFace/vLLM/SGLang/OpenAI-compatible shapes. In this MVP the pgvector column is fixed at 64 dimensions, so external embedding services must return 64-dimensional embeddings or sit behind a projection/proxy layer.
@@ -72,14 +72,14 @@ Returned citations include `graph_score`, and context packet items store `graph_
 ## CLI
 
 ```bash
-contextsmith agent list --workspace-id $WS
-contextsmith agent profile --workspace-id $WS --project-id $PROJECT
-contextsmith --json resource graph --workspace-id $WS --project-id $PROJECT --resource-id $RESOURCE
+sourcebrief agent list --workspace-id $WS
+sourcebrief agent profile --workspace-id $WS --project-id $PROJECT
+sourcebrief --json resource graph --workspace-id $WS --project-id $PROJECT --resource-id $RESOURCE
 ```
 
 ## Operational notes
 
 - Multi-tenant boundary is preserved with workspace/project IDs on agent, graph node, graph edge, query, and retrieval rows.
-- Production mutations remain outside ContextSmith context retrieval. The default tool policy marks production mutations as `external_approval_required`.
+- Production mutations remain outside SourceBrief context retrieval. The default tool policy marks production mutations as `external_approval_required`.
 - Graph index is rebuilt per versioned snapshot; old snapshots remain queryable in DB history but active retrieval uses current, non-archived resources.
 - This is deliberately not a full Graphify/LightRAG clone. Graphify-like clustering can be added later as an optional worker once we have usage/eval evidence that it improves answer quality.

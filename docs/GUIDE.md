@@ -1,6 +1,6 @@
 # Guide
 
-This guide walks through the main ContextSmith workflow with the CLI and the local API.
+This guide walks through the main SourceBrief workflow with the CLI and the local API.
 
 ## 1. Start the stack
 
@@ -14,8 +14,8 @@ Set shell helpers:
 ```bash
 export API=http://localhost:18000
 export AUTH='X-User-Email: demo@example.com'
-export CONTEXTSMITH_API_URL=$API
-export CONTEXTSMITH_EMAIL=demo@example.com
+export SOURCEBRIEF_API_URL=$API
+export SOURCEBRIEF_EMAIL=demo@example.com
 ```
 
 The examples below show curl first because it exposes the API shape. The same flow can be run through the CLI; see [CLI workflow](#cli-workflow) and [Git repository resources](#git-repository-resources).
@@ -58,7 +58,7 @@ curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources" \
     "name":"Payment retry runbook",
     "uri":"doc://payment-retry-runbook",
     "source_config":{
-      "content":"# Payment retry runbook\n\nIf a payment retry job stalls, inspect queue depth, worker status, and recent deploys. The marker payment-retry-contextsmith-demo proves retrieval."
+      "content":"# Payment retry runbook\n\nIf a payment retry job stalls, inspect queue depth, worker status, and recent deploys. The marker payment-retry-sourcebrief-demo proves retrieval."
     }
   }'
 ```
@@ -95,7 +95,7 @@ Wait until `status` is `succeeded`.
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/search" \
   -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"query":"payment-retry-contextsmith-demo"}'
+  -d '{"query":"payment-retry-sourcebrief-demo"}'
 ```
 
 Search results include citation fields such as resource id, snapshot id, version, ordinal, path, and content hash.
@@ -160,7 +160,7 @@ curl -s -X POST "$API/mcp/$WORKSPACE_ID/$PROJECT_ID" \
     "id":2,
     "method":"tools/call",
     "params":{
-      "name":"contextsmith.get_agent_context",
+      "name":"sourcebrief.get_agent_context",
       "arguments":{
         "query":"How do I debug payment retry stalls?",
         "runtime":"claude"
@@ -169,7 +169,7 @@ curl -s -X POST "$API/mcp/$WORKSPACE_ID/$PROJECT_ID" \
   }'
 ```
 
-ContextSmith exposes context through MCP. It does not expose production mutations through repo agents.
+SourceBrief exposes context through MCP. It does not expose production mutations through repo agents.
 
 ## 10. Review resource usage and freshness
 
@@ -210,16 +210,16 @@ curl -s -X DELETE "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources/
 
 ## Git repository resources
 
-Git resources use `type: "git"`. This is the repo-as-agent path: ContextSmith clones the repository in the worker, captures the commit SHA, indexes text/source files, extracts code symbols, and returns citations with path/line/commit metadata.
+Git resources use `type: "git"`. This is the repo-as-agent path: SourceBrief clones the repository in the worker, captures the commit SHA, indexes text/source files, extracts code symbols, and returns citations with path/line/commit metadata.
 
 ### Add a public repo with the CLI
 
 ```bash
-contextsmith resource add-repo \
+sourcebrief resource add-repo \
   --workspace-id $WORKSPACE_ID \
   --project-id $PROJECT_ID \
-  --name "ContextSmith repo" \
-  --repo-url https://github.com/pingchesu/contextsmith.git \
+  --name "SourceBrief repo" \
+  --repo-url https://github.com/pingchesu/sourcebrief.git \
   --branch main \
   --max-files 500 \
   --refresh \
@@ -229,7 +229,7 @@ contextsmith resource add-repo \
 Search the repo:
 
 ```bash
-contextsmith search \
+sourcebrief search \
   --workspace-id $WORKSPACE_ID \
   --project-id $PROJECT_ID \
   --query "agent-context API"
@@ -238,11 +238,11 @@ contextsmith search \
 Ask for runtime-shaped context:
 
 ```bash
-contextsmith agent-context \
+sourcebrief agent-context \
   --workspace-id $WORKSPACE_ID \
   --project-id $PROJECT_ID \
   --runtime codex \
-  --query "How does ContextSmith expose MCP context?"
+  --query "How does SourceBrief expose MCP context?"
 ```
 
 ### Add a public repo with curl
@@ -254,10 +254,10 @@ curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources" \
   -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{
     "type":"git",
-    "name":"ContextSmith repo",
-    "uri":"https://github.com/pingchesu/contextsmith.git",
+    "name":"SourceBrief repo",
+    "uri":"https://github.com/pingchesu/sourcebrief.git",
     "source_config":{
-      "url":"https://github.com/pingchesu/contextsmith.git",
+      "url":"https://github.com/pingchesu/sourcebrief.git",
       "branch":"main",
       "max_repo_files":500
     }
@@ -266,39 +266,39 @@ curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources" \
 
 Refresh it the same way as a markdown resource, then use search, context packets, code search, or agent-context requests.
 
-Local filesystem repos are disabled by default in workers. They can be enabled for controlled local smoke tests with `CONTEXTSMITH_ALLOW_LOCAL_GIT=true`, but public deployments should prefer public HTTPS remotes or a hardened connector.
+Local filesystem repos are disabled by default in workers. They can be enabled for controlled local smoke tests with `SOURCEBRIEF_ALLOW_LOCAL_GIT=true`, but public deployments should prefer public HTTPS remotes or a hardened connector.
 
 ## CLI workflow
 
-The Python package installs a `contextsmith` command:
+The Python package installs a `sourcebrief` command:
 
 ```bash
-contextsmith --help
+sourcebrief --help
 ```
 
 Useful commands:
 
 ```bash
-contextsmith health
-contextsmith workspace create --name Demo --slug demo
-contextsmith project create --workspace-id <workspace-id> --name "Demo Project"
-contextsmith resource add-doc --workspace-id <workspace-id> --project-id <project-id> --name Runbook --uri doc://runbook --content-file runbook.md --refresh --wait
-contextsmith resource add-repo --workspace-id <workspace-id> --project-id <project-id> --name Repo --repo-url https://github.com/example/repo.git --refresh --wait
-contextsmith resource list --workspace-id <workspace-id> --project-id <project-id>
-contextsmith search --workspace-id <workspace-id> --project-id <project-id> --query "payment retry"
-contextsmith agent-context --workspace-id <workspace-id> --project-id <project-id> --runtime hermes --query "payment retry runbook"
-contextsmith mcp-context --workspace-id <workspace-id> --project-id <project-id> --runtime claude --query "payment retry runbook"
+sourcebrief health
+sourcebrief workspace create --name Demo --slug demo
+sourcebrief project create --workspace-id <workspace-id> --name "Demo Project"
+sourcebrief resource add-doc --workspace-id <workspace-id> --project-id <project-id> --name Runbook --uri doc://runbook --content-file runbook.md --refresh --wait
+sourcebrief resource add-repo --workspace-id <workspace-id> --project-id <project-id> --name Repo --repo-url https://github.com/example/repo.git --refresh --wait
+sourcebrief resource list --workspace-id <workspace-id> --project-id <project-id>
+sourcebrief search --workspace-id <workspace-id> --project-id <project-id> --query "payment retry"
+sourcebrief agent-context --workspace-id <workspace-id> --project-id <project-id> --runtime hermes --query "payment retry runbook"
+sourcebrief mcp-context --workspace-id <workspace-id> --project-id <project-id> --runtime claude --query "payment retry runbook"
 ```
 
 Global options:
 
 ```bash
-contextsmith --api-url http://localhost:18000 --email demo@example.com --json search ...
+sourcebrief --api-url http://localhost:18000 --email demo@example.com --json search ...
 ```
 
 Environment variables:
 
 ```bash
-export CONTEXTSMITH_API_URL=http://localhost:18000
-export CONTEXTSMITH_EMAIL=demo@example.com
+export SOURCEBRIEF_API_URL=http://localhost:18000
+export SOURCEBRIEF_EMAIL=demo@example.com
 ```

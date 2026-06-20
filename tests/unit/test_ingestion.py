@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from contextsmith_worker.ingestion import (
+from sourcebrief_worker.ingestion import (
     _coerce_documents,
     chunk_text,
     content_hash,
@@ -208,7 +208,7 @@ def test_fetch_url_document_bounds_and_html(monkeypatch) -> None:
             assert size == 101
             return b"<html><body><h1>Connector</h1><p>public content</p></body></html>"
 
-    monkeypatch.setattr("contextsmith_worker.ingestion._open_url", lambda request, timeout: FakeResponse())
+    monkeypatch.setattr("sourcebrief_worker.ingestion._open_url", lambda request, timeout: FakeResponse())
     resource = SimpleNamespace(
         type="url",
         name="Example",
@@ -239,7 +239,7 @@ def test_fetch_url_document_blocks_redirect_to_private_host_before_second_reques
             None,
         )
 
-    monkeypatch.setattr("contextsmith_worker.ingestion._open_url", fake_open)
+    monkeypatch.setattr("sourcebrief_worker.ingestion._open_url", fake_open)
     resource = SimpleNamespace(
         type="url",
         name="Redirect",
@@ -267,7 +267,7 @@ def test_fetch_url_document_strips_query_from_persisted_paths(monkeypatch) -> No
         def read(self, size: int):
             return b"hello world"
 
-    monkeypatch.setattr("contextsmith_worker.ingestion._open_url", lambda request, timeout: FakeResponse())
+    monkeypatch.setattr("sourcebrief_worker.ingestion._open_url", lambda request, timeout: FakeResponse())
     resource = SimpleNamespace(
         type="url",
         name="Signed",

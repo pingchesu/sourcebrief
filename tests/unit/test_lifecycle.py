@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from contextsmith_shared.lifecycle import (
+from sourcebrief_shared.lifecycle import (
     compute_next_refresh_at,
     is_refresh_due,
     parse_update_frequency,

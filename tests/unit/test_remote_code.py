@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from contextsmith_api.remote_code import (
+from sourcebrief_api.remote_code import (
     RemoteCodeError,
     compile_safe_regex,
     line_range,

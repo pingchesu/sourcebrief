@@ -1,16 +1,16 @@
 # Context Artifact Compiler and Repo Agent Architecture Spec
 
-Status: Proposed v0.2 after Hermes adversarial review  
-Date: 2026-06-19  
-Owner: ContextSmith platform  
-Related docs: `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md`, `docs/ROADMAP.md`  
+Status: Proposed v0.2 after Hermes adversarial review
+Date: 2026-06-19
+Owner: SourceBrief platform
+Related docs: `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md`, `docs/ROADMAP.md`
 Discussion inputs: `book-to-skill`, `Skill-Anything`, `rag-skill`, `garden-skills/kb-retriever`, Graphify merge workflow
 
 Adversarial review result: first pass **BLOCK**. This version incorporates the required fixes: Resource remains the canonical backend entity for v0; `Source` is product/UI language only until a deliberate migration; Repo Agent identity is split into v0 derived resource view and v1 first-class agent object; `Context Pack` and `Context Packet` are separated; section logical identity is separated from snapshot membership; MCP tool names are aligned with the current Remote Repo Agent contract; graph merge gets explicit graph/version storage; security contracts are tightened for tools, graph traversal, generated packages, connectors, and auto-publish.
 
 ## 1. Executive summary
 
-ContextSmith should evolve from a retrieval-first agent context platform into a **source-aware Context Artifact Compiler**.
+SourceBrief should evolve from a retrieval-first agent context platform into a **source-aware Context Artifact Compiler**.
 
 The next product layer should let users add Git repositories, folder bundles, files, and later URLs or other connectors; compile those resources into versioned, cited, reviewable context artifacts; merge resource graphs across repositories and bundles; and publish those artifacts to multiple runtime shapes such as Context Packs, generated skills, remote repo agent skill packs, and MCP-backed runtime context APIs.
 
@@ -18,7 +18,7 @@ The most important framing decision is:
 
 > Uploaded data should not be converted directly into a skill as the system of record. Data should be normalized into resource snapshots, manifests, sections, graphs, and context artifacts first. Skill is one export format. Repo Agent is an agent/product object that consumes context packs, generated skills, graph/query tools, and update policies.
 
-This keeps ContextSmith audit-friendly, updateable, and runtime-agnostic while still learning from:
+This keeps SourceBrief audit-friendly, updateable, and runtime-agnostic while still learning from:
 
 - `book-to-skill`: compile-time conversion and progressive disclosure.
 - `Skill-Anything`: any-source parsing, section map-reduce, caching, and multi-output export.
@@ -30,7 +30,7 @@ This keeps ContextSmith audit-friendly, updateable, and runtime-agnostic while s
 
 ### 2.1 Backend canonical entity: `Resource`
 
-For v0 of this spec family, **Resource remains the canonical backend entity**. This matches current ContextSmith docs and implementation:
+For v0 of this spec family, **Resource remains the canonical backend entity**. This matches current SourceBrief docs and implementation:
 
 ```text
 workspace -> project -> resource -> source_snapshot -> chunk / symbol / embedding / graph
@@ -80,7 +80,7 @@ If a future migration introduces `sources`, it must include compatibility for:
 
 ## 3. Problem statement
 
-Current ContextSmith can ingest resources, index them, expose agent context, and package remote repo agent skill packs. The next gap is that users want to bring arbitrary knowledge into the system and have ContextSmith produce durable agent-ready artifacts from it.
+Current SourceBrief can ingest resources, index them, expose agent context, and package remote repo agent skill packs. The next gap is that users want to bring arbitrary knowledge into the system and have SourceBrief produce durable agent-ready artifacts from it.
 
 Concrete needs:
 
@@ -108,7 +108,7 @@ Concrete needs:
    - unchanged files
    - parser warnings
    - unsupported files
-3. ContextSmith can compile resources into durable, cited artifacts:
+3. SourceBrief can compile resources into durable, cited artifacts:
    - Resource Map
    - Context Pack
    - generated Skill
@@ -116,10 +116,10 @@ Concrete needs:
    - graph nodes/edges
    - glossary / decision rules / runbook summaries
    - review items
-4. ContextSmith can publish artifacts to runtimes without copying full repositories, folders, or indexes into local agent skills.
-5. ContextSmith can merge graphs across resources while preserving provenance, confidence, and review state.
+4. SourceBrief can publish artifacts to runtimes without copying full repositories, folders, or indexes into local agent skills.
+5. SourceBrief can merge graphs across resources while preserving provenance, confidence, and review state.
 6. Repo Agents can be automatically refreshed from resource updates but should publish behavior changes only through explicit review.
-7. Agents using ContextSmith should have a clear reading procedure: inspect map first, search narrowly, drill into cited sections, warn on stale context, and avoid unsupported inference.
+7. Agents using SourceBrief should have a clear reading procedure: inspect map first, search narrowly, drill into cited sections, warn on stale context, and avoid unsupported inference.
 
 ### 4.2 Engineering goals
 
@@ -129,7 +129,7 @@ Concrete needs:
 4. Keep compile jobs durable through Postgres-backed job state, not Redis-only state.
 5. Make generated artifacts reviewable before publish.
 6. Make generated runtime instructions safe against source-level prompt injection and secret leakage.
-7. Prefer boring infrastructure already used by ContextSmith: FastAPI, Postgres/pgvector, Redis/RQ, workers, object storage/local filesystem.
+7. Prefer boring infrastructure already used by SourceBrief: FastAPI, Postgres/pgvector, Redis/RQ, workers, object storage/local filesystem.
 
 ## 5. Non-goals
 
@@ -156,7 +156,7 @@ Useful patterns:
 - Validator for generated skill shape.
 - Update/fold-in mindset.
 
-Limitations for ContextSmith:
+Limitations for SourceBrief:
 
 - Optimized for books/documents, not repos or multi-resource projects.
 - Generated skill quality still needs review and provenance.
@@ -173,11 +173,11 @@ Useful patterns:
 - Per-section quota allocation for coverage.
 - Multiple output targets: markdown, YAML, skill folder, exercises.
 
-Limitations for ContextSmith:
+Limitations for SourceBrief:
 
 - Output is more learning-pack oriented than production-agent oriented.
 - Web/repo fetching and cache storage require stronger enterprise trust boundaries.
-- It does not provide ContextSmith's tenancy, review, current-snapshot retrieval, or runtime MCP contract.
+- It does not provide SourceBrief's tenancy, review, current-snapshot retrieval, or runtime MCP contract.
 
 ### 6.3 `rag-skill` and `garden-skills/kb-retriever`
 
@@ -189,7 +189,7 @@ Useful patterns:
 - Source citations are mandatory.
 - Skill packaging and release model in `garden-skills`: manifest, zip, checksum, compatibility matrix, install paths.
 
-Limitations for ContextSmith:
+Limitations for SourceBrief:
 
 - `kb-retriever` is procedural instruction, not a backend retrieval/index platform.
 - Manual resource maps do not scale by themselves.
@@ -203,7 +203,7 @@ Useful pattern:
 graphify merge-graphs a.json b.json --out merged.json
 ```
 
-ContextSmith should support this mental model, but the implementation must preserve:
+SourceBrief should support this mental model, but the implementation must preserve:
 
 - graph namespace
 - source snapshot set
@@ -264,7 +264,7 @@ Published artifacts cite snapshot-specific sections. Impact analysis traverses l
 
 A hierarchical map that tells agents and users how to navigate a resource without reading it all.
 
-It is inspired by `kb-retriever`'s `data_structure.md`, but ContextSmith should generate it from the resource manifest and extracted sections, then allow reviewer edits.
+It is inspired by `kb-retriever`'s `data_structure.md`, but SourceBrief should generate it from the resource manifest and extracted sections, then allow reviewer edits.
 
 ### 7.6 Context Artifact
 
@@ -322,7 +322,7 @@ A skill may include:
 - assets
 - runtime-specific instructions
 
-In ContextSmith, a generated skill is an export artifact, not the source of truth.
+In SourceBrief, a generated skill is an export artifact, not the source of truth.
 
 ### 7.10 Agent Profile
 
@@ -371,7 +371,7 @@ Graphs must be scoped by workspace/project/resource/snapshot or graph version an
 
 ### 8.1 V0: derived repo-agent view over a Git Resource
 
-Current ContextSmith already has repo-agent-style surfaces tied to a Git `resource_id`. V0 should preserve that contract.
+Current SourceBrief already has repo-agent-style surfaces tied to a Git `resource_id`. V0 should preserve that contract.
 
 ```text
 Repo Agent V0 = derived product view over one git_repo Resource + project AgentProfile + generated skill pack/card
@@ -474,7 +474,7 @@ Runtime usage:
 ```text
 Agent runtime
   ├─ loads thin generated skill / adapter
-  ├─ calls central ContextSmith MCP/API
+  ├─ calls central SourceBrief MCP/API
   ├─ receives resource map + cited context packet
   ├─ drills into sections/files through typed tools
   └─ cites resource/snapshot/section provenance
@@ -523,7 +523,7 @@ Manifest summary example:
 
 ```json
 {
-  "kind": "contextsmith.folder_manifest",
+  "kind": "sourcebrief.folder_manifest",
   "version": 1,
   "resource_id": "res_xxx",
   "snapshot_id": "snap_xxx",
@@ -902,7 +902,7 @@ Skill export should include:
 - freshness warnings
 - mutation boundary
 - failure modes
-- links/IDs to ContextSmith source truth
+- links/IDs to SourceBrief source truth
 
 Skill export must not include:
 
@@ -950,7 +950,7 @@ Source-derived data may appear only in quoted/data sections:
 Generated artifacts must be rejected if they contain:
 
 - source-derived imperative text in policy/instruction sections
-- instructions to ignore ContextSmith rules
+- instructions to ignore SourceBrief rules
 - instructions to use local files when runtime is remote-only
 - instructions to enable write tools
 - copied bearer tokens/secrets
@@ -1127,12 +1127,12 @@ Any behavior-changing diff requires human approval in v0.
 
 ### 18.1 Goal
 
-ContextSmith should support cross-resource graph merge as a first-class operation, with a UX/API shape similar to Graphify's merge command but with enterprise provenance.
+SourceBrief should support cross-resource graph merge as a first-class operation, with a UX/API shape similar to Graphify's merge command but with enterprise provenance.
 
 Simple mental model:
 
 ```bash
-contextsmith graph merge graph_a graph_b --out project_graph
+sourcebrief graph merge graph_a graph_b --out project_graph
 ```
 
 Platform behavior:
@@ -1301,7 +1301,7 @@ Edge example:
     {
       "resource_id": "res_api",
       "snapshot_id": "snap_api_def",
-      "path": "apps/api/contextsmith_api/auth.py",
+      "path": "apps/api/sourcebrief_api/auth.py",
       "line_start": 10,
       "line_end": 80
     }
@@ -1346,9 +1346,9 @@ Workspace-level graph APIs are out of v0 scope.
 ### 19.1 Recommended split
 
 ```text
-ContextSmith API/MCP = deterministic tool surface
+SourceBrief API/MCP = deterministic tool surface
 Generated Skill = procedural policy for agent behavior
-ContextSmith database/artifacts = source of truth
+SourceBrief database/artifacts = source of truth
 ```
 
 Do not choose only one of MCP or skill. They solve different problems.
@@ -1357,13 +1357,13 @@ Do not choose only one of MCP or skill. They solve different problems.
 
 The current Remote Repo Agent tool contract already includes:
 
-- `contextsmith.get_agent_context`
-- `contextsmith.search_code`
-- `contextsmith.grep_code`
-- `contextsmith.read_file`
-- `contextsmith.find_symbol`
-- `contextsmith.generate_patch`
-- `contextsmith.open_pr`
+- `sourcebrief.get_agent_context`
+- `sourcebrief.search_code`
+- `sourcebrief.grep_code`
+- `sourcebrief.read_file`
+- `sourcebrief.find_symbol`
+- `sourcebrief.generate_patch`
+- `sourcebrief.open_pr`
 
 Generated skills must advertise only tools returned by live `tools/list` or equivalent capability discovery.
 
@@ -1373,14 +1373,14 @@ New generic/document/graph tools should be additive, not replacements:
 
 | Tool | Purpose | Status |
 | --- | --- | --- |
-| `contextsmith.get_resource_map` | Return navigation map for resource/project. | proposed |
-| `contextsmith.search` | Search authorized current or pinned snapshots across non-code sections. | proposed |
-| `contextsmith.read_section` | Read a cited section by snapshot-section ID. | proposed |
-| `contextsmith.graph_query` | Query graph relationships. | proposed |
-| `contextsmith.graph_path` | Find path between concepts/files/endpoints. | proposed |
-| `contextsmith.get_freshness` | Report artifact/resource freshness. | proposed |
-| `contextsmith.list_context_packs` | Discover published packs. | proposed |
-| `contextsmith.get_context_pack` | Load a pack by slug/version. | proposed |
+| `sourcebrief.get_resource_map` | Return navigation map for resource/project. | proposed |
+| `sourcebrief.search` | Search authorized current or pinned snapshots across non-code sections. | proposed |
+| `sourcebrief.read_section` | Read a cited section by snapshot-section ID. | proposed |
+| `sourcebrief.graph_query` | Query graph relationships. | proposed |
+| `sourcebrief.graph_path` | Find path between concepts/files/endpoints. | proposed |
+| `sourcebrief.get_freshness` | Report artifact/resource freshness. | proposed |
+| `sourcebrief.list_context_packs` | Discover published packs. | proposed |
+| `sourcebrief.get_context_pack` | Load a pack by slug/version. | proposed |
 
 Do not instruct agents to call proposed tools until they exist and `tools/list` advertises them.
 
@@ -1412,7 +1412,7 @@ Required tests:
 
 A generated source-specific skill should tell the runtime:
 
-1. Call `contextsmith.get_agent_context` with the user's task and scope.
+1. Call `sourcebrief.get_agent_context` with the user's task and scope.
 2. If the task is broad and `get_resource_map` exists, call it before reading sections.
 3. Use available search/code/graph tools to narrow the evidence path.
 4. Read only the sections/files needed to answer or act.
@@ -1428,7 +1428,7 @@ Generate two skill classes:
 
 #### Source-specific skill
 
-Example: `contextsmith-frontend-repo`
+Example: `sourcebrief-frontend-repo`
 
 Covers:
 
@@ -1442,7 +1442,7 @@ Covers:
 
 #### Task-specific skill
 
-Example: `contextsmith-auth-flow`, `contextsmith-resource-ingestion`, `contextsmith-graph-merge`
+Example: `sourcebrief-auth-flow`, `sourcebrief-resource-ingestion`, `sourcebrief-graph-merge`
 
 Covers:
 
@@ -1465,7 +1465,7 @@ Borrow from `garden-skills` where appropriate:
 - install instructions
 - smoke examples
 
-But ContextSmith's canonical truth remains platform data, not the package contents.
+But SourceBrief's canonical truth remains platform data, not the package contents.
 
 ## 20. UI surfaces
 
@@ -1809,19 +1809,19 @@ As defined in section 18.
 
 Define concrete counters/histograms before implementation:
 
-- `contextsmith_resource_refresh_runs_total`
-- `contextsmith_resource_refresh_duration_seconds`
-- `contextsmith_manifest_files_total`
-- `contextsmith_manifest_files_reused_total`
-- `contextsmith_sections_reused_total`
-- `contextsmith_compiler_runs_total`
-- `contextsmith_compiler_run_duration_seconds`
-- `contextsmith_artifact_validation_failures_total`
-- `contextsmith_context_pack_publishes_total`
-- `contextsmith_graph_merges_total`
-- `contextsmith_graph_merge_candidates_total`
-- `contextsmith_mcp_tool_calls_total`
-- `contextsmith_stale_artifact_hits_total`
+- `sourcebrief_resource_refresh_runs_total`
+- `sourcebrief_resource_refresh_duration_seconds`
+- `sourcebrief_manifest_files_total`
+- `sourcebrief_manifest_files_reused_total`
+- `sourcebrief_sections_reused_total`
+- `sourcebrief_compiler_runs_total`
+- `sourcebrief_compiler_run_duration_seconds`
+- `sourcebrief_artifact_validation_failures_total`
+- `sourcebrief_context_pack_publishes_total`
+- `sourcebrief_graph_merges_total`
+- `sourcebrief_graph_merge_candidates_total`
+- `sourcebrief_mcp_tool_calls_total`
+- `sourcebrief_stale_artifact_hits_total`
 
 Labels must be safe. Prefer low-cardinality status/type labels and avoid raw user query text. Workspace/project/resource IDs should be omitted, bucketed, or hashed according to deployment policy.
 
@@ -1864,7 +1864,7 @@ Evaluation should cover:
 
 ### 26.1 Reuse existing concepts
 
-Existing ContextSmith entities cover much of the foundation:
+Existing SourceBrief entities cover much of the foundation:
 
 - `resources`
 - `source_snapshots`
@@ -2031,7 +2031,7 @@ Acceptance:
 
 ### Milestone C — Generated skill export and runtime guidance
 
-Goal: export ContextSmith artifacts into thin runtime skills/adapters.
+Goal: export SourceBrief artifacts into thin runtime skills/adapters.
 
 Deliverables:
 
@@ -2044,9 +2044,9 @@ Deliverables:
 Acceptance:
 
 - Export a source-specific skill.
-- Skill tells agent to use ContextSmith MCP and resource maps.
+- Skill tells agent to use SourceBrief MCP and resource maps.
 - Package contains no secrets, backend paths, or full source corpus.
-- Runtime smoke calls ContextSmith tool and cites source evidence.
+- Runtime smoke calls SourceBrief tool and cites source evidence.
 
 ### Milestone D — Repo Agent V0 draft/update/publish workflow
 
@@ -2109,7 +2109,7 @@ Acceptance:
 
 ### Milestone F — Expanded MCP tools
 
-Goal: teach agents to inspect ContextSmith resources without local repository access.
+Goal: teach agents to inspect SourceBrief resources without local repository access.
 
 Deliverables:
 
@@ -2166,7 +2166,7 @@ Acceptance:
 1. Treat `book-to-skill` as a compiler inspiration, not a library to directly mutate into a universal ingestion engine.
 2. Treat `Skill-Anything` as pipeline engineering inspiration for section map-reduce, multi-source parsing, and export formats.
 3. Treat `garden-skills/kb-retriever` as the reference for skill packaging and resource-map-first agent behavior.
-4. Treat graph merge as a first-class ContextSmith feature, not a utility script.
+4. Treat graph merge as a first-class SourceBrief feature, not a utility script.
 5. Model Repo Agent as a resource-derived view in V0 and a first-class Agent object in V1; do not call the whole Repo Agent a skill.
 6. Build folder bundle manifest/diff before true partial reuse; do not overclaim reprocessing savings before section lineage exists.
 7. Keep publish gated and versioned. Auto-refresh and auto-draft are useful; auto-publishing changed agent behavior is out of v0 scope.
@@ -2176,10 +2176,10 @@ Acceptance:
 A future implementation of this architecture is credible only when all of the following are true:
 
 - A user can upload a folder bundle through a safe controlled transport.
-- ContextSmith shows a manifest diff and, at the correct milestone, reuses unchanged sections.
+- SourceBrief shows a manifest diff and, at the correct milestone, reuses unchanged sections.
 - The compiler produces a resource map and cited context artifacts.
 - A reviewer can approve/publish a context pack.
-- A generated skill instructs an agent to use live ContextSmith MCP tools rather than local corpus assumptions.
+- A generated skill instructs an agent to use live SourceBrief MCP tools rather than local corpus assumptions.
 - A Repo Agent V0 references a Git resource, pinned snapshots, context packs, generated skills, and update policy as separate concerns.
 - A graph merge preserves provenance and creates review items for ambiguous relationships.
 - Runtime MCP/API responses include freshness and citations.

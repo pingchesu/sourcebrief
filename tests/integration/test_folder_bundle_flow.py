@@ -10,11 +10,11 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import func, select, text
 
-from contextsmith_api import main as api_main
-from contextsmith_api.main import _bootstrap_default_admin, app
-from contextsmith_shared.config import get_settings
-from contextsmith_shared.db import get_engine, get_sessionmaker
-from contextsmith_shared.models import (
+from sourcebrief_api import main as api_main
+from sourcebrief_api.main import _bootstrap_default_admin, app
+from sourcebrief_shared.config import get_settings
+from sourcebrief_shared.db import get_engine, get_sessionmaker
+from sourcebrief_shared.models import (
     AuditEvent,
     IndexRun,
     Resource,
@@ -23,7 +23,7 @@ from contextsmith_shared.models import (
     SnapshotFile,
     SourceSnapshot,
 )
-from contextsmith_worker.jobs import run_index
+from sourcebrief_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
 
@@ -49,14 +49,14 @@ def make_zip(entries: dict[str, bytes]) -> bytes:
 
 def login_admin(client: TestClient, monkeypatch: pytest.MonkeyPatch, prefix: str) -> tuple[str, str]:
     suffix = f"{prefix}-{int(time.time() * 1000)}"
-    email = f"{suffix}@contextsmith.local"
+    email = f"{suffix}@sourcebrief.local"
     password = f"{suffix}-password"
-    monkeypatch.setenv("CONTEXTSMITH_ADMIN_EMAIL", email)
-    monkeypatch.setenv("CONTEXTSMITH_ADMIN_PASSWORD", password)
-    monkeypatch.setenv("CONTEXTSMITH_ADMIN_DISPLAY_NAME", f"Admin {suffix}")
-    monkeypatch.setenv("CONTEXTSMITH_BOOTSTRAP_WORKSPACE_NAME", f"Workspace {suffix}")
-    monkeypatch.setenv("CONTEXTSMITH_BOOTSTRAP_WORKSPACE_SLUG", suffix)
-    monkeypatch.setenv("CONTEXTSMITH_BOOTSTRAP_PROJECT_NAME", f"Project {suffix}")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", email)
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", password)
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_DISPLAY_NAME", f"Admin {suffix}")
+    monkeypatch.setenv("SOURCEBRIEF_BOOTSTRAP_WORKSPACE_NAME", f"Workspace {suffix}")
+    monkeypatch.setenv("SOURCEBRIEF_BOOTSTRAP_WORKSPACE_SLUG", suffix)
+    monkeypatch.setenv("SOURCEBRIEF_BOOTSTRAP_PROJECT_NAME", f"Project {suffix}")
     _bootstrap_default_admin()
     response = client.post("/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, response.text
@@ -73,7 +73,7 @@ def test_upload_folder_bundle_and_run_index_creates_manifest(
     tmp_path: Path,
 ) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "folder-flow")
     workspace_id, project_id = scope.split(":")
@@ -152,7 +152,7 @@ def test_upload_traversal_zip_rejected_before_resource_create(
     tmp_path: Path,
 ) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "folder-bad")
     workspace_id, project_id = scope.split(":")
@@ -185,7 +185,7 @@ def test_upload_folder_bundle_is_manual_only(
     tmp_path: Path,
 ) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "folder-manual")
     workspace_id, project_id = scope.split(":")
@@ -204,7 +204,7 @@ def test_enqueue_failure_marks_failed_and_deletes_staged_zip(
     tmp_path: Path,
 ) -> None:
     require_real_services()
-    monkeypatch.setenv("CONTEXTSMITH_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
     client = TestClient(app)
     token, scope = login_admin(client, monkeypatch, "folder-enqueue")
     workspace_id, project_id = scope.split(":")

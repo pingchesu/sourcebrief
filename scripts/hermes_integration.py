@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create and validate a Hermes-scoped ContextSmith integration token.
+"""Create and validate a Hermes-scoped SourceBrief integration token.
 
 This script is intentionally operational rather than magical: it creates (or uses)
 a workspace-scoped bearer token, validates the REST agent-context path, validates
@@ -200,12 +200,12 @@ def validate_mcp(args: argparse.Namespace, token: str) -> dict[str, Any]:
         token,
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05"}},
     )
-    if init.get("result", {}).get("serverInfo", {}).get("name") != "contextsmith":
+    if init.get("result", {}).get("serverInfo", {}).get("name") != "sourcebrief":
         fail(f"MCP initialize returned unexpected serverInfo: {init}")
     tools = rpc(args.api_url, args.workspace_id, args.project_id, token, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     tool_names = [tool.get("name") for tool in tools.get("result", {}).get("tools", [])]
-    if "contextsmith.get_agent_context" not in tool_names:
-        fail(f"MCP tools/list missing contextsmith.get_agent_context: {tools}")
+    if "sourcebrief.get_agent_context" not in tool_names:
+        fail(f"MCP tools/list missing sourcebrief.get_agent_context: {tools}")
     call = rpc(
         args.api_url,
         args.workspace_id,
@@ -216,7 +216,7 @@ def validate_mcp(args: argparse.Namespace, token: str) -> dict[str, Any]:
             "id": 3,
             "method": "tools/call",
             "params": {
-                "name": "contextsmith.get_agent_context",
+                "name": "sourcebrief.get_agent_context",
                 "arguments": {
                     "query": args.query,
                     "runtime": "hermes",
@@ -256,7 +256,7 @@ def hermes_config(args: argparse.Namespace, token: str) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Create and verify a ContextSmith Hermes/MCP integration")
+    parser = argparse.ArgumentParser(description="Create and verify a SourceBrief Hermes/MCP integration")
     parser.add_argument("--api-url", default="http://localhost:18000")
     parser.add_argument("--public-api-url", help="URL Hermes should use if different from --api-url")
     parser.add_argument("--email", default=f"hermes-integration-{int(time.time())}@example.com")
@@ -265,9 +265,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--query", required=True)
     parser.add_argument("--resource-id", action="append")
     parser.add_argument("--token", help="existing bearer token; skip token creation")
-    parser.add_argument("--token-name", default="Hermes ContextSmith token")
+    parser.add_argument("--token-name", default="Hermes SourceBrief token")
     parser.add_argument("--scope", action="append", help="read-only token scope; repeatable or comma-separated; defaults to project/resource/review read + project query")
-    parser.add_argument("--server-name", default="contextsmith")
+    parser.add_argument("--server-name", default="sourcebrief")
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--max-chars", type=int, default=12000)
     parser.add_argument("--timeout", type=int, default=120)
@@ -313,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
         "next_steps": [
             "Add hermes_config.mcp_servers to ~/.hermes/config.yaml or your target profile config.",
             "Restart Hermes, or use /reload-mcp if your running gateway supports MCP reload.",
-            "Ask Hermes a project question; it should call mcp_contextsmith_contextsmith_get_agent_context after discovery.",
+            "Ask Hermes a project question; it should call mcp_sourcebrief_sourcebrief_get_agent_context after discovery.",
         ],
     }
     print(json.dumps(output, indent=2, sort_keys=True))

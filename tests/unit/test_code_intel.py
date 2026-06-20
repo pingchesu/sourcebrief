@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextsmith_shared.code_intel import extract_code_symbols, language_for_path
+from sourcebrief_shared.code_intel import extract_code_symbols, language_for_path
 
 
 def test_extract_python_symbols() -> None:

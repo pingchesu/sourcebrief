@@ -1,4 +1,4 @@
-# PR2 — ContextSmith Sources Lifecycle Spec
+# PR2 — SourceBrief Sources Lifecycle Spec
 
 > 延續 PR1（enterprise shell + Command Center + design primitives）。本 PR 不動 backend，僅重建 source lifecycle 前端體驗。
 > 對應 PR1 IA 中的 **Sources** 主入口（PR1 spec §4.2）。
