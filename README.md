@@ -48,8 +48,8 @@ Use it when you need agents to answer with evidence, not vibes.
 | Resource Maps | Generate reviewable maps of what SourceBrief found in a repo or folder. |
 | Context Packs | Publish pinned, permission-scoped evidence bundles for agent tasks. |
 | Graph and symbols | Follow relationships across resources, directories, files, and code symbols. |
-| MCP and HTTP runtime | Let agents retrieve context on demand through one central API/MCP surface. |
-| Skill Packs | Export citation-backed runtime packages from published Context Packs. |
+| MCP and HTTP runtime | Give Hermes, Claude Code, Codex, Cursor, and custom agents one project-scoped API/MCP surface for `get_agent_context`, cited search, exact section reads, indexed code grep/read/symbol lookup, and graph queries. |
+| Skill Packs | Turn reviewed Context Packs into installable runtime packages: `SKILL.md`, references, playbooks, validation metadata, citation policy, freshness rules, and leak-scan results. |
 | Review and quality | Track freshness, failed imports, usage, and low-value context before drift piles up. |
 
 SourceBrief provides context. Production mutations should stay behind separate typed tools, explicit approvals, and rollback workflows.
@@ -84,15 +84,44 @@ That is the product bar: source-backed answers a coding agent can use without pr
 
 ## Use it with agents
 
-The UI is where humans connect and review context. The runtime value shows up when Hermes, Claude Code, Codex, Cursor, or another agent can ask SourceBrief for cited project evidence while working on an issue.
+This is the point of SourceBrief: agents should not work from whatever happened
+to fit in the prompt. They should be able to ask for the project evidence they
+need, cite it, drill into exact files or docs, and only then edit the real
+checkout.
 
-Start with [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md) for the practical flows:
+```text
+coding agent gets an issue
+    -> asks SourceBrief MCP for the relevant docs, files, symbols, and risks
+    -> reads exact cited sections from indexed snapshots
+    -> edits and tests in the real checkout
+    -> can explain the change with citations instead of vibes
+```
 
-- using SourceBrief while developing a project
-- using MCP from Hermes, Claude, Codex, or Cursor
-- handling remote indexed code safely
-- installing generated skills and agent packs
-- knowing where SourceBrief stops and the coding agent begins
+The runtime pieces are deliberately small, but they change the agent workflow:
+
+| Runtime piece | What it gives the agent | Why it matters |
+| --- | --- | --- |
+| **MCP** | Live tools such as `sourcebrief.get_agent_context`, cited search, indexed code grep/read, symbol lookup, graph queries, and guarded patch proposals. | The agent can fetch project context on demand instead of pretending the prompt or local checkout is complete. |
+| **Generated agent pack** | A portable package with `hermes/SKILL.md`, `claude/CLAUDE.md`, `codex/AGENTS.md`, `mcp.json`, golden questions, and usage notes. | You can hand a project-specific context contract to Hermes, Claude Code, Codex, Cursor, or another MCP-capable runtime. |
+| **Context Pack Skill Export** | A reviewed, citation-backed skill package generated from a published Context Pack. | Repeatable workflows can carry approved evidence, references, freshness rules, and leak-scan metadata instead of tribal knowledge. |
+
+Good agent prompts become much more specific:
+
+```text
+Before editing auth, ask SourceBrief which routes, CLI commands, MCP tools,
+tests, and docs mention service tokens. Use the cited files to plan the change.
+```
+
+```text
+Review this PR for runtime-agent impact. Start with SourceBrief evidence for
+agent-context, MCP auth, generated skills, and token scopes.
+```
+
+Start with [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md). It is the main
+guide for wiring this into Hermes, Claude Code, Codex, Cursor, or any
+MCP-capable runtime, including scoped tokens, remote-code safety, generated
+skills, and the exact MCP tools an agent should call before it edits or reviews
+code.
 
 ## Quick start
 
@@ -223,18 +252,61 @@ Web UI / CLI / Agent client
 
 Read the full design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Documentation
+## Documentation and related links
 
-Start here:
+### Start here
 
-- [Quick start](docs/QUICKSTART.md) - run the local stack and get to the first useful product moment
-- [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md) - use SourceBrief from Hermes, Claude Code, Codex, Cursor, MCP, and generated skills
-- [Concepts](docs/CONCEPTS.md) - Resource, Snapshot, Resource Map, Context Pack, Skill Pack, MCP, and related terms
-- [Guide](docs/GUIDE.md) - end-to-end API, CLI, Git resource, MCP, and review workflows
-- [Architecture](docs/ARCHITECTURE.md) - system design and runtime components
-- [Operations](docs/OPERATIONS.md) - logs, queues, migrations, stuck jobs, rollback, and local reset
-- [Project status](docs/STATUS.md) - shipped alpha capabilities, experimental areas, and non-goals
-- [Docs home](docs/README.md) - full documentation map, including RFCs, compiler specs, milestones, and backlog
+- [Quick start](docs/QUICKSTART.md) - shortest local path to a real running
+  stack: Compose services, API readiness, web console login, and the first
+  useful SourceBrief product moment.
+- [Product walkthrough](docs/WALKTHROUGH.md) - screenshots and a captured
+  `agent-context` response from the local alpha. Use this when you want to see
+  what the product looks like before reading architecture.
+- [Concepts](docs/CONCEPTS.md) - the vocabulary map: Source, Snapshot, Resource
+  Map, Context Packet, Agent Context, Context Pack, Skill Pack, Repo Agent, and
+  MCP tools. Read this first if those terms are starting to blur together.
+- [Guide](docs/GUIDE.md) - hands-on API / CLI walkthrough for creating a
+  workspace, adding resources, indexing, searching, building context packets,
+  calling the central MCP endpoint, reviewing freshness, and importing Git repos.
+
+### Agent runtime, MCP, and skills
+
+- [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md) - the page to read if you
+  care about the agent story. It shows the actual loop: agent asks SourceBrief
+  for evidence, uses MCP to drill into cited remote code, edits only in the real
+  checkout, then runs tests through the normal coding-agent workflow.
+- [MCP integration in the runtime guide](docs/AGENT_RUNTIME_USAGE.md#install-and-use-mcp)
+  - the practical setup path: project-scoped MCP URL, scoped bearer-token auth,
+  Hermes config, Claude/Codex/Cursor config examples, integration validator, and
+  the tools agents should discover (`get_agent_context`, `search`,
+  `read_section`, `search_code`, `grep_code`, `read_file`, `find_symbol`, graph
+  tools, and guarded proposal flows).
+- [Generated skills and agent packs](docs/AGENT_RUNTIME_USAGE.md#install-and-use-skills)
+  - the packaging story: SourceBrief can produce `hermes/SKILL.md`,
+  `claude/CLAUDE.md`, `codex/AGENTS.md`, `mcp.json`, golden questions, and a
+  changelog without embedding the private corpus. The files teach the runtime how
+  to ask SourceBrief, not how to bypass it.
+- [Remote repo agent skill pack spec](docs/REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md)
+  - design notes for packaging a repository as agent-usable context while
+  keeping the pack separate from the target checkout and from SourceBrief's
+  indexed corpus.
+- [C2 Skill Pack Compiler spec](docs/context-artifact-compiler/C2-skill-pack-compiler-spec.md)
+  - the deeper product contract for citation-backed Skill Pack exports,
+  approval, validation, leak-scan metadata, and the E2E value gate.
+
+### Architecture and operations
+
+- [Architecture](docs/ARCHITECTURE.md) - system design and runtime components:
+  FastAPI, PostgreSQL/pgvector, Redis/RQ workers, Next.js, agent-context, MCP
+  routes, graph/code-symbol retrieval, tenant boundaries, and the non-negotiable
+  rule that production mutations stay outside SourceBrief.
+- [Operations](docs/OPERATIONS.md) - health checks, logs, queues, migrations,
+  stuck jobs, rollback, restore, purge lifecycle, and local reset.
+- [Project status](docs/STATUS.md) - what the alpha actually ships today, what is
+  experimental, what is intentionally not ready, and which gaps matter before a
+  shared or production-like deployment.
+- [Docs home](docs/README.md) - full documentation map, including RFCs,
+  compiler specs, milestones, product gaps, and backlog material.
 
 ## Development
 

@@ -1,14 +1,24 @@
 # Agent runtime usage
 
-SourceBrief is most useful after the UI has done the boring work: connect sources, index them, review what was found, and keep context fresh. The runtime layer is where coding agents use that work.
+The UI gets project context into shape: connect sources, index snapshots, review
+what was found, and keep stale material out. The runtime layer is where that work
+pays off. A coding agent can ask SourceBrief for the exact evidence it needs
+while fixing an issue instead of relying on prompt stuffing or whatever files are
+open locally.
 
-This page answers the questions the UI does not answer by itself:
+If SourceBrief only stopped at Workbench, it would be a useful search UI. Runtime
+integration makes it agent infrastructure:
 
-- How do I use SourceBrief while developing a project?
-- How do Hermes, Claude Code, Codex, Cursor, or another agent use it while fixing an issue?
-- How do I install and use a generated skill?
-- How do I install and use the MCP server?
-- What does SourceBrief mean by remote code?
+| Without SourceBrief | With SourceBrief runtime |
+| --- | --- |
+| Agent guesses from prompt context. | Agent calls MCP for cited project evidence. |
+| Agent edits the first file it can see. | Agent asks for related docs, tests, symbols, and impact areas first. |
+| Remote indexed repos are confused with local checkouts. | Remote code is treated as static evidence; edits happen only in the real checkout. |
+| Project instructions drift or get copied by hand. | Generated skills and agent packs point runtimes back to SourceBrief citations. |
+
+This page is the practical runtime guide: MCP setup, scoped tokens, remote-code
+safety, generated skills, Context Pack Skill Exports, and the workflow agents
+should follow before editing or reviewing code.
 
 ## The mental model
 
@@ -19,15 +29,29 @@ Developer / agent asks a question
         -> Agent uses the evidence to reason, then edits/tests through its normal local repo tools
 ```
 
-SourceBrief is not the agent, not the editor, and not a production executor. It is the evidence service behind the agent.
+SourceBrief is not the agent, not the editor, and not a production executor. It
+is the evidence service behind the agent.
 
 For code work, that distinction matters:
 
-- SourceBrief can index a remote Git repository and answer from that indexed snapshot.
-- SourceBrief can search, grep, read files, find symbols, and inspect graphs from indexed snapshots through MCP.
-- SourceBrief should not be treated as proof that the repo exists in the agent's current filesystem.
-- SourceBrief does not run tests, deploy code, restart services, or mutate production.
-- Patch generation and PR workflows are opt-in proposal flows. They still require explicit policy, scopes, and approval before any external source-control mutation.
+- SourceBrief can index a remote Git repository and answer from that indexed
+  snapshot.
+- SourceBrief can search, grep, read files, find symbols, and inspect graphs from
+  indexed snapshots through MCP.
+- SourceBrief should not be treated as proof that the repo exists in the agent's
+  current filesystem.
+- SourceBrief does not run tests, deploy code, restart services, or mutate
+  production.
+- Patch generation and PR workflows are opt-in proposal flows. They still
+  require explicit policy, scopes, and approval before any external
+  source-control mutation.
+
+The short version:
+
+```text
+Use SourceBrief to know where to look and what to trust.
+Use the coding agent's normal tools to edit, test, commit, and open PRs.
+```
 
 ## When to use it during development
 
@@ -127,17 +151,20 @@ Use explicit approval before any PR or remote mutation.
 
 ## Runtime choices
 
-SourceBrief exposes the same project through several surfaces.
+SourceBrief exposes the same project through several surfaces. They are meant to
+compose, not compete with each other.
 
-| Surface | Use when | Output |
+| Surface | Best for | What the agent gets |
 | --- | --- | --- |
-| Workbench UI | A human wants to preview the answer and citations. | Rendered packet, citations, evidence rows. |
-| CLI `agent-context` | Scripts or local experiments need one context response. | JSON/text runtime packet. |
-| MCP | Hermes, Claude, Codex, Cursor, or another runtime should retrieve context on demand. | Discoverable tools with structured content. |
-| Generated agent pack | You want portable adapters for Hermes, Claude Code, Codex, and MCP config. | `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `mcp.json`, manifest. |
-| Context Pack Skill Export | You have a reviewed published Context Pack and want a citation-backed reusable skill package. | Approved files such as `SKILL.md`, references, playbooks, manifest. |
+| Workbench UI | A human wants to inspect an answer before handing it to an agent. | Rendered packet, citations, evidence rows, and freshness signals. |
+| CLI `agent-context` | Scripts, demos, smoke tests, or one-off local experiments. | One JSON/text runtime packet with citations and runtime instructions. |
+| MCP | Live agent sessions in Hermes, Claude Code, Codex, Cursor, or custom runtimes. | Discoverable tools for context, search, remote code drilldown, graph traversal, and guarded proposal flows. |
+| Generated agent pack | You want to configure a runtime for one SourceBrief project quickly. | `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `mcp.json`, golden questions, manifest, and usage notes. |
+| Context Pack Skill Export | You have a reviewed Context Pack and want a reusable team workflow. | Approved skill files, references, playbooks, citation policy, validation report, and leak-scan metadata. |
 
-Start with MCP for live agent use. Use skills when you want a repeatable instruction package that tells the agent when and how to use the MCP/API.
+Start with MCP for live agent use. Add skills when you want a repeatable
+instruction package that tells the agent when to call SourceBrief, what evidence
+standard to follow, and where to stop before mutation.
 
 ## Auth for agents
 
@@ -195,6 +222,29 @@ sourcebrief --json agent profile --workspace-id "$WORKSPACE_ID" --project-id "$P
 ```
 
 ## Install and use MCP
+
+MCP is the main live integration. It lets an agent ask SourceBrief follow-up
+questions during a task instead of making one giant context request at the start.
+
+The useful pattern is:
+
+```text
+get_agent_context for the map
+    -> search / read_section for cited docs
+    -> search_code / grep_code / read_file / find_symbol for exact code evidence
+    -> graph_query / graph_path for impact and relationships
+    -> local edit and local tests outside SourceBrief
+```
+
+Core tools an agent should expect:
+
+| Need | Tool family |
+| --- | --- |
+| Start with a cited project answer | `sourcebrief.get_agent_context` |
+| Search or read approved docs and artifacts | `sourcebrief.search`, `sourcebrief.read_section` |
+| Drill into indexed source code | `sourcebrief.search_code`, `sourcebrief.grep_code`, `sourcebrief.read_file`, `sourcebrief.find_symbol` |
+| Follow resource/file/symbol relationships | `sourcebrief.graph_query`, `sourcebrief.graph_path` |
+| Propose changes without direct mutation | `sourcebrief.generate_patch`, `sourcebrief.open_pr` when explicitly enabled |
 
 The MCP endpoint is project scoped:
 
@@ -286,11 +336,17 @@ Use the runtime's own secret mechanism if it does not expand environment variabl
 
 ## Install and use skills
 
+Skills are how SourceBrief becomes reusable agent behavior instead of a one-off
+MCP config. They do not copy the indexed corpus into a prompt. They teach the
+runtime how to call SourceBrief, how to treat citations, and how to avoid
+mistaking remote indexed evidence for a local checkout.
+
 SourceBrief has two skill-related outputs. They are related but not the same.
 
 ### Option A: project agent pack
 
-Use this when you want a quick adapter package for one SourceBrief project.
+Use this when you want a quick adapter package for one SourceBrief project. It is
+the fastest way to hand a runtime a project-specific context contract.
 
 Download the generated pack:
 
@@ -348,11 +404,16 @@ How to use it:
 - Codex: use `codex/AGENTS.md` as the agent instruction file.
 - Any MCP-capable runtime: use `mcp.json` as the config template.
 
-Important boundary: the pack is an adapter. It does not contain the target repo, embeddings, indexes, eval history, or secrets. It tells the runtime to call SourceBrief.
+Important boundary: the pack is an adapter. It does not contain the target repo,
+embeddings, indexes, eval history, or secrets. It tells the runtime to call
+SourceBrief.
 
 ### Option B: reviewed Context Pack Skill Export
 
-Use this when you have published a Context Pack and want a reusable citation-backed skill package.
+Use this when you have published a Context Pack and want a reusable
+citation-backed skill package. This is the heavier path for team workflows where
+the evidence bundle has been reviewed and should carry freshness rules,
+references, validation metadata, and leak-scan results.
 
 Generate a skill export from a published pack:
 
