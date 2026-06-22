@@ -6,7 +6,6 @@ This directory contains user docs, operator docs, architecture notes, and produc
 
 - [Quick start](QUICKSTART.md) - run the local stack and get to the first product moment.
 - [Product walkthrough](WALKTHROUGH.md) - see real UI screenshots and a captured agent-context response.
-- [Agent runtime usage](AGENT_RUNTIME_USAGE.md) - use SourceBrief from Hermes, Claude Code, Codex, Cursor, MCP, and generated skills.
 - [Concepts](CONCEPTS.md) - learn the vocabulary: Source, Snapshot, Resource Map, Context Pack, Skill Pack, MCP tools.
 - [Guide](GUIDE.md) - walk through API, CLI, Git resources, MCP, and review workflows.
 - [Project status](STATUS.md) - what works today, what is experimental, and what is intentionally not ready.
@@ -14,6 +13,7 @@ This directory contains user docs, operator docs, architecture notes, and produc
 ## Agent/runtime integration
 
 - [Agent runtime usage](AGENT_RUNTIME_USAGE.md) - practical Hermes, Claude Code, Codex, Cursor, MCP, skill, and remote-code workflows.
+- [Runtime install plan](RUNTIME_INSTALL_PLAN.md) - generate dry-run Hermes, Claude, or Codex connection plans, review required scopes, copy config, validate MCP, and roll back without silent local profile mutation.
 - [Guide](GUIDE.md) - `agent-context`, MCP calls, CLI workflow, and resource review.
 - [Remote repo agent skill pack spec](REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md) - adapter and package design notes.
 - [Context Artifact Compiler repo-agent spec](CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md) - repo agent lifecycle and compiler direction.
@@ -69,4 +69,4 @@ Milestone documents are retained as implementation history. They are useful when
 - [M16 Hermes/MCP integration pack](MILESTONE-16.md)
 - [M17 Open-source alpha packaging](MILESTONE-17.md)
 - [M18 Alpha evaluation and release gate](MILESTONE-18.md)
-- [Later milestones](MILESTONE-23.md), [M27](MILESTONE-27.md), [M28](MILESTONE-28.md), [M29](MILESTONE-29.md)
+- [Later milestones](MILESTONE-23.md), [M27](MILESTONE-27.md), [M28](MILESTONE-28.md), [M29](MILESTONE-29.md), [M30 runtime install plan](MILESTONE-30.md)
