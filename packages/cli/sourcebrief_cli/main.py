@@ -10,6 +10,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from sourcebrief_cli import runtime_apply
+
 DEFAULT_API_URL = "http://localhost:18000"
 DEFAULT_EMAIL = "demo@example.com"
 
@@ -347,7 +349,7 @@ def cmd_mcp_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
 
 
 def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    return client.request(
+    plan = client.request(
         "POST",
         f"/workspaces/{args.workspace_id}/projects/{args.project_id}/runtime-install-plan",
         body={
@@ -358,6 +360,38 @@ def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any
             "include_optional_tools": args.include_optional_tools,
         },
     )
+    return runtime_apply.attach_plan_metadata(plan)
+
+
+def _read_validated_runtime_plan(args: argparse.Namespace) -> runtime_apply.PlanValidation:
+    return runtime_apply.read_plan(
+        Path(args.plan),
+        target=args.target,
+        max_age_seconds=args.max_age_seconds,
+    )
+
+
+def cmd_runtime_detect(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    return runtime_apply.detect(runtime_apply.hermes_config_path(args.config))
+
+
+def cmd_runtime_apply(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    validation = _read_validated_runtime_plan(args)
+    config_path = runtime_apply.hermes_config_path(args.config)
+    if args.dry_run:
+        return runtime_apply.dry_run_apply(validation, config_path)
+    if not args.yes:
+        raise SourceBriefCliError("runtime apply requires --dry-run or --yes")
+    return runtime_apply.apply_plan(validation, config_path, runtime_apply.receipt_path(args.receipt))
+
+
+def cmd_runtime_rollback(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    return runtime_apply.rollback(Path(args.receipt), force=args.force)
+
+
+def cmd_runtime_validate(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    validation = _read_validated_runtime_plan(args)
+    return runtime_apply.validate_plan(validation, run=args.run)
 
 
 def cmd_agent_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
@@ -569,6 +603,32 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_plan.add_argument("--no-optional-tools", dest="include_optional_tools", action="store_false")
     runtime_plan.set_defaults(func=cmd_runtime_plan, include_optional_tools=True)
 
+    runtime_detect = runtime.add_parser("detect", help="detect local runtime config paths without writing files")
+    runtime_detect.add_argument("--config", help="Hermes config path; defaults to ~/.hermes/config.yaml")
+    runtime_detect.set_defaults(func=cmd_runtime_detect)
+
+    runtime_apply_parser = runtime.add_parser("apply", help="apply a validated runtime plan to Hermes config")
+    runtime_apply_parser.add_argument("--plan", required=True, help="runtime plan JSON produced by sourcebrief runtime plan")
+    runtime_apply_parser.add_argument("--target", required=True, choices=["hermes"])
+    runtime_apply_parser.add_argument("--config", help="Hermes config path; defaults to ~/.hermes/config.yaml")
+    runtime_apply_parser.add_argument("--receipt", help="receipt output path")
+    runtime_apply_parser.add_argument("--dry-run", action="store_true", help="show planned writes without changing files")
+    runtime_apply_parser.add_argument("--yes", action="store_true", help="perform the local config write")
+    runtime_apply_parser.add_argument("--max-age-seconds", type=int, default=86400, help="reject plans older than this; use -1 to disable")
+    runtime_apply_parser.set_defaults(func=cmd_runtime_apply)
+
+    runtime_rollback = runtime.add_parser("rollback", help="rollback a SourceBrief runtime apply receipt")
+    runtime_rollback.add_argument("--receipt", required=True)
+    runtime_rollback.add_argument("--force", action="store_true", help="restore even when current hash differs from receipt")
+    runtime_rollback.set_defaults(func=cmd_runtime_rollback)
+
+    runtime_validate = runtime.add_parser("validate", help="show or run the validator command from a runtime plan")
+    runtime_validate.add_argument("--plan", required=True)
+    runtime_validate.add_argument("--target", default="hermes", choices=["hermes"])
+    runtime_validate.add_argument("--run", action="store_true", help="execute the generated validator command")
+    runtime_validate.add_argument("--max-age-seconds", type=int, default=86400)
+    runtime_validate.set_defaults(func=cmd_runtime_validate)
+
     return parser
 
 
@@ -602,7 +662,7 @@ def main(argv: list[str] | None = None) -> int:
     client = SourceBriefClient(args.api_url, args.email, token=args.token)
     try:
         data = args.func(client, args)
-    except SourceBriefCliError as exc:
+    except (SourceBriefCliError, runtime_apply.RuntimeApplyError) as exc:
         print(f"sourcebrief: error: {exc}", file=sys.stderr)
         return 1
     if args.json:

@@ -120,20 +120,40 @@ Prefer `--token-env SOURCEBRIEF_TOKEN` over passing a token on the command line.
 
 After copying the generated config into your runtime, reload or restart that runtime and confirm it lists SourceBrief tools such as `sourcebrief.get_agent_context` and `sourcebrief.search`. That runtime-specific check is separate from the SourceBrief API/MCP validator.
 
-## Apply boundary
+## Apply from the CLI
 
-Today, SourceBrief generates a plan and leaves the local runtime change to you. That is deliberate: local runtime config is outside SourceBrief's server-side authority.
-
-A future SourceBrief CLI apply flow is planned but not implemented yet. Its intended shape is:
+Hermes has a guarded local apply flow. Claude, Codex, Cursor, and other runtimes still use the manual copy path above.
 
 ```bash
-sourcebrief runtime detect
-sourcebrief runtime apply --plan plan.json --target hermes --dry-run
-sourcebrief runtime apply --plan plan.json --target hermes --yes
-sourcebrief runtime rollback --receipt receipt.json
+sourcebrief --json runtime plan \
+  --workspace-id "$WORKSPACE_ID" \
+  --project-id "$PROJECT_ID" \
+  --target hermes \
+  --public-api-url "http://localhost:18000" \
+  --resource-id "$RESOURCE_ID" > plan.json
+
+sourcebrief --json runtime detect
+sourcebrief --json runtime apply --plan plan.json --target hermes --dry-run
+sourcebrief --json runtime apply --plan plan.json --target hermes --yes
 ```
 
-Until those commands exist, treat config writes as manual steps and keep rollback notes from the generated plan.
+`apply` validates the plan schema, target, digest, and age before writing. The digest is an accidental-edit guard for a generated local plan, not a signature or trust boundary. `--dry-run` prints the exact file operation and writes nothing. `--yes` is required for mutation.
+
+For Hermes, apply rewrites the YAML file through the YAML parser while preserving existing top-level settings and MCP server entries semantically. It only adds or replaces the planned SourceBrief MCP server entry, but comments, anchors, and formatting may be normalized. The receipt records file hashes, token env var names, and rollback command. The receipt never stores the token value.
+
+Rollback restores the pre-change file or removes a created managed-only config file:
+
+```bash
+sourcebrief --json runtime rollback --receipt receipt.json
+```
+
+Rollback refuses to touch a file whose current hash differs from the receipt's expected post-change hash unless you pass `--force`.
+
+## Apply boundary
+
+Today, SourceBrief generates a plan and leaves non-Hermes local runtime changes to you. That is deliberate: local runtime config is outside SourceBrief's server-side authority.
+
+Future CLI apply work may extend the same guarded flow to Claude/Codex and add uninstall helpers.
 
 ## Rollback
 
