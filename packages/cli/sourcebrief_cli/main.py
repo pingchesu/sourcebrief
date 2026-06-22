@@ -346,6 +346,20 @@ def cmd_mcp_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     )
 
 
+def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/runtime-install-plan",
+        body={
+            "target": args.target,
+            "public_api_url": args.public_api_url,
+            "server_name": args.server_name,
+            "resource_ids": _resource_ids(args.resource_id),
+            "include_optional_tools": args.include_optional_tools,
+        },
+    )
+
+
 def cmd_agent_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     return client.request("GET", f"/workspaces/{args.workspace_id}/agents")
 
@@ -544,6 +558,17 @@ def build_parser() -> argparse.ArgumentParser:
     mcp.add_argument("--top-k", type=int, default=8)
     mcp.set_defaults(func=cmd_mcp_context)
 
+    runtime = sub.add_parser("runtime", help="agent runtime install and validation commands").add_subparsers(dest="runtime_command")
+    runtime_plan = runtime.add_parser("plan", help="generate a dry-run runtime install plan")
+    runtime_plan.add_argument("--workspace-id", required=True)
+    runtime_plan.add_argument("--project-id", required=True)
+    runtime_plan.add_argument("--target", required=True, choices=["hermes", "claude", "codex"])
+    runtime_plan.add_argument("--public-api-url")
+    runtime_plan.add_argument("--server-name")
+    runtime_plan.add_argument("--resource-id", action="append")
+    runtime_plan.add_argument("--no-optional-tools", dest="include_optional_tools", action="store_false")
+    runtime_plan.set_defaults(func=cmd_runtime_plan, include_optional_tools=True)
+
     return parser
 
 
@@ -562,7 +587,7 @@ def _print_default(command: str | None, data: Any) -> None:
             for hit in data.get("hits", []):
                 print(f"- {hit.get('path') or hit.get('title') or hit.get('resource_id')}: {hit.get('snippet')}")
             return
-        if command in {"agent-context", "mcp-context", "agent", "token"}:
+        if command in {"agent-context", "mcp-context", "agent", "token", "runtime"}:
             _print_json(data)
             return
     _print_json(data)

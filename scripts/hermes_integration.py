@@ -18,7 +18,7 @@ from typing import Any
 
 import requests
 
-DEFAULT_SCOPES = ["project:read", "project:query", "resource:read", "review:read"]
+DEFAULT_SCOPES = ["project:read", "project:query", "resource:read", "review:read", "code:read"]
 READ_ONLY_SCOPE_ALLOWLIST = set(DEFAULT_SCOPES)
 TOKEN_PATTERN = re.compile(r"cs_[A-Za-z0-9_-]{20,}")
 
@@ -150,7 +150,7 @@ def rpc(api_url: str, workspace_id: str, project_id: str, token: str, body: dict
 def create_token(args: argparse.Namespace) -> tuple[str, dict[str, Any] | None]:
     if args.token:
         return args.token, None
-    headers = {"X-User-Email": args.email, "Content-Type": "application/json"}
+    headers = bearer_headers(args.admin_token) if args.admin_token else {"X-User-Email": args.email, "Content-Type": "application/json"}
     payload: dict[str, Any] = {
         "name": args.token_name,
         "scopes": args.scope,
@@ -264,6 +264,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-id", required=True)
     parser.add_argument("--query", required=True)
     parser.add_argument("--resource-id", action="append")
+    parser.add_argument("--admin-token", help="existing bearer token used only to create the read-only integration token")
     parser.add_argument("--token", help="existing bearer token; skip token creation")
     parser.add_argument("--token-name", default="Hermes SourceBrief token")
     parser.add_argument("--scope", action="append", help="read-only token scope; repeatable or comma-separated; defaults to project/resource/review read + project query")

@@ -5,7 +5,7 @@ import { PageHeader, Card, Metric, EmptyState, StatusChip } from '../../componen
 import { AgentContextPreview } from '../../components/AgentContextPreview';
 import { ResourceScopePicker, describeScope } from '../../components/ResourceScopePicker';
 import { usePlatform } from '../../lib/platform-context';
-import type { AgentContextResponse } from '../../lib/types';
+import type { AgentContextResponse, RuntimeInstallPlan } from '../../lib/types';
 import { fmt } from '../../lib/api';
 
 const REVIEW_PROMPTS = [
@@ -22,9 +22,32 @@ export default function AgentProfilePage() {
   const [generatedFor, setGeneratedFor] = useState<{ lens: string; scope: string } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [runtimeTarget, setRuntimeTarget] = useState<'hermes' | 'claude' | 'codex'>('hermes');
+  const [installPlan, setInstallPlan] = useState<RuntimeInstallPlan | null>(null);
+  const [installPlanGeneratedFor, setInstallPlanGeneratedFor] = useState<{ target: string; scope: string } | null>(null);
+  const [installPlanError, setInstallPlanError] = useState<string | null>(null);
+  const [generatingInstallPlan, setGeneratingInstallPlan] = useState(false);
   const activePrompt = REVIEW_PROMPTS.find((prompt) => prompt.id === selectedPrompt) ?? REVIEW_PROMPTS[0];
   const usageByResource = useMemo(() => new Map(usageItems.map((item) => [item.resource_id, item])), [usageItems]);
   const reviewByResource = useMemo(() => new Map(reviewItems.map((item) => [item.resource.id, item])), [reviewItems]);
+  const currentInstallPlanScope = describeScope(resources, scopeResourceIds);
+  const installPlanIsStale = Boolean(installPlan && installPlanGeneratedFor && (installPlanGeneratedFor.target !== runtimeTarget || installPlanGeneratedFor.scope !== currentInstallPlanScope));
+
+  function resetInstallPlan() {
+    setInstallPlan(null);
+    setInstallPlanGeneratedFor(null);
+    setInstallPlanError(null);
+  }
+
+  function updateRuntimeTarget(value: 'hermes' | 'claude' | 'codex') {
+    setRuntimeTarget(value);
+    resetInstallPlan();
+  }
+
+  function updateScopeResourceIds(ids: string[]) {
+    setScopeResourceIds(ids);
+    resetInstallPlan();
+  }
 
   async function generatePreview() {
     setGenerating(true); setPreviewError(null);
@@ -39,6 +62,21 @@ export default function AgentProfilePage() {
     finally { setGenerating(false); }
   }
 
+  async function generateInstallPlan() {
+    const requestedTarget = runtimeTarget;
+    const requestedScope = currentInstallPlanScope;
+    setGeneratingInstallPlan(true); setInstallPlanError(null); setInstallPlan(null); setInstallPlanGeneratedFor(null);
+    try {
+      const result = await client<RuntimeInstallPlan>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/runtime-install-plan`, {
+        method: 'POST',
+        body: JSON.stringify({ target: requestedTarget, resource_ids: scopeResourceIds.length ? scopeResourceIds : null }),
+      });
+      setInstallPlan(result);
+      setInstallPlanGeneratedFor({ target: requestedTarget, scope: requestedScope });
+    } catch (err) { setInstallPlan(null); setInstallPlanGeneratedFor(null); setInstallPlanError(String(err)); }
+    finally { setGeneratingInstallPlan(false); }
+  }
+
   useEffect(() => {
     if (agent && resources.length && preview === null && !generating) void generatePreview();
     // generate initial review packet once after data loads; later user changes require explicit button.
@@ -51,8 +89,9 @@ export default function AgentProfilePage() {
       <div className="grid four"><Metric label="Runtime" value={agent.default_runtime} /><Metric label="Resources" value={agent.resource_count} /><Metric label="Snapshots" value={agent.current_snapshot_count} /><Metric label="Graph nodes/edges" value={`${agent.graph_node_count}/${agent.graph_edge_count}`} /></div>
       <Card><h2>Agent manifest</h2><p className="muted">Human-readable summary of what was generated. Review by project/resource names and evidence below.</p><div className="grid two"><div><div className="label">Agent</div><strong>{agent.name}</strong><p className="muted">{agent.description || 'Generated knowledge agent for this project.'}</p></div><div><div className="label">Workspace / project</div><strong>{workspace?.name ?? 'Workspace'} / {project?.name ?? 'Project'}</strong></div></div></Card>
       <div className="grid two"><Card><h2>Operating guardrails</h2><p className="muted">Production mutations require explicit external approval. Runtime responses must stay grounded in indexed evidence and citations.</p><div className="grid two"><Metric label="Default runtime" value={agent.default_runtime} /><Metric label="Resources in scope" value={agent.resource_count} /></div></Card><Card><h2>Provider and freshness</h2><div className="grid"><StatusChip value={provider?.status ?? 'unknown'} /><p className="muted">{provider ? `${provider.embedding.provider}/${provider.embedding.model}` : 'Provider not loaded'}</p><p className="muted">Last indexed: {fmt(agent.last_index_finished_at)}</p></div></Card></div>
+      <Card><h2>Runtime install plan</h2><p className="muted">Generate a dry-run plan for connecting an agent runtime to this project. SourceBrief does not edit local runtime files, and snippets use token placeholders or runtime-native env references only.</p><div className="grid two"><label><span className="label">Target runtime</span><select className="input" value={runtimeTarget} onChange={(event) => updateRuntimeTarget(event.target.value as 'hermes' | 'claude' | 'codex')}><option value="hermes">Hermes</option><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label><div><div className="label">Plan scope</div><div>{currentInstallPlanScope}</div></div></div><button type="button" className="btn" disabled={generatingInstallPlan} onClick={() => void generateInstallPlan()}>{generatingInstallPlan ? 'Generating…' : 'Generate runtime plan'}</button>{installPlanError ? <div className="notice error">{installPlanError}</div> : null}{installPlanGeneratedFor ? <div className="notice">Generated for: <strong>{installPlanGeneratedFor.target}</strong> · {installPlanGeneratedFor.scope}</div> : null}{installPlanIsStale ? <div className="notice error">Displayed runtime plan was generated for previous controls. Regenerate before copying config or validation commands.</div> : null}{installPlan && !installPlanIsStale ? <div className="grid"><div className="notice"><strong>{installPlan.target}</strong> · {installPlan.mode} · server <code>{installPlan.server_name}</code></div>{installPlan.warnings.map((warning) => <div className="notice" key={warning}>{warning}</div>)}<div><div className="label">Required scopes</div><div className="toolbar">{installPlan.required_scopes.map((scope) => <StatusChip value={scope} key={scope} />)}</div></div><div><div className="label">MCP config ({installPlan.mcp_config.format})</div><pre>{installPlan.mcp_config.content}</pre></div><div><div className="label">Suggested token request</div><pre>{JSON.stringify(installPlan.suggested_token_request, null, 2)}</pre></div><div><div className="label">Validator commands</div>{installPlan.validator_commands.map((command) => <pre key={command}>{command}</pre>)}</div><div><div className="label">Capabilities from live MCP registry</div><div className="table-wrap"><table><thead><tr><th>Tool</th><th>Policy</th><th>State</th></tr></thead><tbody>{installPlan.capabilities.map((capability) => <tr key={capability.name}><td><strong>{capability.name}</strong><div className="muted">{capability.required ? 'core runtime tool' : 'supporting/optional tool'}</div></td><td>{capability.policy}</td><td><StatusChip value={capability.enabled ? 'enabled' : 'disabled'} /></td></tr>)}</tbody></table></div></div><div><div className="label">Rollback</div><ol>{installPlan.rollback_steps.map((step) => <li key={step}>{step}</li>)}</ol></div></div> : <EmptyState text="Generate a runtime plan to view config, scopes, validation commands, and rollback steps." />}</Card>
       <Card><h2>Resource contribution map</h2><p className="muted">This tells you what the repo agent is made of. Use this before approving the agent: resource status, review status, freshness, usage, and refresh cadence.</p><div className="table-wrap"><table><thead><tr><th>Resource</th><th>Review/freshness</th><th>Usage</th><th>Refresh</th></tr></thead><tbody>{resources.map((resource) => { const review = reviewByResource.get(resource.id); const usage = usageByResource.get(resource.id); return <tr key={resource.id}><td><strong>{resource.name}</strong><div className="muted">{resource.type}</div></td><td><StatusChip value={resource.review_status} /> <StatusChip value={review?.freshness_status ?? 'unknown'} /><div className="muted">{review?.stale_reasons.join(', ') || 'no stale reasons'}</div></td><td>{usage?.hit_count ?? 0} hits<div className="muted">last {fmt(usage?.last_used_at)}</div></td><td>{resource.update_frequency}<div className="muted">{fmt(resource.last_refresh_finished_at)}</div></td></tr>; })}</tbody></table></div></Card>
-      <Card><h2>Generate reviewable agent content</h2><p className="muted">This generates the actual runtime context packet and citations for the selected review lens. This is the content you review.</p><div className="grid"><div className="grid two"><label><span className="label">Review lens</span><select className="input" value={selectedPrompt} onChange={(event) => setSelectedPrompt(event.target.value)}>{REVIEW_PROMPTS.map((prompt) => <option key={prompt.id} value={prompt.id}>{prompt.label}</option>)}</select></label><div><div className="label">Current scope</div><div>{describeScope(resources, scopeResourceIds)}</div></div></div><ResourceScopePicker resources={resources} selectedIds={scopeResourceIds} onChange={setScopeResourceIds} label="Agent-content scope" /><button type="button" className="btn" disabled={generating} onClick={() => void generatePreview()}>{generating ? 'Generating…' : 'Generate review packet'}</button></div>{previewError ? <div className="notice error">{previewError}</div> : null}</Card>
+      <Card><h2>Generate reviewable agent content</h2><p className="muted">This generates the actual runtime context packet and citations for the selected review lens. This is the content you review.</p><div className="grid"><div className="grid two"><label><span className="label">Review lens</span><select className="input" value={selectedPrompt} onChange={(event) => setSelectedPrompt(event.target.value)}>{REVIEW_PROMPTS.map((prompt) => <option key={prompt.id} value={prompt.id}>{prompt.label}</option>)}</select></label><div><div className="label">Current scope</div><div>{describeScope(resources, scopeResourceIds)}</div></div></div><ResourceScopePicker resources={resources} selectedIds={scopeResourceIds} onChange={updateScopeResourceIds} label="Agent-content scope" /><button type="button" className="btn" disabled={generating} onClick={() => void generatePreview()}>{generating ? 'Generating…' : 'Generate review packet'}</button></div>{previewError ? <div className="notice error">{previewError}</div> : null}</Card>
       {generatedFor ? <div className="notice">Generated for: <strong>{generatedFor.lens}</strong> · {generatedFor.scope}</div> : null}
       {generatedFor && (generatedFor.lens !== activePrompt.label || generatedFor.scope !== describeScope(resources, scopeResourceIds)) ? <div className="notice error">Displayed agent packet was generated for previous controls. Regenerate before review/approval.</div> : null}
       <AgentContextPreview result={preview} resources={resources} title="Generated agent review packet" />

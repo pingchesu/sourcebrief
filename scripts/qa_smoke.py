@@ -14,7 +14,8 @@ import requests
 
 BASE = os.getenv("SOURCEBRIEF_API_URL") or os.getenv("CONTEXTSMITH_API_URL") or os.getenv("API_URL") or "http://localhost:18000"
 FRONTEND = os.getenv("SOURCEBRIEF_WEB_URL") or os.getenv("CONTEXTSMITH_WEB_URL") or os.getenv("WEB_URL") or "http://localhost:13000"
-HEADERS = {"X-User-Email": f"qa-{int(time.time())}@example.com"}
+HEADERS: dict[str, str] = {}
+AUTH_DEFAULT_WORKSPACE_ID: str | None = None
 MARKER = "sourcebriefqamarker"
 TOKEN_PATTERN = re.compile(r"cs_[A-Za-z0-9_-]{20,}")
 
@@ -33,6 +34,59 @@ def request(method: str, path: str, expected: int, **kwargs):
 def fail(message: str) -> None:
     print(message, file=sys.stderr)
     raise SystemExit(1)
+
+
+def authenticate() -> None:
+    global AUTH_DEFAULT_WORKSPACE_ID
+    token = os.getenv("SOURCEBRIEF_QA_TOKEN") or os.getenv("CONTEXTSMITH_QA_TOKEN")
+    if token:
+        HEADERS.clear()
+        HEADERS["Authorization"] = f"Bearer {token}"
+        return
+    email = os.getenv("SOURCEBRIEF_ADMIN_EMAIL") or os.getenv("CONTEXTSMITH_ADMIN_EMAIL")
+    password = os.getenv("SOURCEBRIEF_ADMIN_PASSWORD") or os.getenv("CONTEXTSMITH_ADMIN_PASSWORD")
+    if email and password:
+        response = requests.post(
+            f"{BASE}/auth/login",
+            json={"email": email, "password": password},
+            timeout=15,
+        )
+        if response.status_code != 200:
+            fail(f"admin login failed with HTTP {response.status_code}: {response.text[:300]}")
+        body = response.json()
+        session_token = body.get("session_token")
+        if not session_token:
+            fail("admin login response did not include a session token")
+        AUTH_DEFAULT_WORKSPACE_ID = body.get("default_workspace_id")
+        HEADERS.clear()
+        HEADERS["Authorization"] = f"Bearer {session_token}"
+        return
+    if (os.getenv("SOURCEBRIEF_DEV_AUTH") or os.getenv("CONTEXTSMITH_DEV_AUTH") or "").lower() in {"1", "true", "yes", "on"}:
+        HEADERS.clear()
+        HEADERS["X-User-Email"] = f"qa-{int(time.time())}@example.com"
+        return
+    fail("QA smoke requires SOURCEBRIEF_ADMIN_EMAIL/PASSWORD, SOURCEBRIEF_QA_TOKEN, or SOURCEBRIEF_DEV_AUTH=true")
+
+
+def _current_bearer_token() -> str | None:
+    authorization = HEADERS.get("Authorization")
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.removeprefix("Bearer ")
+    return None
+
+
+def cli_auth_args() -> list[str]:
+    token = _current_bearer_token()
+    if token:
+        return ["--token", token]
+    return ["--email", HEADERS["X-User-Email"]]
+
+
+def hermes_creator_auth_args() -> list[str]:
+    token = _current_bearer_token()
+    if token:
+        return ["--admin-token", token]
+    return ["--email", HEADERS["X-User-Email"]]
 
 
 def build_git_fixture(ts: int) -> tuple[str, str]:
@@ -127,9 +181,11 @@ def main() -> None:
     frontend = requests.get(f"{FRONTEND}/", timeout=15)
     if frontend.status_code != 200:
         fail(f"frontend console returned HTTP {frontend.status_code}: {frontend.text[:300]}")
-    for marker in ("Repo-agent platform", "Repo Agents", "Ask / Citations"):
+    for marker in ("Command Center", "Agent readiness", "Source coverage"):
         if marker not in frontend.text:
             fail(f"frontend console missing marker {marker!r}")
+
+    authenticate()
 
     provider_health = request("GET", "/provider-health", 200)
     if provider_health is None:
@@ -141,15 +197,23 @@ def main() -> None:
         fail(f"hashing provider must be marked dev-quality: {provider_health}")
 
     ts = int(time.time() * 1000)
-    workspace = request("POST", "/workspaces", 201, json={"name": "QA", "slug": f"qa-{ts}"}, headers=HEADERS)
-    ws = workspace["id"]
+    created_new_workspace = AUTH_DEFAULT_WORKSPACE_ID is None
+    if created_new_workspace:
+        workspace = request("POST", "/workspaces", 201, json={"name": "QA", "slug": f"qa-{ts}"}, headers=HEADERS)
+        if workspace is None:
+            fail("workspace create returned empty response")
+        ws = workspace["id"]
+    else:
+        ws = str(AUTH_DEFAULT_WORKSPACE_ID)
     project = request(
         "POST",
         f"/workspaces/{ws}/projects",
         201,
-        json={"name": "SourceBrief QA", "description": "smoke"},
+        json={"name": f"SourceBrief QA {ts}", "description": "smoke"},
         headers=HEADERS,
     )
+    if project is None:
+        fail("project create returned empty response")
     proj = project["id"]
     token_created = request(
         "POST",
@@ -426,8 +490,7 @@ def main() -> None:
             "sourcebrief_cli.main",
             "--api-url",
             BASE,
-            "--email",
-            HEADERS["X-User-Email"],
+            *cli_auth_args(),
             "--json",
             "search",
             "--workspace-id",
@@ -503,6 +566,33 @@ def main() -> None:
         fail(f"agent context missing runtime instruction/citations: {agent_context}")
     if not any(symbol["name"] == "smoke_symbol" for symbol in agent_context.get("symbols", [])):
         fail(f"agent context missing code symbol: {agent_context}")
+
+    runtime_plan = request(
+        "POST",
+        f"/workspaces/{ws}/projects/{proj}/runtime-install-plan",
+        200,
+        json={
+            "target": "hermes",
+            "public_api_url": f"{BASE}?token=must-not-leak",
+            "server_name": "QA Runtime Plan",
+            "resource_ids": [git_res],
+        },
+        headers=HEADERS,
+    )
+    if runtime_plan is None:
+        fail("runtime install plan returned empty response")
+    assert runtime_plan is not None
+    if runtime_plan["server_name"] != "qa-runtime-plan" or runtime_plan["resource_scope"]["resources"][0]["resource_id"] != git_res:
+        fail(f"runtime install plan scope/server mismatch: {runtime_plan}")
+    if "must-not-leak" in json.dumps(runtime_plan) or "${SOURCEBRIEF_TOKEN}" not in runtime_plan["mcp_config"]["content"]:
+        fail(f"runtime install plan did not redact token placeholder correctly: {runtime_plan}")
+    validator_commands = runtime_plan.get("validator_commands") or []
+    if not validator_commands or "--query" not in validator_commands[0]:
+        fail(f"runtime install plan validator command is not runnable: {runtime_plan}")
+    capability_names = {capability["name"] for capability in runtime_plan["capabilities"]}
+    if "sourcebrief.get_agent_context" not in capability_names or "sourcebrief.open_pr" not in capability_names:
+        fail(f"runtime install plan missing MCP capability inventory: {runtime_plan}")
+
     mcp_tools = request(
         "POST",
         f"/mcp/{ws}/{proj}",
@@ -533,8 +623,7 @@ def main() -> None:
             "scripts/hermes_integration.py",
             "--api-url",
             BASE,
-            "--email",
-            HEADERS["X-User-Email"],
+            *hermes_creator_auth_args(),
             "--workspace-id",
             ws,
             "--project-id",
@@ -565,7 +654,7 @@ def main() -> None:
     header = hermes_output["hermes_config"]["mcp_servers"]["sourcebrief"]["headers"]["Authorization"]
     if header != "Bearer <redacted>":
         fail(f"Hermes integration script did not redact config header: {hermes_output}")
-    expected_scopes = {"project:read", "project:query", "resource:read", "review:read"}
+    expected_scopes = {"project:read", "project:query", "resource:read", "review:read", "code:read"}
     actual_scopes = set(hermes_output["api_token"]["scopes"])
     if actual_scopes != expected_scopes:
         fail(f"Hermes token scopes are not read-only default: {hermes_output}")
@@ -581,7 +670,9 @@ def main() -> None:
     # Audit trail covers the mutating actions.
     audit_events = request("GET", f"/workspaces/{ws}/audit-events", 200, headers=HEADERS)
     actions = {event["action"] for event in audit_events}
-    required_actions = {"workspace.create", "project.create", "resource.create", "resource.refresh"}
+    required_actions = {"project.create", "resource.create", "resource.refresh"}
+    if created_new_workspace:
+        required_actions.add("workspace.create")
     missing_actions = required_actions - actions
     if missing_actions:
         fail(f"missing audit actions: {sorted(missing_actions)}")
@@ -592,16 +683,16 @@ def main() -> None:
         headers={"X-User-Email": "intruder@example.com"},
         timeout=15,
     )
-    if denied.status_code != 404:
-        fail(f"unauthorized read should 404, got {denied.status_code}: {denied.text}")
+    if denied.status_code not in {401, 404}:
+        fail(f"unauthorized read should 401/404, got {denied.status_code}: {denied.text}")
     denied_search = requests.post(
         f"{BASE}/workspaces/{ws}/projects/{proj}/search",
         json={"query": MARKER},
         headers={"X-User-Email": "intruder@example.com"},
         timeout=15,
     )
-    if denied_search.status_code != 404:
-        fail(f"unauthorized search should 404, got {denied_search.status_code}: {denied_search.text}")
+    if denied_search.status_code not in {401, 404}:
+        fail(f"unauthorized search should 401/404, got {denied_search.status_code}: {denied_search.text}")
 
     # Frontend health is reachable in the composed stack.
     web = requests.get(f"{FRONTEND}/api/health", timeout=15)
@@ -610,7 +701,7 @@ def main() -> None:
 
     print(
         "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, "
-        "CLI search, agent profile, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, Hermes integration script, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "CLI search, agent profile, runtime install plan, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, Hermes integration script, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 

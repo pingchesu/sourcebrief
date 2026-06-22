@@ -46,7 +46,7 @@ lint: venv web-deps
 	npm --prefix apps/web run lint
 
 typecheck: venv web-deps
-	$(BIN)/mypy apps packages scripts --ignore-missing-imports --follow-imports=silent
+	$(BIN)/python -m mypy apps packages scripts --ignore-missing-imports --follow-imports=silent
 	npm --prefix apps/web run lint
 
 test: venv

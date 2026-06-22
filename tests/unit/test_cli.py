@@ -46,6 +46,9 @@ class FakeClient:
             return [{"project_id": "proj-1", "name": "SourceBrief repo", "resource_count": 1}]
         if method == "GET" and path == "/workspaces/ws-1/projects/proj-1/agent-profile":
             return {"project_id": "proj-1", "name": "SourceBrief repo", "graph_node_count": 3}
+        if method == "POST" and path == "/workspaces/ws-1/projects/proj-1/runtime-install-plan":
+            assert body is not None
+            return {"target": body["target"], "resource_scope": {"resources": body["resource_ids"] or []}}
         if method == "GET" and path.endswith("/graph?limit=50"):
             return {"node_count": 2, "edge_count": 1, "nodes": [], "edges": []}
         if method == "POST" and path == "/workspaces/ws-1/api-tokens":
@@ -198,6 +201,48 @@ def test_agent_registry_and_resource_graph_commands(monkeypatch, capsys):
         == 0
     )
     assert json.loads(capsys.readouterr().out)["edge_count"] == 1
+
+
+def test_runtime_plan_command_builds_dry_run_request(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "runtime",
+                "plan",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--target",
+                "hermes",
+                "--public-api-url",
+                "https://sourcebrief.example.com",
+                "--server-name",
+                "SourceBrief Demo",
+                "--resource-id",
+                "res-1",
+                "--no-optional-tools",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["target"] == "hermes"
+    client = FakeClient.instances[0]
+    assert client.calls[0] == (
+        "POST",
+        "/workspaces/ws-1/projects/proj-1/runtime-install-plan",
+        {
+            "target": "hermes",
+            "public_api_url": "https://sourcebrief.example.com",
+            "server_name": "SourceBrief Demo",
+            "resource_ids": ["res-1"],
+            "include_optional_tools": False,
+        },
+        None,
+    )
 
 
 def test_token_commands_and_bearer_client(monkeypatch, capsys):

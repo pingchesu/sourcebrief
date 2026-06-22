@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import re
 import time
+import tomllib
 import uuid
 from uuid import UUID
 
@@ -43,15 +46,24 @@ def make_project(client: TestClient, prefix: str) -> tuple[dict[str, str], str, 
     return headers, workspace_id, project.json()["id"]
 
 
-def add_doc(client: TestClient, workspace_id: str, project_id: str, headers: dict[str, str]) -> str:
+def add_doc(
+    client: TestClient,
+    workspace_id: str,
+    project_id: str,
+    headers: dict[str, str],
+    *,
+    name: str = "Agent Runtime Doc",
+    uri: str = "doc://agent-runtime",
+    content: str = "# falconagent agent runtime\n\ndef runtime_symbol():\n    return 'falconagent'\n",
+) -> str:
     res = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/resources",
         json={
             "type": "markdown",
-            "name": "Agent Runtime Doc",
-            "uri": "doc://agent-runtime",
+            "name": name,
+            "uri": uri,
             "source_config": {
-                "content": "# falconagent agent runtime\n\ndef runtime_symbol():\n    return 'falconagent'\n",
+                "content": content,
                 "path": "runtime.py",
             },
         },
@@ -164,6 +176,138 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
     result = call.json()["result"]
     assert result["structuredContent"]["runtime"] == "codex"
     assert "falconagent" in result["structuredContent"]["context"]
+
+
+def test_runtime_install_plan_is_redacted_live_and_permission_scoped() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "m30-runtime")
+    resource_id = add_doc(
+        client,
+        workspace_id,
+        project_id,
+        headers,
+        name="Runtime Primary",
+        uri="doc://runtime-primary",
+        content="# runtime primary\n\nThe runtime install plan should cite this project resource.",
+    )
+    other_resource_id = add_doc(
+        client,
+        workspace_id,
+        project_id,
+        headers,
+        name="Runtime Other",
+        uri="doc://runtime-other",
+        content="# runtime other\n\nThis resource is outside the scoped token.",
+    )
+
+    plan = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/runtime-install-plan",
+        json={
+            "target": "hermes",
+            "public_api_url": "https://alice:SECRET@sourcebrief.example.com/api?token=SECRET#frag",
+            "server_name": "SourceBrief Runtime Demo",
+            "resource_ids": [resource_id],
+        },
+        headers=headers,
+    )
+    assert plan.status_code == 200, plan.text
+    body = plan.json()
+    assert body["mode"] == "dry_run_plan"
+    assert body["server_name"] == "sourcebrief-runtime-demo"
+    assert body["endpoints"]["api_base_url"] == "https://sourcebrief.example.com/api"
+    assert "SECRET" not in str(body)
+    assert "alice" not in str(body)
+    assert body["required_scopes"] == ["project:read", "project:query", "resource:read", "review:read", "code:read"]
+    assert body["suggested_token_request"]["allowed_resource_ids"] == [resource_id]
+    assert "${" in body["mcp_config"]["content"]
+    assert not re.search(r"cs_[A-Za-z0-9_-]{20,}", body["mcp_config"]["content"])
+    assert body["resource_scope"]["resources"][0]["name"] == "Runtime Primary"
+    assert "--query" in body["validator_commands"][0]
+    assert "--allow-empty" not in body["validator_commands"][0]
+
+    empty_plan = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/runtime-install-plan",
+        json={"target": "hermes", "resource_ids": []},
+        headers=headers,
+    )
+    assert empty_plan.status_code == 200, empty_plan.text
+    empty_body = empty_plan.json()
+    assert empty_body["resource_scope"] == {"mode": "selected_resources", "resources": []}
+    assert empty_body["suggested_token_request"]["allowed_resource_ids"] == []
+    assert "--allow-empty" in empty_body["validator_commands"][0]
+
+    claude_plan = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/runtime-install-plan",
+        json={"target": "claude", "server_name": "sourcebrief.prod", "public_api_url": "https://sourcebrief.example.com"},
+        headers=headers,
+    )
+    assert claude_plan.status_code == 200, claude_plan.text
+    claude_body = claude_plan.json()
+    claude_config = json.loads(claude_body["mcp_config"]["content"])
+    claude_server = claude_config["mcpServers"]["sourcebrief.prod"]
+    assert claude_server["type"] == "http"
+    assert claude_server["url"] == claude_body["endpoints"]["mcp_url"]
+    assert claude_server["headers"] == {"Authorization": "Bearer ${SOURCEBRIEF_TOKEN}"}
+
+    codex_plan = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/runtime-install-plan",
+        json={"target": "codex", "server_name": "sourcebrief.prod", "public_api_url": "https://sourcebrief.example.com"},
+        headers=headers,
+    )
+    assert codex_plan.status_code == 200, codex_plan.text
+    codex_body = codex_plan.json()
+    codex_content = codex_body["mcp_config"]["content"]
+    assert '[mcp_servers."sourcebrief.prod"]' in codex_content
+    codex_server = tomllib.loads(codex_content)["mcp_servers"]["sourcebrief.prod"]
+    assert codex_server["url"] == codex_body["endpoints"]["mcp_url"]
+    assert codex_server["bearer_token_env_var"] == "SOURCEBRIEF_TOKEN"
+    assert "headers" not in codex_server
+
+    tools = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        headers=headers,
+    )
+    assert tools.status_code == 200, tools.text
+    tool_names = {tool["name"] for tool in tools.json()["result"]["tools"]}
+    plan_tool_names = {capability["name"] for capability in body["capabilities"]}
+    assert plan_tool_names == tool_names
+    patch_capability = next(capability for capability in body["capabilities"] if capability["name"] == "sourcebrief.generate_patch")
+    assert patch_capability["enabled"] is False
+    assert patch_capability["policy"] == "opt_in_disabled_by_default"
+
+    token_response = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        json={
+            "name": "runtime scoped",
+            "scopes": body["required_scopes"],
+            "allowed_project_ids": [project_id],
+            "allowed_resource_ids": [resource_id],
+        },
+        headers=headers,
+    )
+    assert token_response.status_code == 201, token_response.text
+    runtime_token = token_response.json()["token"]
+    bearer = {"Authorization": f"Bearer {runtime_token}"}
+
+    scoped_plan = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/runtime-install-plan",
+        json={"target": "codex", "public_api_url": "https://sourcebrief.example.com"},
+        headers=bearer,
+    )
+    assert scoped_plan.status_code == 200, scoped_plan.text
+    scoped_body = scoped_plan.json()
+    assert scoped_body["resource_scope"]["mode"] == "token_allowed_resources"
+    assert [resource["resource_id"] for resource in scoped_body["resource_scope"]["resources"]] == [resource_id]
+    assert runtime_token not in str(scoped_body)
+
+    denied = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/runtime-install-plan",
+        json={"target": "hermes", "resource_ids": [other_resource_id]},
+        headers=bearer,
+    )
+    assert denied.status_code == 404
 
 
 def test_agent_registry_respects_private_project_membership() -> None:

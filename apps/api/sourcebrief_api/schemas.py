@@ -139,6 +139,66 @@ class AgentProfileRead(BaseModel):
     updated_at: datetime | None = None
 
 
+class RuntimeInstallPlanRequest(BaseModel):
+    target: str = Field(pattern=r"^(hermes|claude|codex)$")
+    public_api_url: str | None = None
+    server_name: str | None = Field(default=None, min_length=1, max_length=80)
+    resource_ids: list[UUID] | None = None
+    include_optional_tools: bool = True
+
+
+class RuntimeInstallPlanEndpoint(BaseModel):
+    api_base_url: str
+    mcp_url: str
+    agent_context_url: str
+    agent_pack_url: str
+
+
+class RuntimeInstallPlanConfig(BaseModel):
+    format: str
+    content: str
+
+
+class RuntimeInstallPlanCapability(BaseModel):
+    name: str
+    description: str
+    required: bool
+    enabled: bool
+    policy: str
+
+
+class RuntimeInstallPlanResource(BaseModel):
+    resource_id: UUID
+    name: str
+    type: str
+    status: str
+    current_snapshot_id: UUID | None = None
+
+
+class RuntimeInstallPlanScope(BaseModel):
+    mode: str
+    resources: list[RuntimeInstallPlanResource]
+
+
+class RuntimeInstallPlanResponse(BaseModel):
+    target: str
+    workspace_id: UUID
+    project_id: UUID
+    project_name: str
+    generated_at: datetime
+    mode: str
+    server_name: str
+    endpoints: RuntimeInstallPlanEndpoint
+    required_scopes: list[str]
+    suggested_token_request: dict[str, Any]
+    mcp_config: RuntimeInstallPlanConfig
+    validator_commands: list[str]
+    capabilities: list[RuntimeInstallPlanCapability]
+    resource_scope: RuntimeInstallPlanScope
+    warnings: list[str]
+    rollback_steps: list[str]
+
+
 class ResourceCreate(BaseModel):
     type: str = Field(min_length=1)
     name: str = Field(min_length=1)
