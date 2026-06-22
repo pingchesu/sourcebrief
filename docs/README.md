@@ -33,6 +33,8 @@ This directory contains user docs, operator docs, architecture notes, and produc
 
 ## RFCs and implementation specs
 
+- [Codebase Memory MCP reference spec](CODEBASE_MEMORY_MCP_REFERENCE_SPEC.md) - follow-up roadmap for easy runtime onboarding, cross-repo context, architecture graph views, service-link candidates, and indexing/search POCs inspired by `DeusData/codebase-memory-mcp`.
+
 Context Artifact Compiler specs live in [`context-artifact-compiler/`](context-artifact-compiler/):
 
 - [A1 Manifest model](context-artifact-compiler/A1-manifest-model-spec.md)
