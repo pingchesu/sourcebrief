@@ -28,7 +28,13 @@ class FakeClient:
     ) -> Any:
         self.calls.append((method, path, body, expected))
         if method == "POST" and path.endswith("/resources"):
-            return {"id": "res-1", "name": body["name"], "type": body["type"], "uri": body["uri"], "status": "created"}
+            return {
+                "id": "res-1",
+                "name": body["name"],
+                "type": body["type"],
+                "uri": body["uri"],
+                "status": "created",
+            }
         if method == "POST" and path.endswith("/refresh"):
             return {"id": "run-1", "status": "queued"}
         if method == "GET" and path == "/workspaces/ws-1/index-runs/run-1":
@@ -41,19 +47,29 @@ class FakeClient:
                 "embeddings_created": 4,
             }
         if method == "POST" and path.endswith("/search"):
-            return {"query": body["query"], "count": 1, "hits": [{"path": "README.md", "snippet": "demo"}]}
+            return {
+                "query": body["query"],
+                "count": 1,
+                "hits": [{"path": "README.md", "snippet": "demo"}],
+            }
         if method == "GET" and path == "/workspaces/ws-1/agents":
             return [{"project_id": "proj-1", "name": "SourceBrief repo", "resource_count": 1}]
         if method == "GET" and path == "/workspaces/ws-1/projects/proj-1/agent-profile":
             return {"project_id": "proj-1", "name": "SourceBrief repo", "graph_node_count": 3}
         if method == "POST" and path == "/workspaces/ws-1/projects/proj-1/runtime-install-plan":
             assert body is not None
-            return {"target": body["target"], "resource_scope": {"resources": body["resource_ids"] or []}}
+            return {
+                "target": body["target"],
+                "resource_scope": {"resources": body["resource_ids"] or []},
+            }
         if method == "GET" and path.endswith("/graph?limit=50"):
             return {"node_count": 2, "edge_count": 1, "nodes": [], "edges": []}
         if method == "POST" and path == "/workspaces/ws-1/api-tokens":
             assert body is not None
-            return {"token": "cs_secret", "api_token": {"id": "tok-1", "name": body["name"], "scopes": body["scopes"]}}
+            return {
+                "token": "cs_secret",
+                "api_token": {"id": "tok-1", "name": body["name"], "scopes": body["scopes"]},
+            }
         if method == "GET" and path == "/workspaces/ws-1/api-tokens":
             return [{"id": "tok-1", "name": "Hermes", "scopes": ["project:query"]}]
         if method == "DELETE" and path == "/workspaces/ws-1/api-tokens/tok-1":
@@ -63,7 +79,13 @@ class FakeClient:
         if method == "POST" and path.endswith("/purge"):
             return {"resource_id": "res-1", "purged": True, "counts": {"resources": 1}}
         if method == "POST" and path.endswith("/scheduled-refreshes?limit=10&dry_run=true"):
-            return {"scanned": 1, "enqueued": 1, "resource_ids": ["res-1"], "skipped_active": [], "dry_run": True}
+            return {
+                "scanned": 1,
+                "enqueued": 1,
+                "resource_ids": ["res-1"],
+                "skipped_active": [],
+                "dry_run": True,
+            }
         return {"status": "ok"}
 
 
@@ -119,7 +141,10 @@ def test_add_repo_builds_git_resource_and_waits(monkeypatch, capsys):
             "max_repo_files": 25,
         },
     }
-    assert client.calls[1][0:2] == ("POST", "/workspaces/ws-1/projects/proj-1/resources/res-1/refresh")
+    assert client.calls[1][0:2] == (
+        "POST",
+        "/workspaces/ws-1/projects/proj-1/resources/res-1/refresh",
+    )
     assert client.calls[2][0:2] == ("GET", "/workspaces/ws-1/index-runs/run-1")
     output = capsys.readouterr().out
     assert "Resource" in output
@@ -181,7 +206,10 @@ def test_agent_registry_and_resource_graph_commands(monkeypatch, capsys):
     assert cli_main(["--json", "agent", "list", "--workspace-id", "ws-1"]) == 0
     assert json.loads(capsys.readouterr().out)[0]["project_id"] == "proj-1"
 
-    assert cli_main(["--json", "agent", "profile", "--workspace-id", "ws-1", "--project-id", "proj-1"]) == 0
+    assert (
+        cli_main(["--json", "agent", "profile", "--workspace-id", "ws-1", "--project-id", "proj-1"])
+        == 0
+    )
     assert json.loads(capsys.readouterr().out)["graph_node_count"] == 3
 
     assert (
@@ -288,7 +316,10 @@ def test_token_commands_and_bearer_client(monkeypatch, capsys):
     assert cli_main(["--json", "token", "list", "--workspace-id", "ws-1"]) == 0
     assert json.loads(capsys.readouterr().out)[0]["id"] == "tok-1"
 
-    assert cli_main(["--json", "token", "revoke", "--workspace-id", "ws-1", "--token-id", "tok-1"]) == 0
+    assert (
+        cli_main(["--json", "token", "revoke", "--workspace-id", "ws-1", "--token-id", "tok-1"])
+        == 0
+    )
     assert json.loads(capsys.readouterr().out)["id"] == "tok-1"
 
 
@@ -433,3 +464,41 @@ def test_resource_lifecycle_cli_commands(monkeypatch, capsys):
         "POST",
         "/workspaces/ws-1/projects/proj-1/scheduled-refreshes?limit=10&dry_run=true",
     )
+
+
+def test_hermes_integration_allow_empty_creates_empty_resource_allowlist(monkeypatch):
+    module = importlib.import_module("scripts.hermes_integration")
+    calls: list[dict[str, Any]] = []
+
+    def fake_request_json(method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        calls.append({"method": method, "url": url, **kwargs})
+        return {
+            "token": "cs_secret",
+            "api_token": {
+                "scopes": ["project:read"],
+                "allowed_project_ids": ["proj-1"],
+                "allowed_resource_ids": [],
+            },
+        }
+
+    monkeypatch.setattr(module, "request_json", fake_request_json)
+    args = module.build_parser().parse_args(
+        [
+            "--workspace-id",
+            "ws-1",
+            "--project-id",
+            "proj-1",
+            "--query",
+            "demo",
+            "--allow-empty",
+            "--scope",
+            "project:read",
+        ]
+    )
+    args.api_url = args.api_url.rstrip("/")
+    args.public_api_url = None
+    args.scope = module.split_scopes(args.scope)
+
+    module.create_token(args)
+
+    assert calls[0]["json"]["allowed_resource_ids"] == []

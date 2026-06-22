@@ -151,11 +151,14 @@ def create_token(args: argparse.Namespace) -> tuple[str, dict[str, Any] | None]:
     if args.token:
         return args.token, None
     headers = bearer_headers(args.admin_token) if args.admin_token else {"X-User-Email": args.email, "Content-Type": "application/json"}
+    allowed_resource_ids = args.resource_id
+    if allowed_resource_ids is None and args.allow_empty:
+        allowed_resource_ids = []
     payload: dict[str, Any] = {
         "name": args.token_name,
         "scopes": args.scope,
         "allowed_project_ids": [args.project_id],
-        "allowed_resource_ids": args.resource_id or None,
+        "allowed_resource_ids": allowed_resource_ids,
     }
     created = request_json(
         "POST",
