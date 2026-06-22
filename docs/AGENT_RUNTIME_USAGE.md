@@ -226,6 +226,8 @@ sourcebrief --json agent profile --workspace-id "$WORKSPACE_ID" --project-id "$P
 MCP is the main live integration. It lets an agent ask SourceBrief follow-up
 questions during a task instead of making one giant context request at the start.
 
+For a safer copyable setup path, start with [Runtime install plan](RUNTIME_INSTALL_PLAN.md). It shows the MCP URL, runtime-specific config shape, required scopes, validation command, and rollback steps without silently editing local runtime profiles.
+
 The useful pattern is:
 
 ```text
