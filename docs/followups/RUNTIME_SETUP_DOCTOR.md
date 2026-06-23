@@ -32,9 +32,9 @@ Runtime setup is safe but too procedural: users create tokens, generate plans, v
 
 ## Acceptance criteria
 
-- `sourcebrief doctor` checks API reachability, selected/default IDs if available, auth mode, project/resource reachability, and MCP context path.
+- `sourcebrief doctor` checks API reachability, selected/default IDs if available, auth mode reporting, project/resource reachability, and MCP context path; failed checks exit non-zero.
 - `sourcebrief runtime setup hermes --dry-run` produces a readable plan and validator guidance.
-- `sourcebrief token create-runtime --context-only` and `--read-code` generate correct scope sets.
+- `sourcebrief token create-runtime --context-only` and `--read-code` generate correct scope sets and require an explicit allowlist or `--workspace-wide`.
 - Existing `runtime plan/apply/rollback/validate` behavior remains compatible.
 - Docs show when to use doctor/setup vs manual plan commands.
 

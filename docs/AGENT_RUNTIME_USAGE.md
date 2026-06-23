@@ -203,7 +203,7 @@ sourcebrief --json token create-runtime \
   --resource-id "$RESOURCE_ID"
 ```
 
-Use `--context-only` instead of `--read-code` when the runtime only needs cited context and not remote file/symbol/grep drilldown.
+Use `--context-only` instead of `--read-code` when the runtime only needs cited context and not remote file/symbol/grep drilldown. `create-runtime` requires an explicit project/resource allowlist by default; pass `--workspace-wide` only when you intentionally want a workspace-wide runtime token.
 
 The plaintext token is returned once. Store it in the runtime's secret manager or environment, not in Git. Treat local runtime config, generated plans, receipts, downloaded/generated agent packs, and cached context as sensitive workspace artifacts because they can expose endpoint URLs, project/resource IDs, source paths, and citations even when token values are not present:
 

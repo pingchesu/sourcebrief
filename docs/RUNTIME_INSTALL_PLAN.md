@@ -75,7 +75,7 @@ sourcebrief --json token create-runtime \
   --resource-id "$RESOURCE_ID"
 ```
 
-Use `--context-only` if the runtime only needs cited context and not remote code drilldown tools.
+Use `--context-only` if the runtime only needs cited context and not remote code drilldown tools. `create-runtime` requires at least one explicit project/resource allowlist by default; pass `--workspace-wide` only when you intentionally want a token that can read/query the whole workspace.
 
 The plaintext token is returned once. Store it in the runtime secret store or an environment variable such as `SOURCEBRIEF_TOKEN`; do not commit it. API tokens cannot mint child tokens in shared deployments. See [Agent runtime usage](AGENT_RUNTIME_USAGE.md#auth-for-agents) for the longer auth guidance.
 
