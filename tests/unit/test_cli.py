@@ -384,6 +384,39 @@ def test_cli_selected_defaults_do_not_affect_token_scope_project_ids(monkeypatch
     assert body["scopes"] == ["project:query"]
 
 
+def test_token_create_runtime_presets(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "token",
+                "create-runtime",
+                "--workspace-id",
+                "ws-1",
+                "--name",
+                "Hermes Runtime",
+                "--project-id",
+                "proj-1",
+                "--read-code",
+            ]
+        )
+        == 0
+    )
+    body = FakeClient.instances[-1].calls[0][2]
+    assert body is not None
+    assert body["name"] == "Hermes Runtime"
+    assert body["scopes"] == ["project:read", "project:query", "resource:read", "review:read", "code:read"]
+    assert body["allowed_project_ids"] == ["proj-1"]
+    capsys.readouterr()
+
+    assert cli_main(["--json", "token", "create-runtime", "--workspace-id", "ws-1", "--context-only"]) == 0
+    body = FakeClient.instances[-1].calls[0][2]
+    assert body is not None
+    assert body["scopes"] == ["project:read", "project:query", "resource:read", "review:read"]
+
+
 def test_cli_use_clear_recovers_from_invalid_config(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     config_path = tmp_path / "sourcebrief-config.json"
@@ -788,6 +821,56 @@ def test_runtime_plan_output_includes_apply_metadata(monkeypatch, capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["schema_version"] == cli.runtime_apply.PLAN_SCHEMA_VERSION
     assert data["plan_digest"].startswith("sha256:")
+
+
+def test_doctor_uses_selected_defaults_and_optional_mcp_context(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-1", "project_id": "proj-1"}), encoding="utf-8")
+
+    assert cli_main(["--json", "doctor", "--query", "hello runtime"] ) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["status"] == "passed"
+    assert [check["name"] for check in data["checks"]] == ["api", "auth", "project", "mcp_context"]
+    client = FakeClient.instances[-1]
+    assert ("GET", "/readyz", None, None) in client.calls
+    assert any(call[1] == "/mcp/ws-1/proj-1" for call in client.calls)
+
+
+def test_runtime_setup_generates_plan_preview_without_apply(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    plan_out = tmp_path / "runtime-plan.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-1", "project_id": "proj-1"}), encoding="utf-8")
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "runtime",
+                "setup",
+                "hermes",
+                "--public-api-url",
+                "https://sourcebrief.example.com",
+                "--plan-out",
+                str(plan_out),
+            ]
+        )
+        == 0
+    )
+
+    data = json.loads(capsys.readouterr().out)
+    assert data["status"] == "dry_run_ready"
+    assert data["plan_path"] == str(plan_out)
+    assert data["plan"]["schema_version"] == cli.runtime_apply.PLAN_SCHEMA_VERSION
+    assert data["validation"]["status"] == "not_run"
+    assert plan_out.exists()
+    saved = json.loads(plan_out.read_text(encoding="utf-8"))
+    assert saved["plan_digest"].startswith("sha256:")
+    client = FakeClient.instances[-1]
+    assert client.calls[0][0:2] == ("POST", "/workspaces/ws-1/projects/proj-1/runtime-install-plan")
 
 
 def test_runtime_apply_dry_run_writes_nothing(tmp_path, capsys):

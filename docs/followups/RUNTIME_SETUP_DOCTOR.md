@@ -1,5 +1,14 @@
 # Runtime setup and doctor workflow
 
+## Implementation status
+
+Implemented in this PR:
+
+- `sourcebrief doctor` checks API health, auth mode, selected workspace/project reachability, and optional MCP context smoke tests.
+- `sourcebrief runtime setup hermes` generates a guarded dry-run plan, optionally writes it with `--plan-out`, previews validator commands, and prints next steps without mutating runtime config.
+- `sourcebrief token create-runtime` adds context-only and read-code scope presets.
+- Runtime setup can use `sourcebrief use` selected workspace/project defaults.
+
 ## Problem
 
 Runtime setup is safe but too procedural: users create tokens, generate plans, validate MCP, copy config, restart runtimes, and then separately confirm tool discovery. The safety model is right, but the workflow needs a guided CLI path and one diagnostic command.

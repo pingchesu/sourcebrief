@@ -195,13 +195,15 @@ Do not use the narrowest token for generated agent packs or remote-code drilldow
 Token creation requires user/session authentication with `token:admin`; API tokens cannot mint child tokens. In local dev, the CLI can mint a token when `SOURCEBRIEF_DEV_AUTH=true` is enabled. In shared deployments, use a user-authenticated admin/session flow to mint scoped runtime tokens.
 
 ```bash
-sourcebrief --json token create \
+sourcebrief --json token create-runtime \
   --workspace-id "$WORKSPACE_ID" \
   --name "Hermes SourceBrief token" \
-  --scope project:read,project:query,resource:read,review:read,code:read \
+  --read-code \
   --project-id "$PROJECT_ID" \
   --resource-id "$RESOURCE_ID"
 ```
+
+Use `--context-only` instead of `--read-code` when the runtime only needs cited context and not remote file/symbol/grep drilldown.
 
 The plaintext token is returned once. Store it in the runtime's secret manager or environment, not in Git. Treat local runtime config, generated plans, receipts, downloaded/generated agent packs, and cached context as sensitive workspace artifacts because they can expose endpoint URLs, project/resource IDs, source paths, and citations even when token values are not present:
 

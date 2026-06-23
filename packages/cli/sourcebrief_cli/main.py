@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,8 @@ from sourcebrief_cli import runtime_apply
 
 DEFAULT_API_URL = "http://localhost:18000"
 DEFAULT_EMAIL = "demo@example.com"
+CONTEXT_RUNTIME_SCOPES = ["project:read", "project:query", "resource:read", "review:read"]
+READ_CODE_RUNTIME_SCOPES = [*CONTEXT_RUNTIME_SCOPES, "code:read"]
 
 
 class SourceBriefCliError(RuntimeError):
@@ -127,9 +130,11 @@ def _selected_value(config: dict[str, Any], key: str) -> str | None:
 
 
 def _command_uses_selected_scope(args: argparse.Namespace) -> bool:
-    if args.command in {"ask", "search", "agent-context", "mcp-context"}:
+    if args.command in {"ask", "search", "agent-context", "mcp-context", "doctor"}:
         return True
-    return args.command == "resource" and getattr(args, "resource_command", None) == "list"
+    if args.command == "resource" and getattr(args, "resource_command", None) == "list":
+        return True
+    return args.command == "runtime" and getattr(args, "runtime_command", None) == "setup"
 
 
 def _apply_selected_defaults(args: argparse.Namespace, config: dict[str, Any]) -> None:
@@ -212,6 +217,47 @@ def cmd_status(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
     }
 
 
+def _check_result(name: str, status: str, **extra: Any) -> dict[str, Any]:
+    return {"name": name, "status": status, **extra}
+
+
+def cmd_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    checks: list[dict[str, Any]] = []
+    try:
+        health = client.request("GET", "/readyz")
+        checks.append(_check_result("api", "passed", api_url=args.api_url.rstrip("/"), response=health))
+    except SourceBriefCliError as exc:
+        checks.append(_check_result("api", "failed", api_url=args.api_url.rstrip("/"), error=str(exc)))
+
+    auth_mode = "bearer_token" if args.token else "email_header"
+    checks.append(_check_result("auth", "passed" if args.token or args.email else "warning", mode=auth_mode, email=None if args.token else args.email, token_set=bool(args.token)))
+
+    if args.workspace_id and args.project_id:
+        try:
+            resources = client.request("GET", f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources")
+            checks.append(_check_result("project", "passed", workspace_id=args.workspace_id, project_id=args.project_id, resource_count=len(resources) if isinstance(resources, list) else None))
+        except SourceBriefCliError as exc:
+            checks.append(_check_result("project", "failed", workspace_id=args.workspace_id, project_id=args.project_id, error=str(exc)))
+        if args.query:
+            try:
+                mcp = cmd_mcp_context(client, args)
+                checks.append(_check_result("mcp_context", "passed", query=args.query, has_result=bool(mcp)))
+            except SourceBriefCliError as exc:
+                checks.append(_check_result("mcp_context", "failed", query=args.query, error=str(exc)))
+    else:
+        checks.append(
+            _check_result(
+                "project",
+                "warning",
+                message="workspace/project not selected; run `sourcebrief use --workspace-id ... --project-id ...` or pass IDs",
+            )
+        )
+
+    failed = [check for check in checks if check["status"] == "failed"]
+    warnings = [check for check in checks if check["status"] == "warning"]
+    return {"status": "failed" if failed else "warning" if warnings else "passed", "checks": checks}
+
+
 def cmd_workspace_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     return client.request(
         "POST",
@@ -237,6 +283,22 @@ def cmd_token_create(client: SourceBriefClient, args: argparse.Namespace) -> Any
         body={
             "name": args.name,
             "scopes": _split_csv_or_repeated(args.scope) or [],
+            "allowed_project_ids": _split_csv_or_repeated(args.project_id),
+            "allowed_resource_ids": _split_csv_or_repeated(args.resource_id),
+            "expires_at": args.expires_at,
+        },
+        expected={201},
+    )
+
+
+def cmd_token_create_runtime(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    scopes = READ_CODE_RUNTIME_SCOPES if args.read_code else CONTEXT_RUNTIME_SCOPES
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/api-tokens",
+        body={
+            "name": args.name,
+            "scopes": scopes,
             "allowed_project_ids": _split_csv_or_repeated(args.project_id),
             "allowed_resource_ids": _split_csv_or_repeated(args.resource_id),
             "expires_at": args.expires_at,
@@ -456,7 +518,8 @@ def cmd_mcp_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     )
 
 
-def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
+    _require_scope(args)
     plan = client.request(
         "POST",
         f"/workspaces/{args.workspace_id}/projects/{args.project_id}/runtime-install-plan",
@@ -469,6 +532,49 @@ def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any
         },
     )
     return runtime_apply.attach_plan_metadata(plan)
+
+
+def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    return _runtime_plan_request(client, args)
+
+
+def _validation_preview(plan: dict[str, Any], target: str, max_age_seconds: int) -> dict[str, Any]:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+        json.dump(plan, handle)
+        path = Path(handle.name)
+    try:
+        validation = runtime_apply.read_plan(path, target=target, max_age_seconds=max_age_seconds)
+        return runtime_apply.validate_plan(validation, run=False)
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def cmd_runtime_setup(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    plan = _runtime_plan_request(client, args)
+    validation = _validation_preview(plan, args.target, args.max_age_seconds)
+    if args.plan_out:
+        out = Path(args.plan_out).expanduser()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        plan_path: str | None = str(out)
+    else:
+        plan_path = None
+    return {
+        "status": "dry_run_ready",
+        "target": args.target,
+        "workspace_id": plan.get("workspace_id"),
+        "project_id": plan.get("project_id"),
+        "server_name": plan.get("server_name"),
+        "plan_path": plan_path,
+        "plan": plan,
+        "validation": validation,
+        "next_steps": [
+            "Review the plan and generated MCP config.",
+            "Create/export a runtime token with `sourcebrief token create-runtime`.",
+            "Run `sourcebrief runtime validate --plan <plan.json> --run` after exporting SOURCEBRIEF_TOKEN.",
+            "Apply only with `sourcebrief runtime apply --plan <plan.json> --target hermes --apply` when ready.",
+        ],
+    }
 
 
 def _read_validated_runtime_plan(args: argparse.Namespace) -> runtime_apply.PlanValidation:
@@ -569,6 +675,15 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="show selected CLI defaults and auth mode without secrets")
     status.set_defaults(func=cmd_status)
 
+    doctor = sub.add_parser("doctor", help="check API/auth/project/MCP readiness")
+    doctor.add_argument("--workspace-id", help="workspace ID; defaults to sourcebrief use selection")
+    doctor.add_argument("--project-id", help="project ID; defaults to sourcebrief use selection")
+    doctor.add_argument("--query", help="optional MCP context smoke-test query")
+    doctor.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
+    doctor.add_argument("--resource-id", action="append")
+    doctor.add_argument("--top-k", type=int, default=3)
+    doctor.set_defaults(func=cmd_doctor)
+
     ws = sub.add_parser("workspace", help="workspace commands").add_subparsers(dest="workspace_command")
     ws_create = ws.add_parser("create", help="create a workspace")
     ws_create.add_argument("--name", required=True)
@@ -591,6 +706,17 @@ def build_parser() -> argparse.ArgumentParser:
     token_create.add_argument("--resource-id", action="append", help="allowed resource ID, repeatable or comma-separated")
     token_create.add_argument("--expires-at", help="ISO-8601 timestamp")
     token_create.set_defaults(func=cmd_token_create)
+
+    token_runtime = tokens.add_parser("create-runtime", help="create a preset runtime token")
+    token_runtime.add_argument("--workspace-id", required=True)
+    token_runtime.add_argument("--name", default="SourceBrief runtime")
+    preset = token_runtime.add_mutually_exclusive_group()
+    preset.add_argument("--context-only", dest="read_code", action="store_false", help="project/query/resource/review read scopes only")
+    preset.add_argument("--read-code", dest="read_code", action="store_true", help="include code:read for source drill-down tools")
+    token_runtime.add_argument("--project-id", action="append", help="allowed project ID, repeatable or comma-separated")
+    token_runtime.add_argument("--resource-id", action="append", help="allowed resource ID, repeatable or comma-separated")
+    token_runtime.add_argument("--expires-at", help="ISO-8601 timestamp")
+    token_runtime.set_defaults(func=cmd_token_create_runtime, read_code=False)
 
     token_list = tokens.add_parser("list", help="list API tokens without plaintext secrets")
     token_list.add_argument("--workspace-id", required=True)
@@ -741,6 +867,18 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_plan.add_argument("--resource-id", action="append")
     runtime_plan.add_argument("--no-optional-tools", dest="include_optional_tools", action="store_false")
     runtime_plan.set_defaults(func=cmd_runtime_plan, include_optional_tools=True)
+
+    runtime_setup = runtime.add_parser("setup", help="guided dry-run runtime setup; never writes local config")
+    runtime_setup.add_argument("target", choices=["hermes"])
+    runtime_setup.add_argument("--workspace-id", help="workspace ID; defaults to sourcebrief use selection")
+    runtime_setup.add_argument("--project-id", help="project ID; defaults to sourcebrief use selection")
+    runtime_setup.add_argument("--public-api-url")
+    runtime_setup.add_argument("--server-name")
+    runtime_setup.add_argument("--resource-id", action="append")
+    runtime_setup.add_argument("--no-optional-tools", dest="include_optional_tools", action="store_false")
+    runtime_setup.add_argument("--plan-out", help="write the generated plan JSON to this path")
+    runtime_setup.add_argument("--max-age-seconds", type=int, default=86400)
+    runtime_setup.set_defaults(func=cmd_runtime_setup, include_optional_tools=True)
 
     runtime_detect = runtime.add_parser("detect", help="detect local runtime config paths without writing files")
     runtime_detect.add_argument("--config", help="Hermes config path; defaults to ~/.hermes/config.yaml")
