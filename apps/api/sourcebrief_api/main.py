@@ -9,6 +9,7 @@ import re
 import shlex
 import subprocess
 import zipfile
+from collections import Counter
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
@@ -7916,6 +7917,262 @@ def _runtime_resolve_pack(session: Session, workspace_id: UUID, project_id: UUID
     return version
 
 
+def _sample_counter(counter: Counter[str], limit: int = 20) -> dict[str, int]:
+    return dict(counter.most_common(limit))
+
+
+def _runtime_graph_overview(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    require_scope(principal, "project:query")
+    require_scope(principal, "resource:read")
+    _require_project_access(session, workspace_id, project_id, principal)
+    max_resources = _runtime_limit(args.get("max_resources"), default=20, max_value=50)
+    max_items = _runtime_limit(args.get("max_items"), default=20, max_value=50)
+
+    predicates = [
+        Resource.workspace_id == workspace_id,
+        Resource.project_id == project_id,
+        Resource.deleted_at.is_(None),
+        Resource.archived_at.is_(None),
+    ]
+    if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
+        allowed_ids = list(principal.api_token.allowed_resource_ids)
+        if not allowed_ids:
+            return {
+                "project": {"scope": "authorized_project", "locator": {"workspace_id": str(workspace_id), "project_id": str(project_id)}},
+                "freshness": _runtime_freshness("current"),
+                "resources": [],
+                "graphs": [],
+                "schema_hints": {"node_types": {}, "edge_types": {}},
+                "topology": {"top_directories": [], "entry_like_files": [], "hotspots": []},
+                "merge_graphs": [],
+                "unresolved_reconcile_candidates": [],
+                "stale_or_missing": [],
+                "guidance": "No resources are authorized for this token.",
+                "limits": {"max_resources": max_resources, "max_items": max_items},
+                "truncated": False,
+            }
+        predicates.append(Resource.id.in_(allowed_ids))
+
+    visible = list(
+        session.scalars(
+            select(Resource)
+            .where(*predicates)
+            .order_by(Resource.name.asc())
+            .limit(max_resources + 1)
+        )
+    )
+    truncated = len(visible) > max_resources
+    visible = visible[:max_resources]
+    visible_ids = {resource.id for resource in visible}
+
+    resource_cards: list[dict[str, Any]] = []
+    freshness_resources: list[dict[str, Any]] = []
+    node_types: Counter[str] = Counter()
+    edge_types: Counter[str] = Counter()
+    directories: Counter[str] = Counter()
+    hotspots: Counter[str] = Counter()
+    entries: list[dict[str, Any]] = []
+    graphs: list[dict[str, Any]] = []
+    stale_or_missing: list[dict[str, Any]] = []
+
+    for resource in visible:
+        row = session.execute(
+            select(Graph, GraphVersion)
+            .join(GraphVersion, Graph.current_version_id == GraphVersion.id)
+            .where(
+                Graph.workspace_id == workspace_id,
+                Graph.project_id == project_id,
+                Graph.resource_id == resource.id,
+                Graph.status == "active",
+                GraphVersion.status == GRAPH_VERSION_PUBLISHED,
+            )
+        ).first()
+        graph_payload = None
+        if row:
+            graph, version = row
+            graph_payload = {
+                "kind": "resource",
+                "resource_name": resource.name,
+                "graph_key": graph.graph_key,
+                "title": graph.title,
+                "version": version.version,
+                "version_hash": version.version_hash,
+                "node_count": version.node_count,
+                "edge_count": version.edge_count,
+                "source_snapshot_id": str(version.source_snapshot_id),
+                "status": version.status,
+            }
+            graphs.append(graph_payload)
+            freshness = _runtime_resource_freshness(session, resource, version.source_snapshot_id)
+            freshness_resources.append(freshness)
+            if freshness["status"] != "current":
+                stale_or_missing.append(
+                    {
+                        "resource_name": resource.name,
+                        "status": "stale_published_graph",
+                        "graph_key": graph.graph_key,
+                        "graph_snapshot_id": str(version.source_snapshot_id),
+                        "current_snapshot_id": str(resource.current_snapshot_id) if resource.current_snapshot_id else None,
+                    }
+                )
+            for node_type, count in session.execute(
+                select(GraphNode.node_type, func.count())
+                .where(
+                    GraphNode.workspace_id == workspace_id,
+                    GraphNode.project_id == project_id,
+                    GraphNode.resource_id == resource.id,
+                    GraphNode.source_snapshot_id == version.source_snapshot_id,
+                )
+                .group_by(GraphNode.node_type)
+            ):
+                node_types[str(node_type)] += int(count)
+            for edge_type, count in session.execute(
+                select(GraphEdge.edge_type, func.count())
+                .where(
+                    GraphEdge.workspace_id == workspace_id,
+                    GraphEdge.project_id == project_id,
+                    GraphEdge.resource_id == resource.id,
+                    GraphEdge.source_snapshot_id == version.source_snapshot_id,
+                )
+                .group_by(GraphEdge.edge_type)
+            ):
+                edge_types[str(edge_type)] += int(count)
+            nodes = list(
+                session.scalars(
+                    select(GraphNode)
+                    .where(
+                        GraphNode.workspace_id == workspace_id,
+                        GraphNode.project_id == project_id,
+                        GraphNode.resource_id == resource.id,
+                        GraphNode.source_snapshot_id == version.source_snapshot_id,
+                    )
+                    .order_by(GraphNode.node_type.asc(), GraphNode.label.asc())
+                    .limit(max_items * 10)
+                )
+            )
+            for node in nodes:
+                if node.path and "/" in node.path:
+                    directories[node.path.rsplit("/", 1)[0]] += 1
+                if node.path and node.path.rsplit("/", 1)[-1].lower() in {"readme.md", "main.py", "app.py", "index.ts", "index.tsx", "server.ts", "package.json", "pyproject.toml"}:
+                    entries.append(
+                        {
+                            "resource_name": resource.name,
+                            "path": node.path,
+                            "label": node.label,
+                            "locator": {
+                                "resource_id": str(resource.id),
+                                "source_snapshot_id": str(version.source_snapshot_id),
+                                "path": node.path,
+                            },
+                        }
+                    )
+                hotspots[node.path or node.label] += 1
+        else:
+            freshness_resources.append(_runtime_resource_freshness(session, resource, resource.current_snapshot_id))
+            stale_or_missing.append(
+                {
+                    "resource_name": resource.name,
+                    "status": "missing_published_graph",
+                    "current_snapshot_id": str(resource.current_snapshot_id) if resource.current_snapshot_id else None,
+                }
+            )
+        resource_cards.append(
+            {
+                "name": resource.name,
+                "type": resource.type,
+                "status": resource.status,
+                "current_snapshot_id": str(resource.current_snapshot_id) if resource.current_snapshot_id else None,
+                "graph": graph_payload,
+                "resource_id": str(resource.id),
+            }
+        )
+
+    merge_graphs: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+    merge_rows = session.execute(
+        select(GraphMerge, GraphMergeVersion)
+        .join(GraphMergeVersion, GraphMerge.current_version_id == GraphMergeVersion.id)
+        .where(
+            GraphMerge.workspace_id == workspace_id,
+            GraphMerge.project_id == project_id,
+            GraphMerge.status == "active",
+            GraphMergeVersion.status == GRAPH_MERGE_VERSION_PUBLISHED,
+        )
+        .order_by(GraphMerge.merge_key.asc())
+        .limit(max_resources)
+    ).all()
+    for merge, version in merge_rows:
+        inputs = session.execute(
+            select(GraphMergeInput, Resource)
+            .join(Resource, GraphMergeInput.input_resource_id == Resource.id)
+            .where(GraphMergeInput.graph_merge_version_id == version.id)
+            .order_by(GraphMergeInput.ordinal.asc())
+        ).all()
+        input_resources = [resource for _input, resource in inputs]
+        if not input_resources or not all(resource.id in visible_ids for resource in input_resources):
+            continue
+        payload = {
+            "kind": "merge",
+            "merge_key": merge.merge_key,
+            "title": merge.title,
+            "version": version.version,
+            "version_hash": version.version_hash,
+            "node_count": version.node_count,
+            "edge_count": version.edge_count,
+            "unresolved_candidate_count": version.unresolved_candidate_count,
+            "input_sources": [resource.name for resource in input_resources],
+        }
+        graphs.append(payload)
+        merge_graphs.append(payload)
+        for candidate in session.scalars(
+            select(GraphMergeReconcileCandidate)
+            .where(
+                GraphMergeReconcileCandidate.graph_merge_version_id == version.id,
+                GraphMergeReconcileCandidate.status == "open",
+            )
+            .order_by(GraphMergeReconcileCandidate.confidence.desc())
+            .limit(max_items)
+        ):
+            unresolved.append(
+                {
+                    "merge_key": merge.merge_key,
+                    "candidate_key": candidate.candidate_key,
+                    "candidate_type": candidate.candidate_type,
+                    "confidence": candidate.confidence,
+                    "left": candidate.left_origin_json,
+                    "right": candidate.right_origin_json,
+                }
+            )
+
+    status_value = "missing_graphs" if visible and not graphs else "partial" if stale_or_missing else "current"
+    truncated = truncated or len(entries) > max_items or len(unresolved) > max_items
+    return {
+        "project": {"scope": "authorized_project", "locator": {"workspace_id": str(workspace_id), "project_id": str(project_id)}},
+        "freshness": _runtime_freshness(status_value, resources=freshness_resources),
+        "resources": resource_cards,
+        "graphs": graphs[:max_resources],
+        "schema_hints": {
+            "node_types": _sample_counter(node_types, max_items),
+            "edge_types": _sample_counter(edge_types, max_items),
+        },
+        "topology": {
+            "top_directories": [{"path": path, "count": count} for path, count in directories.most_common(max_items)],
+            "entry_like_files": entries[:max_items],
+            "hotspots": [{"path_or_label": key, "count": count} for key, count in hotspots.most_common(max_items)],
+        },
+        "merge_graphs": merge_graphs,
+        "unresolved_reconcile_candidates": unresolved[:max_items],
+        "stale_or_missing": stale_or_missing[:max_items],
+        "guidance": "Use graph_query for node drilldown, graph_path for published merge graphs, and read_file/read_section with returned locators for evidence.",
+        "limits": {"max_resources": max_resources, "max_items": max_items},
+        "truncated": truncated,
+    }
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/architecture")
+def get_project_architecture(workspace_id: UUID, project_id: UUID, max_resources: int = 20, max_items: int = 20, principal: Principal = Depends(require_principal), session: Session = Depends(get_session)) -> dict[str, Any]:
+    return _runtime_graph_overview(session, workspace_id, project_id, principal, {"max_resources": max_resources, "max_items": max_items})
+
+
 def _runtime_get_graph_inventory(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
     require_scope(principal, "project:query")
     require_scope(principal, "resource:read")
@@ -8276,6 +8533,11 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "source_snapshot_id": {"type": "string"}, "snapshot_section_id": {"type": "string"}, "context_artifact_id": {"type": "string"}, "context_artifact_citation_id": {"type": "string"}, "context_pack_key": {"type": "string"}, "context_pack_version": {"type": "integer"}, "path": {"type": "string"}, "heading": {"type": "string"}, "content_hash": {"type": "string"}, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}, "allow_current_fallback": {"type": "boolean"}}, "required": ["resource_id"]},
         },
         {
+            "name": "sourcebrief.get_architecture",
+            "description": "Return a compact permission-scoped architecture and graph overview before ad hoc search.",
+            "inputSchema": {"type": "object", "properties": {"max_resources": {"type": "integer", "minimum": 1, "maximum": 50}, "max_items": {"type": "integer", "minimum": 1, "maximum": 50}}},
+        },
+        {
             "name": "sourcebrief.get_graph_inventory",
             "description": "Discover authorized published resource graphs and merge graphs by human key/title.",
             "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "kind": {"type": "string", "enum": ["resource", "merge", "all"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}, "cursor": {"type": "string"}}},
@@ -8407,6 +8669,8 @@ async def mcp_endpoint(
                 result = _runtime_search(session, workspace_id, project_id, principal, arguments)
             elif tool_name == "sourcebrief.read_section":
                 result = _runtime_read_section(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "sourcebrief.get_architecture":
+                result = _runtime_graph_overview(session, workspace_id, project_id, principal, arguments)
             elif tool_name == "sourcebrief.get_graph_inventory":
                 result = _runtime_get_graph_inventory(session, workspace_id, project_id, principal, arguments)
             elif tool_name == "sourcebrief.graph_query":
