@@ -82,7 +82,7 @@ export default function SourcesPage() {
   const activeResources = useMemo(() => visibleResources.filter(isActive), [visibleResources]);
   const summary = useMemo(() => ({
     total: activeResources.length,
-    retrievalReady: activeResources.filter((r) => r.retrieval_enabled && r.current_snapshot_id && !isIndexFailed(reviewByResource.get(r.id)?.last_index_status)).length,
+    retrievalReady: activeResources.filter((r) => r.queryable ?? (r.retrieval_enabled && r.current_snapshot_id && !isIndexFailed(reviewByResource.get(r.id)?.last_index_status))).length,
     needsReview: activeResources.filter((r) => r.review_status !== 'approved').length,
     notIndexed: activeResources.filter((r) => !r.current_snapshot_id).length,
     indexFailed: visibleResources.filter((r) => isIndexFailed(reviewByResource.get(r.id)?.last_index_status)).length,
@@ -706,7 +706,16 @@ export default function SourcesPage() {
                 const lastIndex = review?.last_index_status ?? null;
                 const uses = usage ? (usage.hit_count || usage.query_count) : null;
                 return <tr key={resource.id} className={`clickable ${resource.id === selectedResourceId ? 'selected' : ''}`} onClick={() => void selectResource(resource.id)}>
-                  <td><strong>{resource.source_family_label || resource.name}</strong>{resource.version_label ? <div className="muted">{resource.version_label}</div> : null}<div className="toolbar" style={{ gap: 6, marginTop: 4 }}><Chip>{resource.type}</Chip>{resource.status !== 'active' ? <StatusChip value={resource.status} /> : null}</div></td>
+                  <td>
+                    <strong>{resource.source_family_label || resource.name}</strong>
+                    {resource.version_label ? <div className="muted">{resource.version_label}</div> : null}
+                    <div className="toolbar" style={{ gap: 6, marginTop: 4 }}>
+                      <Chip>{resource.type}</Chip>
+                      {resource.coverage_status ? <StatusChip value={resource.coverage_status} /> : null}
+                      {resource.status !== 'active' ? <StatusChip value={resource.status} /> : null}
+                    </div>
+                    {resource.coverage_warnings?.length ? <div className="muted" style={{ color: 'var(--risk)', marginTop: 4 }}>{resource.coverage_warnings[0]}</div> : null}
+                  </td>
                   <td><ReadinessBadge state={readiness(resource, review)} lastIndexStatus={lastIndex} /></td>
                   <td>{fresh.label === '—' ? <span className="muted">—</span> : <span><StatusChip value={fresh.label} />{fresh.ageDays != null ? <div className="code">{fresh.ageDays}d</div> : null}</span>}</td>
                   <td>{lastIndex ? <StatusChip value={lastIndex} /> : <span className="muted">not indexed</span>}</td>
@@ -731,8 +740,10 @@ export default function SourcesPage() {
             </div>
             <div className="grid two">
               <div><div className="label">Type</div><Chip>{selectedResource.type}</Chip></div>
-              <div><div className="label">Retrieval</div><Chip tone={selectedResource.retrieval_enabled ? 'ready' : 'warn'}>{selectedResource.retrieval_enabled ? 'enabled' : 'off'}</Chip></div>
+              <div><div className="label">Retrieval</div><Chip tone={selectedResource.queryable ? 'ready' : selectedResource.retrieval_enabled ? 'warn' : 'warn'}>{selectedResource.queryable ? 'queryable' : selectedResource.retrieval_enabled ? 'not queryable' : 'off'}</Chip></div>
             </div>
+            {selectedResource.coverage_warnings?.length ? <div className="notice error"><strong>Coverage warning</strong>{selectedResource.coverage_warnings.map((warning, index) => <div key={index} className="muted">{warning}</div>)}{selectedReview?.last_index_error_message ? <div className="muted">Last index error: {selectedReview.last_index_error_message}</div> : null}</div> : null}
+            {selectedResource.coverage_status === 'partial' ? <div className="notice"><strong>Partial import budget</strong><div className="muted">{Object.entries(selectedResource.index_diagnostics?.configured_budgets ?? {}).map(([key, value]) => `${key}=${value}`).join(', ') || 'limited import profile'}</div></div> : null}
             <div><div className="label">Source location</div><div className="muted">{selectedResource.uri}</div></div>
             {selectedResource.type === 'folder_bundle' ? <div className="notice">
               <strong>Folder manifest</strong>

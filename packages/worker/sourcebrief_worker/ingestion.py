@@ -596,6 +596,7 @@ def iter_repo_files(
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
     max_files: int = DEFAULT_MAX_REPO_FILES,
     max_total_bytes: int = DEFAULT_MAX_REPO_BYTES,
+    stats: dict[str, int | bool] | None = None,
 ) -> Iterator[tuple[str, str]]:
     """Yield ``(relpath, text)`` for indexable text files under ``root``.
 
@@ -605,6 +606,20 @@ def iter_repo_files(
     prevent attacker-controlled repos from exhausting worker memory/DB/disk.
     """
     root_path = Path(root).resolve()
+    if stats is not None:
+        stats.update(
+            {
+                "max_files": max_files,
+                "max_file_bytes": max_file_bytes,
+                "max_total_bytes": max_total_bytes,
+                "eligible_files_seen": 0,
+                "files_emitted": 0,
+                "bytes_emitted": 0,
+                "skipped_max_file_bytes": 0,
+                "skipped_total_bytes": 0,
+                "truncated_by_max_files": False,
+            }
+        )
     files_seen = 0
     total_bytes = 0
     for dirpath, dirnames, filenames in os.walk(root_path):
@@ -617,6 +632,8 @@ def iter_repo_files(
         )
         for name in sorted(filenames):
             if files_seen >= max_files:
+                if stats is not None:
+                    stats["truncated_by_max_files"] = True
                 return
             full = Path(dirpath) / name
             if full.is_symlink():
@@ -630,9 +647,17 @@ def iter_repo_files(
             rel = full.relative_to(root_path).as_posix()
             if not should_index_path(rel):
                 continue
+            if stats is not None:
+                stats["eligible_files_seen"] = int(stats.get("eligible_files_seen", 0)) + 1
             try:
                 size = full.stat().st_size
-                if size > max_file_bytes or total_bytes + size > max_total_bytes:
+                if size > max_file_bytes:
+                    if stats is not None:
+                        stats["skipped_max_file_bytes"] = int(stats.get("skipped_max_file_bytes", 0)) + 1
+                    continue
+                if total_bytes + size > max_total_bytes:
+                    if stats is not None:
+                        stats["skipped_total_bytes"] = int(stats.get("skipped_total_bytes", 0)) + 1
                     continue
                 data = full.read_bytes()
             except OSError:
@@ -641,6 +666,9 @@ def iter_repo_files(
                 continue
             files_seen += 1
             total_bytes += size
+            if stats is not None:
+                stats["files_emitted"] = files_seen
+                stats["bytes_emitted"] = total_bytes
             yield rel, data.decode("utf-8")
 
 
@@ -894,6 +922,7 @@ def _collect_git(resource: Resource) -> tuple[list[dict], str, str, dict]:
             source_config=config,
         )
         commit = get_commit_sha(clone_dir)
+        file_stats: dict[str, int | bool] = {}
         docs = [
             {
                 "path": rel,
@@ -906,6 +935,7 @@ def _collect_git(resource: Resource) -> tuple[list[dict], str, str, dict]:
                 max_file_bytes=max_file_bytes,
                 max_files=max_files,
                 max_total_bytes=max_total_bytes,
+                stats=file_stats,
             )
         ]
     finally:
@@ -919,6 +949,12 @@ def _collect_git(resource: Resource) -> tuple[list[dict], str, str, dict]:
         "file_count": len(docs),
         "max_files": max_files,
         "max_total_bytes": max_total_bytes,
+        "file_budget_stats": file_stats,
+        "coverage_truncated": bool(
+            file_stats.get("truncated_by_max_files")
+            or file_stats.get("skipped_total_bytes")
+            or file_stats.get("skipped_max_file_bytes")
+        ),
     }
     return docs, commit, "commit_sha", meta
 
@@ -1016,6 +1052,14 @@ def _language_for_path(path: str | None) -> str | None:
         "java": "java",
         "md": "markdown",
     }.get(ext)
+
+
+def _budget_exceeded_message(kind: str, resource_id: object, *, limit_name: str, limit: int, documents_collected: int, created_count: int, retry_hint: str) -> str:
+    return (
+        f"{kind} budget exceeded for resource {resource_id}: "
+        f"{limit_name}={limit}, documents_collected={documents_collected}, {kind}s_created={created_count}. "
+        f"Suggested retry: {retry_hint}"
+    )
 
 
 def _store_chunk_embedding(session: Session, chunk: Chunk) -> None:
@@ -1146,7 +1190,20 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
         doc_hash = content_hash(doc["content"])
         for symbol in extract_code_symbols(doc.get("path"), doc["content"]):
             if symbols_created >= max_symbols:
-                raise RuntimeError(f"symbol budget exceeded for resource {resource.id}")
+                raise RuntimeError(
+                    _budget_exceeded_message(
+                        "symbol",
+                        resource.id,
+                        limit_name="max_symbols",
+                        limit=max_symbols,
+                        documents_collected=len(docs),
+                        created_count=symbols_created,
+                        retry_hint=(
+                            "use a docs-only/source-subpath import, add include/exclude filters, "
+                            "or raise max_symbols after confirming the repo scope is intentional."
+                        ),
+                    )
+                )
             session.add(
                 CodeSymbol(
                     workspace_id=resource.workspace_id,
@@ -1167,7 +1224,20 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
             symbols_created += 1
         for ordinal, piece in enumerate(iter_chunks(doc["content"])):
             if chunks_created >= max_chunks:
-                raise RuntimeError(f"chunk budget exceeded for resource {resource.id}")
+                raise RuntimeError(
+                    _budget_exceeded_message(
+                        "chunk",
+                        resource.id,
+                        limit_name="max_chunks",
+                        limit=max_chunks,
+                        documents_collected=len(docs),
+                        created_count=chunks_created,
+                        retry_hint=(
+                            "lower max_repo_files/max_repo_bytes, use a docs-only/source-subpath import, "
+                            "add include/exclude filters, or raise max_chunks after confirming the repo scope is intentional."
+                        ),
+                    )
+                )
             chunk = Chunk(
                 workspace_id=resource.workspace_id,
                 project_id=resource.project_id,

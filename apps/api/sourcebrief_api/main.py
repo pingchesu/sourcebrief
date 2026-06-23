@@ -3003,8 +3003,49 @@ def _family_manifest_count(session: Session, resource: Resource, principal: Prin
     return len(candidates)
 
 
+def _apply_snapshot_coverage(data: ResourceRead, snapshot_meta: dict | None) -> ResourceRead:
+    meta = snapshot_meta or {}
+    raw_file_stats = meta.get("file_budget_stats")
+    file_stats: dict[str, Any] = raw_file_stats if isinstance(raw_file_stats, dict) else {}
+    truncated = bool(
+        meta.get("coverage_truncated")
+        or file_stats.get("truncated_by_max_files")
+        or file_stats.get("skipped_total_bytes")
+        or file_stats.get("skipped_max_file_bytes")
+    )
+    if not truncated:
+        return data
+    warnings = list(data.coverage_warnings)
+    warning = "current snapshot was truncated by file/byte import budgets; evidence may be partial"
+    if warning not in warnings:
+        warnings.append(warning)
+    budgets = dict(data.index_diagnostics.get("configured_budgets", {}))
+    for key in ("max_files", "max_total_bytes", "max_file_bytes"):
+        if file_stats.get(key) is not None:
+            budgets[key] = file_stats[key]
+        elif meta.get(key) is not None:
+            budgets[key] = meta[key]
+    diagnostics = dict(data.index_diagnostics)
+    diagnostics["configured_budgets"] = budgets
+    diagnostics["file_budget_stats"] = file_stats
+    diagnostics["suggested_retry"] = "retry with narrower include/exclude filters, a source subpath, or an intentional higher import budget"
+    data.coverage_status = "partial" if data.queryable else data.coverage_status
+    data.coverage_warnings = warnings
+    data.index_diagnostics = diagnostics
+    return data
+
+
 def _resource_read(session: Session, resource: Resource, principal: Principal | None = None) -> ResourceRead:
-    data = ResourceRead.model_validate(resource)
+    data = ResourceRead.model_validate(resource, from_attributes=True)
+    if resource.current_snapshot_id is not None:
+        snapshot_meta = session.scalar(
+            select(SourceSnapshot.meta).where(
+                SourceSnapshot.id == resource.current_snapshot_id,
+                SourceSnapshot.workspace_id == resource.workspace_id,
+                SourceSnapshot.project_id == resource.project_id,
+            )
+        )
+        data = _apply_snapshot_coverage(data, snapshot_meta)
     if resource.type.lower() in FOLDER_BUNDLE_RESOURCE_TYPES:
         data.source_family_label = _source_family_label(resource)
         data.version_label = _version_label(resource)
@@ -5286,7 +5327,7 @@ def _resource_review_item(session: Session, resource: Resource) -> ResourceRevie
     last_index = session.execute(
         text(
             """
-            SELECT status, finished_at
+            SELECT status, finished_at, error_message, log_ref
             FROM index_runs
             WHERE workspace_id = :ws AND project_id = :proj AND resource_id = :res
             ORDER BY created_at DESC
@@ -5325,6 +5366,8 @@ def _resource_review_item(session: Session, resource: Resource) -> ResourceRevie
         last_used_at=usage["last_used_at"],
         last_index_status=last_index["status"] if last_index else None,
         last_index_finished_at=last_index["finished_at"] if last_index else None,
+        last_index_error_message=last_index["error_message"] if last_index else None,
+        last_index_log_ref=last_index["log_ref"] if last_index else None,
         stale_reasons=reasons,
     )
 
@@ -7102,6 +7145,104 @@ def _agent_context_suggested_tool_calls(citations: list[AgentContextCitation], q
     return calls
 
 
+def _runtime_safe_index_failure(error_message: str | None) -> str:
+    if not error_message:
+        return "latest index failed; inspect Index activity with read scope for details"
+    lowered = error_message.lower()
+    if "chunk budget exceeded" in lowered:
+        parts = ["latest index failed: chunk budget exceeded"]
+        for key in ("max_chunks", "documents_collected", "chunks_created"):
+            match = re.search(rf"{key}=([0-9]+)", error_message)
+            if match:
+                parts.append(f"{key}={match.group(1)}")
+        parts.append("suggested retry: narrow include/exclude filters, use a source subpath, or intentionally raise max_chunks")
+        return "; ".join(parts)
+    if "symbol budget exceeded" in lowered:
+        parts = ["latest index failed: symbol budget exceeded"]
+        for key in ("max_symbols", "documents_collected", "symbols_created"):
+            match = re.search(rf"{key}=([0-9]+)", error_message)
+            if match:
+                parts.append(f"{key}={match.group(1)}")
+        parts.append("suggested retry: use docs-only/source-subpath import, include/exclude filters, or intentionally raise max_symbols")
+        return "; ".join(parts)
+    return "latest index failed; inspect Index activity with read scope for details"
+
+
+def _resource_coverage_entry(session: Session, resource: Resource) -> dict[str, Any]:
+    read = _resource_read(session, resource)
+    last_index = session.scalar(
+        select(IndexRun)
+        .where(
+            IndexRun.workspace_id == resource.workspace_id,
+            IndexRun.project_id == resource.project_id,
+            IndexRun.resource_id == resource.id,
+        )
+        .order_by(IndexRun.created_at.desc())
+        .limit(1)
+    )
+    entry: dict[str, Any] = {
+        "resource_id": str(resource.id),
+        "name": resource.name,
+        "queryable": read.queryable,
+        "coverage_status": read.coverage_status,
+        "coverage_warnings": read.coverage_warnings,
+        "current_snapshot_id": str(resource.current_snapshot_id) if resource.current_snapshot_id else None,
+        "retrieval_enabled": resource.retrieval_enabled,
+        "configured_budgets": read.index_diagnostics.get("configured_budgets", {}),
+    }
+    if last_index is not None:
+        safe_failure = _runtime_safe_index_failure(last_index.error_message) if last_index.status == "failed" else None
+        entry["last_index"] = {
+            "status": last_index.status,
+            "failure_summary": safe_failure,
+            "documents_seen": last_index.documents_seen,
+            "chunks_created": last_index.chunks_created,
+            "symbols_created": last_index.symbols_created,
+            "embeddings_created": last_index.embeddings_created,
+            "started_at": last_index.started_at.isoformat() if last_index.started_at else None,
+            "finished_at": last_index.finished_at.isoformat() if last_index.finished_at else None,
+        }
+        if safe_failure:
+            entry.setdefault("coverage_warnings", []).append(safe_failure)
+    return entry
+
+
+def _agent_context_resource_coverage(
+    session: Session,
+    *,
+    workspace_id: UUID,
+    project_id: UUID,
+    resource_ids: list[UUID] | None,
+    citations: list[AgentContextCitation],
+    principal: Principal,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    if resource_ids:
+        ids = list(dict.fromkeys(resource_ids))
+        predicates = [Resource.id.in_(ids)]
+    else:
+        ids = []
+        predicates = []
+    resources = list(
+        session.scalars(
+            select(Resource).where(
+                Resource.workspace_id == workspace_id,
+                Resource.project_id == project_id,
+                Resource.deleted_at.is_(None),
+                *predicates,
+            )
+        )
+    )
+    resources = [resource for resource in resources if token_allows_resource(principal, resource.id)]
+    by_id = {resource.id: resource for resource in resources}
+    ordered_ids = ids or [resource.id for resource in resources]
+    coverage = [_resource_coverage_entry(session, by_id[rid]) for rid in ordered_ids if rid in by_id]
+    warnings: list[str] = []
+    for entry in coverage:
+        for warning in entry.get("coverage_warnings", []):
+            warnings.append(f"{entry['name']}: {warning}")
+    return coverage, warnings
+
+
 def _build_pack_agent_context_response(
     session: Session,
     *,
@@ -7164,7 +7305,17 @@ def _build_pack_agent_context_response(
         )
     profile = session.scalar(select(AgentProfile).where(AgentProfile.workspace_id == workspace_id, AgentProfile.project_id == project_id))
     actual_runtime = payload.runtime or (profile.default_runtime if profile else "api")
+    resource_coverage, coverage_warnings = _agent_context_resource_coverage(
+        session,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        resource_ids=payload.resource_ids,
+        citations=citations,
+        principal=principal,
+    )
     instruction_parts = [COMMON_AGENT_INSTRUCTION, RUNTIME_INSTRUCTIONS[actual_runtime], f"Use published Context Pack `{pack_version.pack_key}` v{pack_version.version}. Snapshot pinning is enforced; do not use newer source snapshots for this answer."]
+    if coverage_warnings:
+        instruction_parts.append("Coverage warning: " + " ".join(coverage_warnings))
     if profile and profile.system_prompt:
         instruction_parts.append(profile.system_prompt)
     return AgentContextResponse(
@@ -7177,6 +7328,8 @@ def _build_pack_agent_context_response(
         symbols=[],
         suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query),
         token_budget_hint=max(1, payload.max_chars // 4),
+        resource_coverage=resource_coverage,
+        coverage_warnings=coverage_warnings,
         context_pack_key=pack_version.pack_key,
         context_pack_version=pack_version.version,
         context_pack_version_id=pack_version.id,
@@ -7257,7 +7410,17 @@ def _build_agent_context_response(
         )
     )
     actual_runtime = payload.runtime or (profile.default_runtime if profile else "api")
+    resource_coverage, coverage_warnings = _agent_context_resource_coverage(
+        session,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        resource_ids=payload.resource_ids,
+        citations=citations,
+        principal=principal,
+    )
     instruction_parts = [COMMON_AGENT_INSTRUCTION, RUNTIME_INSTRUCTIONS[actual_runtime]]
+    if coverage_warnings:
+        instruction_parts.append("Coverage warning: " + " ".join(coverage_warnings))
     if profile and profile.system_prompt:
         instruction_parts.append(profile.system_prompt)
     _record_agent_context_usage(
@@ -7278,6 +7441,8 @@ def _build_agent_context_response(
         symbols=symbols,
         suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query),
         token_budget_hint=max(1, payload.max_chars // 4),
+        resource_coverage=resource_coverage,
+        coverage_warnings=coverage_warnings,
     )
 
 

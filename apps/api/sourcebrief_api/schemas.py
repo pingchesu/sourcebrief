@@ -242,6 +242,80 @@ class ResourceRead(BaseModel):
     source_family_label: str | None = None
     version_label: str | None = None
     has_manifest_diff: bool = False
+    queryable: bool = False
+    coverage_status: str = "not_indexed"
+    coverage_warnings: list[str] = Field(default_factory=list)
+    index_diagnostics: dict = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_queryability_and_coverage(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            data = dict(value)
+            source_config = data.get("source_config") or {}
+        else:
+            data = {
+                "id": getattr(value, "id", None),
+                "workspace_id": getattr(value, "workspace_id", None),
+                "project_id": getattr(value, "project_id", None),
+                "type": getattr(value, "type", None),
+                "name": getattr(value, "name", None),
+                "uri": getattr(value, "uri", None),
+                "status": getattr(value, "status", None),
+                "retrieval_enabled": getattr(value, "retrieval_enabled", None),
+                "update_frequency": getattr(value, "update_frequency", None),
+                "current_snapshot_id": getattr(value, "current_snapshot_id", None),
+                "review_status": getattr(value, "review_status", "unreviewed"),
+                "review_note": getattr(value, "review_note", None),
+                "last_reviewed_at": getattr(value, "last_reviewed_at", None),
+                "last_reviewed_by": getattr(value, "last_reviewed_by", None),
+                "archived_at": getattr(value, "archived_at", None),
+                "deleted_at": getattr(value, "deleted_at", None),
+                "next_refresh_at": getattr(value, "next_refresh_at", None),
+                "last_refresh_started_at": getattr(value, "last_refresh_started_at", None),
+                "last_refresh_finished_at": getattr(value, "last_refresh_finished_at", None),
+                "stale_after_days": getattr(value, "stale_after_days", 30),
+            }
+            source_config = getattr(value, "source_config", None) or {}
+        queryable = bool(
+            data.get("retrieval_enabled")
+            and data.get("current_snapshot_id") is not None
+            and data.get("archived_at") is None
+            and data.get("deleted_at") is None
+        )
+        warnings: list[str] = []
+        budgets = {
+            key: source_config.get(key)
+            for key in ("max_file_bytes", "max_repo_files", "max_repo_bytes", "clone_timeout")
+            if source_config.get(key) is not None
+        }
+        limited_keys = [key for key in ("max_file_bytes", "max_repo_files", "max_repo_bytes") if source_config.get(key) is not None]
+        partial = bool(source_config.get("partial") or source_config.get("limited") or source_config.get("import_profile") in {"limited", "limited500", "limited250"} or limited_keys)
+        if not data.get("current_snapshot_id"):
+            warnings.append("resource has no current snapshot and is not queryable yet")
+        if data.get("retrieval_enabled") and not queryable:
+            warnings.append("retrieval is enabled but no retrievable snapshot is available")
+        if data.get("status") == "failed" and queryable:
+            warnings.append("latest refresh failed; existing snapshot remains queryable but may be stale")
+        if partial:
+            warnings.append("resource uses an explicit limited import budget; evidence may be partial")
+        coverage_status = "full"
+        if not queryable:
+            coverage_status = "not_queryable"
+        elif partial or data.get("status") == "failed":
+            coverage_status = "partial"
+        data.setdefault("queryable", queryable)
+        data.setdefault("coverage_status", coverage_status)
+        data.setdefault("coverage_warnings", warnings)
+        data.setdefault(
+            "index_diagnostics",
+            {
+                "configured_budgets": budgets,
+                "limited_budget_keys": limited_keys,
+                "suggested_retry": "retry with narrower include/exclude filters or lower max_repo_files" if partial else None,
+            },
+        )
+        return data
 
 
 class ResourceReviewRequest(BaseModel):
@@ -259,6 +333,8 @@ class ResourceReviewItem(BaseModel):
     last_used_at: datetime | None = None
     last_index_status: str | None = None
     last_index_finished_at: datetime | None = None
+    last_index_error_message: str | None = None
+    last_index_log_ref: str | None = None
     stale_reasons: list[str] = Field(default_factory=list)
 
 
@@ -1184,6 +1260,8 @@ class AgentContextResponse(BaseModel):
     symbols: list[CodeSymbolHit] = Field(default_factory=list)
     suggested_tool_calls: list[dict] = Field(default_factory=list)
     token_budget_hint: int
+    resource_coverage: list[dict] = Field(default_factory=list)
+    coverage_warnings: list[str] = Field(default_factory=list)
     context_pack_key: str | None = None
     context_pack_version: int | None = None
     context_pack_version_id: UUID | None = None

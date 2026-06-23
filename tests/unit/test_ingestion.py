@@ -8,6 +8,7 @@ from urllib.error import HTTPError
 import pytest
 
 from sourcebrief_worker.ingestion import (
+    _budget_exceeded_message,
     _coerce_documents,
     chunk_text,
     content_hash,
@@ -32,6 +33,25 @@ def test_content_hash_is_stable_and_sensitive() -> None:
 def test_chunk_text_empty_and_whitespace() -> None:
     assert chunk_text("") == []
     assert chunk_text("   \n\t  ") == []
+
+
+def test_budget_exceeded_message_is_actionable() -> None:
+    message = _budget_exceeded_message(
+        "chunk",
+        "res-1",
+        limit_name="max_chunks",
+        limit=5000,
+        documents_collected=1200,
+        created_count=5000,
+        retry_hint="lower max_repo_files or use a docs-only/source-subpath import.",
+    )
+
+    assert "chunk budget exceeded" in message
+    assert "max_chunks=5000" in message
+    assert "documents_collected=1200" in message
+    assert "chunks_created=5000" in message
+    assert "Suggested retry" in message
+    assert "source-subpath" in message
 
 
 def test_chunk_text_short_returns_single_chunk() -> None:
@@ -145,11 +165,25 @@ def test_iter_repo_files_filters_and_is_deterministic(tmp_path) -> None:
     (tmp_path / "logo.bin").write_bytes(b"\x00\x01\x02\x03binary")
     (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
 
-    results = list(iter_repo_files(tmp_path, max_file_bytes=50))
+    stats: dict[str, int | bool] = {}
+    results = list(iter_repo_files(tmp_path, max_file_bytes=50, stats=stats))
     paths = [rel for rel, _ in results]
     assert paths == ["README.md", "src/app.py"]
     contents = dict(results)
     assert contents["README.md"] == "hello quokka"
+    assert stats["files_emitted"] == 2
+    assert stats["skipped_max_file_bytes"] == 1
+
+
+def test_iter_repo_files_reports_file_limit_truncation(tmp_path) -> None:
+    (tmp_path / "a.md").write_text("a", encoding="utf-8")
+    (tmp_path / "b.md").write_text("b", encoding="utf-8")
+    stats: dict[str, int | bool] = {}
+
+    results = list(iter_repo_files(tmp_path, max_files=1, stats=stats))
+
+    assert [rel for rel, _ in results] == ["a.md"]
+    assert stats["truncated_by_max_files"] is True
 
 
 def test_iter_repo_files_skips_escaping_symlinks(tmp_path) -> None:

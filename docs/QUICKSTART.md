@@ -103,6 +103,15 @@ Use the UI first; it is the clearest product path.
 
 The product is working when the answer is not just plausible. It should be inspectable.
 
+### Large repo behavior
+
+Real repos may exceed the default import budgets for chunks or code symbols. SourceBrief should not leave that ambiguous:
+
+- Sources with no current snapshot are marked **not queryable** even if retrieval is enabled.
+- Failed index runs show the budget that failed, the configured limit, and a suggested retry path.
+- Limited/fallback imports are marked **partial**; generated context packets include coverage warnings so agents do not over-trust a subset corpus.
+- If a repo is too broad, retry with a smaller `max_repo_files` / `max_repo_bytes`, a docs-only or source-subpath import, include/exclude filters, or an intentional higher budget.
+
 ## 5. CLI experiments
 
 The CLI exists for local automation and agent integration tests. It supports two auth modes:

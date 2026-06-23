@@ -52,9 +52,13 @@ export type Resource = {
   source_family_label?: string | null;
   version_label?: string | null;
   has_manifest_diff?: boolean;
+  queryable?: boolean;
+  coverage_status?: string;
+  coverage_warnings?: string[];
+  index_diagnostics?: { configured_budgets?: Record<string, number>; limited_budget_keys?: string[]; suggested_retry?: string | null };
 };
 
-export type ReviewItem = { resource: Resource; freshness_status: string; freshness_age_days: number | null; usage_count: number; last_used_at: string | null; last_index_status: string | null; last_index_finished_at: string | null; stale_reasons: string[] };
+export type ReviewItem = { resource: Resource; freshness_status: string; freshness_age_days: number | null; usage_count: number; last_used_at: string | null; last_index_status: string | null; last_index_finished_at: string | null; last_index_error_message?: string | null; last_index_log_ref?: string | null; stale_reasons: string[] };
 export type UsageItem = { resource_id: string; query_count: number; hit_count: number; context_packet_count: number; last_used_at: string | null };
 export type AgentFile = { path: string; kind: string; description: string; content: string };
 export type AgentFilesResponse = { workspace_id: string; project_id: string; generated_at: string; resource_count: number; repo_agent_count: number; files: AgentFile[] };
@@ -108,6 +112,7 @@ export type FolderBundleUploadResponse = { resource: Resource; index_run: IndexR
 export type GraphRead = { node_count: number; edge_count: number; nodes: Array<{ id: string; resource_id: string; snapshot_id: string; node_key: string; node_type: string; label: string; path: string | null; metadata: Record<string, unknown> }>; edges: Array<{ id: string; resource_id: string; snapshot_id: string; source_node_id: string; target_node_id: string; edge_type: string; weight: number; metadata: Record<string, unknown> }> };
 export type CodeSymbol = { resource_id: string; snapshot_id: string; path: string; name: string; kind: string; language: string; line_start: number; line_end: number; signature: string; content_hash: string; version: string; version_kind: string; commit: string | null; score: number };
 export type AgentCitation = { resource_id: string; snapshot_id: string; chunk_id: string; path: string | null; title: string | null; ordinal: number; score: number; graph_score: number; version: string; version_kind: string; commit: string | null };
-export type AgentContextResponse = { query: string; profile: string; runtime: string; instruction: string; context: string; citations: AgentCitation[]; token_budget_hint: number; symbols: CodeSymbol[] };
+export type AgentContextCoverage = { resource_id: string; name: string; queryable: boolean; coverage_status: string; coverage_warnings: string[]; current_snapshot_id: string | null; retrieval_enabled: boolean; configured_budgets: Record<string, number>; last_index?: Record<string, unknown> };
+export type AgentContextResponse = { query: string; profile: string; runtime: string; instruction: string; context: string; citations: AgentCitation[]; token_budget_hint: number; symbols: CodeSymbol[]; resource_coverage?: AgentContextCoverage[]; coverage_warnings?: string[] };
 export type ApiToken = { id: string; workspace_id?: string; name: string; scopes: string[]; allowed_project_ids: string[] | null; allowed_resource_ids: string[] | null; revoked_at: string | null; created_at: string | null; last_used_at: string | null; expires_at?: string | null; created_by?: string | null };
 export type TokenCreateResponse = { token: string; api_token: ApiToken };

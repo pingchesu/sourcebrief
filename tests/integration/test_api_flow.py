@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 from redis import Redis
 from rq import Queue, SimpleWorker
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from sourcebrief_api.main import app
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine
+from sourcebrief_shared.models import IndexRun
 
 pytestmark = pytest.mark.integration
 
@@ -125,6 +128,90 @@ def test_workspace_project_resource_refresh_flow() -> None:
         headers={"X-User-Email": "intruder@example.com"},
     )
     assert denied.status_code == 404
+
+
+def test_agent_context_reports_unindexed_resource_coverage_warning() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id, resource_id = create_flow(client, "coverage")
+
+    response = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "indexable marker token", "resource_ids": [resource_id], "top_k": 5},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["citations"] == []
+    assert body["resource_coverage"][0]["resource_id"] == resource_id
+    assert body["resource_coverage"][0]["queryable"] is False
+    assert body["resource_coverage"][0]["coverage_status"] == "not_queryable"
+    assert body["coverage_warnings"]
+    assert "no current snapshot" in " ".join(body["coverage_warnings"])
+
+    project_response = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "indexable marker token", "top_k": 5},
+        headers=headers,
+    )
+    assert project_response.status_code == 200, project_response.text
+    project_body = project_response.json()
+    assert any(entry["resource_id"] == resource_id for entry in project_body["resource_coverage"])
+    assert "no current snapshot" in " ".join(project_body["coverage_warnings"])
+
+
+def test_agent_context_sanitizes_latest_index_failure_for_query_only_tokens() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id, resource_id = create_flow(client, "coverage-secret")
+    run = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh",
+        headers=headers,
+    )
+    assert run.status_code == 202, run.text
+    completed = wait_for_run(client, workspace_id, run.json()["id"], headers)
+    assert completed["status"] == "succeeded"
+    secret_error = "SECRET_CANARY_DO_NOT_LEAK_123"
+    secret_log = "SECRET_LOG_REF_CANARY"
+    with Session(get_engine()) as session:
+        session.add(
+            IndexRun(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                resource_id=resource_id,
+                snapshot_id=completed["snapshot_id"],
+                trigger="manual",
+                status="failed",
+                started_at=datetime.now(UTC),
+                finished_at=datetime.now(UTC),
+                error_message=f"{secret_error} chunk budget exceeded max_chunks=5 chunks_created=5",
+                log_ref=secret_log,
+            )
+        )
+        session.commit()
+
+    created = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        json={"name": "query only", "scopes": ["project:query"], "allowed_project_ids": [project_id]},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    bearer = {"Authorization": f"Bearer {created.json()['token']}"}
+    response = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "indexable marker token", "resource_ids": [resource_id], "top_k": 5},
+        headers=bearer,
+    )
+
+    assert response.status_code == 200, response.text
+    body_text = response.text
+    assert secret_error not in body_text
+    assert secret_log not in body_text
+    body = response.json()
+    assert body["resource_coverage"][0]["last_index"]["failure_summary"]
+    assert "error_message" not in body["resource_coverage"][0]["last_index"]
+    assert "log_ref" not in body["resource_coverage"][0]["last_index"]
 
 
 def test_refresh_failure_path_records_failed_status() -> None:
