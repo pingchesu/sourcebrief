@@ -160,6 +160,22 @@ def test_git_ingestion_extracts_and_searches_code_symbols(tmp_path) -> None:
     assert hit["line_start"] == 4
     assert hit["commit"] == commit
 
+    import_response = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/code-search",
+        json={"query": "src.checkout", "resource_ids": [resource_id]},
+        headers=headers,
+    )
+    assert import_response.status_code == 200, import_response.text
+    assert any(symbol["kind"] == "import" and symbol["name"] == "src.checkout.reconcile_cart" for symbol in import_response.json()["symbols"])
+
+    missing_token = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/code-search",
+        json={"query": "src no_such_identifier_token", "resource_ids": [resource_id]},
+        headers=headers,
+    )
+    assert missing_token.status_code == 200, missing_token.text
+    assert missing_token.json()["count"] == 0
+
 
 def test_code_search_denies_non_workspace_member() -> None:
     require_real_services()

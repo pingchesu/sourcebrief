@@ -7,6 +7,7 @@ from dataclasses import dataclass
 _JS_DEF = re.compile(
     r"^\s*(?:export\s+)?(?:(?P<kind>class|function)\s+(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)|(?:const|let|var)\s+(?P<var>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>)"
 )
+_JS_IMPORT = re.compile(r"^\s*import\s+(?:[^'\"]+\s+from\s+)?['\"](?P<name>[^'\"]+)['\"]")
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,35 @@ def _extract_python_symbols(path: str, content: str) -> list[CodeSymbolRecord]:
     lines = content.splitlines()
     records: list[CodeSymbolRecord] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                records.append(
+                    CodeSymbolRecord(
+                        path=path,
+                        name=alias.name,
+                        kind="import",
+                        language="python",
+                        line_start=node.lineno,
+                        line_end=getattr(node, "end_lineno", node.lineno) or node.lineno,
+                        signature=_line_signature(lines, node.lineno),
+                    )
+                )
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                name = f"{module}.{alias.name}" if module else alias.name
+                records.append(
+                    CodeSymbolRecord(
+                        path=path,
+                        name=name,
+                        kind="import",
+                        language="python",
+                        line_start=node.lineno,
+                        line_end=getattr(node, "end_lineno", node.lineno) or node.lineno,
+                        signature=_line_signature(lines, node.lineno),
+                    )
+                )
+        elif isinstance(node, ast.ClassDef):
             records.append(
                 CodeSymbolRecord(
                     path=path,
@@ -122,11 +151,25 @@ def _extract_js_symbols(path: str, content: str, language: str) -> list[CodeSymb
     in_block_comment = False
     in_template = False
     for idx, line in enumerate(content.splitlines(), start=1):
+        import_match = None if in_block_comment or in_template else _JS_IMPORT.match(line)
         code, in_block_comment, in_template = _strip_js_line(
             line,
             in_block_comment=in_block_comment,
             in_template=in_template,
         )
+        if import_match:
+            records.append(
+                CodeSymbolRecord(
+                    path=path,
+                    name=import_match.group("name"),
+                    kind="import",
+                    language=language,
+                    line_start=idx,
+                    line_end=idx,
+                    signature=code.strip()[:500],
+                )
+            )
+            continue
         if not code.strip():
             continue
         match = _JS_DEF.match(code)

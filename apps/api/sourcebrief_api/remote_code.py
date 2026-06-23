@@ -22,6 +22,36 @@ _COMPLEX_REGEX_RE = re.compile(
 )
 _INVALID_PATH_PREFIXES = ("file://", "http://", "https://")
 
+_IDENTIFIER_SPLIT_RE = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+")
+_IDENTIFIER_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+
+
+def identifier_tokens(value: str) -> list[str]:
+    """Split code-ish names and paths into stable lexical tokens."""
+    tokens: list[str] = []
+    for raw in _IDENTIFIER_TOKEN_RE.findall(value or ""):
+        parts = _IDENTIFIER_SPLIT_RE.findall(raw) or [raw]
+        for part in parts:
+            lowered = part.lower()
+            if lowered and lowered not in tokens:
+                tokens.append(lowered)
+    return tokens
+
+
+def identifier_score(query: str, *, path: str, content: str) -> tuple[float, dict[str, float]]:
+    query_tokens = identifier_tokens(query)
+    if not query_tokens:
+        return 0.0, {"exact": 0.0, "identifier": 0.0, "path": 0.0}
+    haystack = f"{path}\n{content}"
+    haystack_tokens = set(identifier_tokens(haystack))
+    overlap = sum(1 for token in query_tokens if token in haystack_tokens) / len(query_tokens)
+    lower_query = query.lower()
+    exact = 1.0 if lower_query in haystack.lower() else 0.0
+    path_tokens = set(identifier_tokens(path))
+    path_score = sum(1 for token in query_tokens if token in path_tokens) / len(query_tokens)
+    score = min(1.0, exact * 0.45 + overlap * 0.45 + path_score * 0.10)
+    return score, {"exact": exact, "identifier": overlap, "path": path_score}
+
 
 @dataclass(frozen=True)
 class RemoteCodeError(Exception):

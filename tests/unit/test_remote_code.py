@@ -5,6 +5,8 @@ import pytest
 from sourcebrief_api.remote_code import (
     RemoteCodeError,
     compile_safe_regex,
+    identifier_score,
+    identifier_tokens,
     line_range,
     validate_path_glob,
     validate_repo_path,
@@ -44,3 +46,26 @@ def test_line_range_prefixes_lines_and_caps_large_ranges() -> None:
     assert total == 699
     assert truncated is True
     assert body.splitlines()[0] == "2|line 2"
+
+
+def test_identifier_tokens_split_code_conventions() -> None:
+    assert identifier_tokens("renderCheckout src/order-service/api.ts") == [
+        "render",
+        "checkout",
+        "src",
+        "order",
+        "service",
+        "api",
+        "ts",
+    ]
+
+
+def test_identifier_score_rewards_token_overlap_and_path() -> None:
+    score, components = identifier_score(
+        "render checkout",
+        path="src/checkout-ui.ts",
+        content="export function renderCheckout() { return true; }",
+    )
+    assert score >= 0.45
+    assert components["identifier"] == 1.0
+    assert components["path"] == 0.5

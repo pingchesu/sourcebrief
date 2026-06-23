@@ -99,6 +99,8 @@ from sourcebrief_api.remote_code import (
     RemoteCodeError,
     check_scan_budget,
     compile_safe_regex,
+    identifier_score,
+    identifier_tokens,
     line_range,
     line_window,
     path_matches,
@@ -6244,11 +6246,13 @@ def code_search_project(
     resource_ids = _effective_resource_ids(principal, payload.resource_ids)
     _require_project_access(session, workspace_id, project_id, principal)
     resource_clause = ""
+    query_tokens = identifier_tokens(payload.query)
     params: dict = {
         "ws": str(workspace_id),
         "proj": str(project_id),
         "q": payload.query,
         "limit": payload.limit,
+        "query_tokens": query_tokens,
     }
     if resource_ids:
         resource_clause = "AND r.id = ANY(CAST(:rids AS uuid[]))"
@@ -6283,8 +6287,17 @@ def code_search_project(
               AND r.retrieval_enabled = true
               AND r.current_snapshot_id IS NOT NULL
               {resource_clause}
-              AND to_tsvector('simple', sym.name || ' ' || sym.path || ' ' || sym.signature)
+              AND (
+                to_tsvector('simple', sym.name || ' ' || sym.path || ' ' || sym.signature)
                   @@ plainto_tsquery('simple', :q)
+                OR (
+                  cardinality(CAST(:query_tokens AS text[])) > 0
+                  AND NOT EXISTS (
+                    SELECT 1 FROM unnest(CAST(:query_tokens AS text[])) AS qt(token)
+                    WHERE lower(sym.name || ' ' || sym.path || ' ' || sym.signature) NOT LIKE '%' || qt.token || '%'
+                  )
+                )
+              )
             ORDER BY score DESC, sym.path ASC, sym.line_start ASC
             LIMIT :limit
             """
@@ -6733,27 +6746,36 @@ def remote_search_code(
     results: list[RemoteSearchCodeHit] = []
     for file_row, snapshot in files:
         check_scan_budget(started)
-        lines = file_row.content.splitlines()
-        for idx, line in enumerate(lines, start=1):
+        best: tuple[float, int, str, dict[str, float]] | None = None
+        for idx, line in enumerate(file_row.content.splitlines(), start=1):
             if len(line) > MAX_SEARCH_LINE_CHARS:
                 continue
-            if pattern.search(line):
-                results.append(
-                    RemoteSearchCodeHit(
-                        resource_id=file_row.resource_id,
-                        snapshot_id=file_row.source_snapshot_id,
-                        indexed_commit=_snapshot_commit(snapshot),
-                        path=file_row.path,
-                        line_start=idx,
-                        line_end=idx,
-                        snippet=snippet_for_line(line),
-                        score=1.0,
-                        score_components={"lexical": 1.0},
-                    )
-                )
-                break
-        if len(results) >= payload.top_k:
-            break
+            token_score, components = identifier_score(payload.query, path=file_row.path, content=line)
+            exact_score = 1.0 if pattern.search(line) else 0.0
+            score = max(exact_score, token_score)
+            if score <= 0.0:
+                continue
+            combined_components = {**components, "lexical": exact_score}
+            if best is None or score > best[0]:
+                best = (score, idx, line, combined_components)
+        if best is None:
+            continue
+        score, line_number, line, components = best
+        results.append(
+            RemoteSearchCodeHit(
+                resource_id=file_row.resource_id,
+                snapshot_id=file_row.source_snapshot_id,
+                indexed_commit=_snapshot_commit(snapshot),
+                path=file_row.path,
+                line_start=line_number,
+                line_end=line_number,
+                snippet=snippet_for_line(line),
+                score=score,
+                score_components=components,
+            )
+        )
+    results.sort(key=lambda hit: (-hit.score, hit.path, hit.line_start))
+    results = results[: payload.top_k]
     _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="search_code", status_value="succeeded", result_count=len(results), latency_ms=(perf_counter() - started) * 1000)
     return RemoteSearchCodeResponse(results=results)
 
