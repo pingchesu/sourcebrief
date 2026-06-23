@@ -85,6 +85,8 @@ SourceBrief should not be asked to "fix" by itself. Ask it for evidence first, t
 
 ## A practical issue flow
 
+See [demo runtime output](examples/demo-runtime-output.md) for a captured local run that indexes a tiny runbook and then exercises both `agent-context` and the MCP-shaped `mcp-context` path with normalized IDs.
+
 When Hermes, Claude Code, Codex, or Cursor is working on an issue, use this loop:
 
 1. Ask SourceBrief for a project-level map.

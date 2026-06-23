@@ -111,6 +111,8 @@ This calls the same project-scoped MCP surface an agent runtime would use. The i
 - The response carries citations and follow-up handles instead of unsupported prose.
 - MCP is the runtime path for agents; SourceBrief still does not edit, test, commit, or deploy anything.
 
+See [demo runtime output](examples/demo-runtime-output.md) for a captured real run with normalized IDs.
+
 ## What to try next
 
 - Use the web Workbench to ask the same question and inspect citations visually.

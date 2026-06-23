@@ -8,7 +8,7 @@ SourceBrief turns repos, docs, runbooks, URLs, uploads, and folder bundles into 
 
 Use it when you need agents to answer with evidence, not vibes.
 
-[See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Read the docs](docs/README.md)
+[See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [View demo output](docs/examples/demo-runtime-output.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Read the docs](docs/README.md)
 
 <img src="docs/assets/sourcebrief-mental-model.svg" alt="SourceBrief mental model from sources to snapshots to reviewed evidence to MCP/API agent access" width="100%" />
 

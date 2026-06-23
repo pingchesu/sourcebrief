@@ -6,8 +6,9 @@ Use this page as a map. If you are new, follow the first section in order; the d
 
 1. [Product walkthrough](WALKTHROUGH.md) - see real UI screenshots and a captured `agent-context` response before installing anything.
 2. [5-minute demo](DEMO.md) - use a tiny deterministic source to prove the indexed-evidence and MCP-shaped path quickly.
-3. [Concepts](CONCEPTS.md) - learn the minimum vocabulary: Source, Snapshot, Citation, Agent Context, Resource Map, Context Pack, Skill Pack, and MCP tools.
-4. [Project status](STATUS.md) - understand what is shipped, experimental, and intentionally not production/SaaS-ready yet.
+3. [Demo runtime output](examples/demo-runtime-output.md) - normalized output from a real local run of that demo.
+4. [Concepts](CONCEPTS.md) - learn the minimum vocabulary: Source, Snapshot, Citation, Agent Context, Resource Map, Context Pack, Skill Pack, and MCP tools.
+5. [Project status](STATUS.md) - understand what is shipped, experimental, and intentionally not production/SaaS-ready yet.
 
 ## Run SourceBrief locally
 
