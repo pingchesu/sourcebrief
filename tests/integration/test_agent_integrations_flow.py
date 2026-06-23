@@ -169,7 +169,13 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
         headers=headers,
     )
     assert tools.status_code == 200, tools.text
-    assert tools.json()["result"]["tools"][0]["name"] == "sourcebrief.get_agent_context"
+    tool_names = [tool["name"] for tool in tools.json()["result"]["tools"]]
+    assert tool_names[:4] == [
+        "sourcebrief.ask",
+        "sourcebrief.discover",
+        "sourcebrief.lookup",
+        "sourcebrief.get_agent_context",
+    ]
 
     call = client.post(
         f"/mcp/{workspace_id}/{project_id}",

@@ -7051,6 +7051,45 @@ def _resolve_runtime_pack_version(
     return version
 
 
+def _agent_context_suggested_tool_calls(citations: list[AgentContextCitation], query: str) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = [
+        {
+            "name": "sourcebrief.search",
+            "reason": "Find additional cited sections if the initial context is insufficient.",
+            "arguments": {"query": query, "top_k": 8},
+        },
+        {
+            "name": "sourcebrief.list_sources",
+            "reason": "Discover human source names/resource IDs before narrowing follow-up calls.",
+            "arguments": {"limit": 20},
+        },
+    ]
+    if citations:
+        first = citations[0]
+        if first.path and first.content_hash:
+            calls.insert(
+                0,
+                {
+                    "name": "sourcebrief.read_section",
+                    "reason": "Read the first cited section exactly from the cited snapshot before making source claims.",
+                    "arguments": {
+                        "resource_id": str(first.resource_id),
+                        "source_snapshot_id": str(first.snapshot_id),
+                        "path": first.path,
+                        "content_hash": first.content_hash,
+                    },
+                },
+            )
+        calls.append(
+            {
+                "name": "sourcebrief.read_file",
+                "reason": "Inspect the cited file from the indexed source snapshot when code detail is needed.",
+                "arguments": {"resource_id": str(first.resource_id), "path": first.path or "<path>", "start_line": 1, "end_line": 120},
+            }
+        )
+    return calls
+
+
 def _build_pack_agent_context_response(
     session: Session,
     *,
@@ -7060,6 +7099,13 @@ def _build_pack_agent_context_response(
     principal: Principal,
     pack_version: ContextPackVersion,
 ) -> AgentContextResponse:
+    predicates = [
+        ContextPackArtifact.context_pack_version_id == pack_version.id,
+        ContextArtifactCitation.workspace_id == workspace_id,
+        ContextArtifactCitation.project_id == project_id,
+    ]
+    if payload.resource_ids:
+        predicates.append(ContextArtifactCitation.resource_id.in_(payload.resource_ids))
     rows = session.execute(
         select(ContextArtifactCitation, SnapshotFile)
         .join(
@@ -7068,11 +7114,7 @@ def _build_pack_agent_context_response(
             & (SnapshotFile.path == ContextArtifactCitation.normalized_path),
         )
         .join(ContextPackArtifact, ContextPackArtifact.context_artifact_id == ContextArtifactCitation.context_artifact_id)
-        .where(
-            ContextPackArtifact.context_pack_version_id == pack_version.id,
-            ContextArtifactCitation.workspace_id == workspace_id,
-            ContextArtifactCitation.project_id == project_id,
-        )
+        .where(*predicates)
         .order_by(ContextPackArtifact.ordinal.asc(), ContextArtifactCitation.normalized_path.asc(), ContextArtifactCitation.ordinal.asc())
         .limit(payload.top_k)
     ).all()
@@ -7100,6 +7142,7 @@ def _build_pack_agent_context_response(
                 path=citation.normalized_path,
                 title=citation.title,
                 ordinal=citation.ordinal,
+                content_hash=citation.content_hash,
                 version=pack_version.pack_hash,
                 version_kind="context_pack",
                 commit=None,
@@ -7120,6 +7163,7 @@ def _build_pack_agent_context_response(
         context="\n\n".join(context_parts),
         citations=citations,
         symbols=[],
+        suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query),
         token_budget_hint=max(1, payload.max_chars // 4),
         context_pack_key=pack_version.pack_key,
         context_pack_version=pack_version.version,
@@ -7176,6 +7220,7 @@ def _build_agent_context_response(
                 path=candidate.path,
                 title=candidate.title,
                 ordinal=candidate.ordinal,
+                content_hash=candidate.content_hash,
                 version=candidate.version,
                 version_kind=candidate.version_kind,
                 commit=candidate.snapshot_metadata.get("commit"),
@@ -7219,6 +7264,7 @@ def _build_agent_context_response(
         context="\n\n".join(context_parts),
         citations=citations,
         symbols=symbols,
+        suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query),
         token_budget_hint=max(1, payload.max_chars // 4),
     )
 
@@ -7966,6 +8012,35 @@ def _runtime_resolve_resource_ref(session: Session, workspace_id: UUID, project_
     raise HTTPException(status_code=404, detail={"code": "not_found", "message": "resource not found"})
 
 
+def _runtime_args_with_resource_ref(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    args: dict[str, Any],
+    *,
+    single: bool,
+) -> dict[str, Any]:
+    ref = args.get("resource_ref")
+    if not ref:
+        return args
+    if single:
+        if args.get("resource_id"):
+            raise HTTPException(status_code=422, detail={"code": "conflicting_resource_locator", "message": "use resource_id or resource_ref, not both"})
+        resource = _runtime_resolve_resource_ref(session, workspace_id, project_id, principal, {"resource_ref": ref})
+        updated = dict(args)
+        updated.pop("resource_ref", None)
+        updated["resource_id"] = str(resource.id)
+        return updated
+    if args.get("resource_ids"):
+        raise HTTPException(status_code=422, detail={"code": "conflicting_resource_locator", "message": "use resource_ids or resource_ref, not both"})
+    resource = _runtime_resolve_resource_ref(session, workspace_id, project_id, principal, {"resource_ref": ref})
+    updated = dict(args)
+    updated.pop("resource_ref", None)
+    updated["resource_ids"] = [str(resource.id)]
+    return updated
+
+
 def _runtime_resolve_pack(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> ContextPackVersion:
     pack_key = args.get("pack_key")
     version_arg = args.get("version")
@@ -8358,8 +8433,13 @@ def _runtime_search(session: Session, workspace_id: UUID, project_id: UUID, prin
         pack_args = {"pack_key": args.get("context_pack_key"), "version": args.get("context_pack_version")}
         pack_version = _runtime_resolve_pack(session, workspace_id, project_id, principal, pack_args)
         coverage = list(session.scalars(select(ContextPackResourceCoverage).where(ContextPackResourceCoverage.context_pack_version_id == pack_version.id)))
+        if requested_resource_ids:
+            requested_set = set(requested_resource_ids)
+            coverage = [row for row in coverage if row.resource_id in requested_set]
         requested_resource_ids = [row.resource_id for row in coverage]
         snapshot_ids = [row.source_snapshot_id for row in coverage]
+        if not requested_resource_ids:
+            return {"query": query, "profile": args.get("profile") or "hybrid", "hits": [], "freshness": _runtime_freshness("current")}
     effective_resource_ids = _effective_resource_ids(principal, requested_resource_ids or None)
     if _is_empty_scope(effective_resource_ids):
         return {"query": query, "profile": args.get("profile") or "hybrid", "hits": [], "freshness": _runtime_freshness("current")}
@@ -8407,7 +8487,10 @@ def _runtime_search(session: Session, workspace_id: UUID, project_id: UUID, prin
 def _runtime_read_section(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
     require_scope(principal, "project:query")
     require_scope(principal, "resource:read")
-    resource_id = UUID(str(args.get("resource_id")))
+    resource_id_arg = args.get("resource_id")
+    if not resource_id_arg:
+        raise HTTPException(status_code=422, detail={"code": "missing_resource_locator", "message": "provide resource_id or resource_ref with the section locator"})
+    resource_id = UUID(str(resource_id_arg))
     resource = session.scalar(select(Resource).where(Resource.id == resource_id, Resource.workspace_id == workspace_id, Resource.project_id == project_id))
     if resource is None:
         raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
@@ -8568,8 +8651,111 @@ def _runtime_graph_path(session: Session, workspace_id: UUID, project_id: UUID, 
     return {"graph": {"key": merge_graph.merge_key, "kind": "merge", "version": merge_version.version, "status": merge_version.status}, "freshness": _runtime_freshness("current", graph={"graph_key": merge_graph.merge_key, "kind": "merge", "version": merge_version.version, "status": merge_version.status}), **path_result, "truncated": False}
 
 
+def _runtime_remote_args(args: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
+    return {key: value for key, value in args.items() if key in allowed and value is not None}
+
+
+def _runtime_has_scope(principal: Principal, scope: str) -> bool:
+    scopes = principal.scopes
+    return "*" in scopes or scope in scopes
+
+
+def _runtime_lookup(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=422, detail={"code": "invalid_query", "message": "query is required"})
+    search_in = str(args.get("search_in") or args.get("kind") or "all")
+    base_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, args, single=False)
+    if search_in == "docs":
+        return {"mode": "docs", "docs": _runtime_search(session, workspace_id, project_id, principal, base_args)}
+    if search_in == "code":
+        code_args = _runtime_remote_args(base_args, {"query", "resource_ids", "top_k", "cursor"})
+        return {"mode": "code", "code": jsonable_encoder(remote_search_code(workspace_id, project_id, RemoteSearchCodeRequest(**code_args), principal, session))}
+    if search_in == "grep":
+        grep_args = _runtime_remote_args(base_args, {"pattern", "resource_ids", "path_glob", "max_matches", "cursor", "regex", "context_lines"})
+        grep_args.setdefault("pattern", query)
+        return {"mode": "grep", "grep": jsonable_encoder(remote_grep_code(workspace_id, project_id, RemoteGrepCodeRequest(**grep_args), principal, session))}
+    if search_in == "symbols":
+        symbol_args = _runtime_remote_args(base_args, {"name", "kind", "resource_ids", "top_k"})
+        symbol_args.setdefault("name", query)
+        return {"mode": "symbols", "symbols": jsonable_encoder(remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**symbol_args), principal, session))}
+    if search_in != "all":
+        raise HTTPException(status_code=422, detail={"code": "invalid_lookup_mode", "message": "search_in must be one of all, docs, code, grep, symbols"})
+    docs = _runtime_search(session, workspace_id, project_id, principal, base_args)
+    if not _runtime_has_scope(principal, "code:read"):
+        return {
+            "mode": "all",
+            "docs": docs,
+            "code": None,
+            "symbols": None,
+            "warnings": [
+                {
+                    "code": "code_read_not_authorized",
+                    "message": "Token lacks code:read; returning docs results only. Use search_in='docs' for docs-only lookup or mint a read-code runtime token for code/symbols.",
+                }
+            ],
+            "next_steps": [{"name": "sourcebrief.read_section", "reason": "Read a cited docs hit exactly before making claims."}],
+        }
+    code_args = _runtime_remote_args(base_args, {"query", "resource_ids", "top_k", "cursor"})
+    code_args.setdefault("top_k", min(int(base_args.get("top_k") or 5), 10))
+    symbols_args = _runtime_remote_args(base_args, {"name", "kind", "resource_ids", "top_k"})
+    symbols_args.setdefault("name", query)
+    symbols_args.setdefault("top_k", 10)
+    return {
+        "mode": "all",
+        "docs": docs,
+        "code": jsonable_encoder(remote_search_code(workspace_id, project_id, RemoteSearchCodeRequest(**code_args), principal, session)),
+        "symbols": jsonable_encoder(remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**symbols_args), principal, session)),
+        "next_steps": [
+            {"name": "sourcebrief.read_section", "reason": "Read a cited docs hit exactly before making claims."},
+            {"name": "sourcebrief.read_file", "reason": "Read a code hit exactly by resource_ref/resource_id and path."},
+        ],
+    }
+
+
+def _runtime_discover(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "sources": _runtime_list_sources(session, workspace_id, project_id, principal, args),
+        "architecture": _runtime_graph_overview(session, workspace_id, project_id, principal, {"max_resources": args.get("max_resources") or 20, "max_items": args.get("max_items") or 20}),
+        "next_steps": [
+            {"name": "sourcebrief.ask", "reason": "Ask a cited project question after choosing a source scope."},
+            {"name": "sourcebrief.lookup", "reason": "Search docs/code/symbols with an optional human resource_ref."},
+        ],
+    }
+
+
 def _mcp_tools() -> list[dict[str, Any]]:
     return [
+        {
+            "name": "sourcebrief.ask",
+            "description": "Golden-path alias for get_agent_context: ask a project question and receive cited context plus suggested next tool calls.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "runtime": {"type": "string", "enum": ["api", "hermes", "claude", "codex", "cursor"]},
+                    "profile": {"type": "string", "enum": sorted(RETRIEVAL_PROFILES)},
+                    "top_k": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "resource_ids": {"type": "array", "items": {"type": "string"}},
+                    "resource_ref": {"type": "string"},
+                    "context_pack_key": {"type": "string"},
+                    "context_pack_version": {"type": "integer", "minimum": 1},
+                    "max_chars": {"type": "integer", "minimum": 1000, "maximum": 50000},
+                    "include_code_symbols": {"type": "boolean"},
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "sourcebrief.discover",
+            "description": "Golden-path discovery: list authorized sources and return a compact architecture/graph overview before choosing lower-level tools.",
+            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "resource_type": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}, "cursor": {"type": "string"}, "max_resources": {"type": "integer", "minimum": 1, "maximum": 50}, "max_items": {"type": "integer", "minimum": 1, "maximum": 50}}},
+        },
+        {
+            "name": "sourcebrief.lookup",
+            "description": "Golden-path lookup router for docs, code, grep, and symbols; accepts optional human resource_ref for unambiguous source selection.",
+            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "search_in": {"type": "string", "enum": ["all", "docs", "code", "grep", "symbols"]}, "resource_ref": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "minimum": 1, "maximum": 50}, "path_glob": {"type": "string"}, "regex": {"type": "boolean"}}, "required": ["query"]},
+        },
         {
             "name": "sourcebrief.get_context_pack",
             "description": "Fetch a published SourceBrief context pack with bounded source/artifact/graph inventory and freshness metadata.",
@@ -8588,12 +8774,12 @@ def _mcp_tools() -> list[dict[str, Any]]:
         {
             "name": "sourcebrief.search",
             "description": "Search indexed sections/artifacts with cited canonical locators for read_section.",
-            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "context_pack_key": {"type": "string"}, "context_pack_version": {"type": "integer", "minimum": 1}, "profile": {"type": "string", "enum": sorted(RETRIEVAL_PROFILES)}, "top_k": {"type": "integer", "minimum": 1, "maximum": 50}, "include_code_symbols": {"type": "boolean"}}, "required": ["query"]},
+            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "resource_ref": {"type": "string"}, "context_pack_key": {"type": "string"}, "context_pack_version": {"type": "integer", "minimum": 1}, "profile": {"type": "string", "enum": sorted(RETRIEVAL_PROFILES)}, "top_k": {"type": "integer", "minimum": 1, "maximum": 50}, "include_code_symbols": {"type": "boolean"}}, "required": ["query"]},
         },
         {
             "name": "sourcebrief.read_section",
             "description": "Read exact retained section evidence from a canonical locator returned by search/resource-map/context-pack tools.",
-            "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "source_snapshot_id": {"type": "string"}, "snapshot_section_id": {"type": "string"}, "context_artifact_id": {"type": "string"}, "context_artifact_citation_id": {"type": "string"}, "context_pack_key": {"type": "string"}, "context_pack_version": {"type": "integer"}, "path": {"type": "string"}, "heading": {"type": "string"}, "content_hash": {"type": "string"}, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}, "allow_current_fallback": {"type": "boolean"}}, "required": ["resource_id"]},
+            "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "resource_ref": {"type": "string"}, "source_snapshot_id": {"type": "string"}, "snapshot_section_id": {"type": "string"}, "context_artifact_id": {"type": "string"}, "context_artifact_citation_id": {"type": "string"}, "context_pack_key": {"type": "string"}, "context_pack_version": {"type": "integer"}, "path": {"type": "string"}, "heading": {"type": "string"}, "content_hash": {"type": "string"}, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}, "allow_current_fallback": {"type": "boolean"}}, "allOf": [{"anyOf": [{"required": ["resource_id"]}, {"required": ["resource_ref"]}]}, {"anyOf": [{"required": ["context_artifact_citation_id"]}, {"required": ["snapshot_section_id", "source_snapshot_id"]}, {"required": ["source_snapshot_id", "path", "content_hash"]}]}]},
         },
         {
             "name": "sourcebrief.get_architecture",
@@ -8626,6 +8812,10 @@ def _mcp_tools() -> list[dict[str, Any]]:
                     "profile": {"type": "string", "enum": sorted(RETRIEVAL_PROFILES)},
                     "top_k": {"type": "integer", "minimum": 1, "maximum": 50},
                     "resource_ids": {"type": "array", "items": {"type": "string"}},
+                    "resource_ref": {"type": "string"},
+                    "context_pack_key": {"type": "string"},
+                    "context_pack_version": {"type": "integer", "minimum": 1},
+                    "max_chars": {"type": "integer", "minimum": 1000, "maximum": 50000},
                     "include_code_symbols": {"type": "boolean"},
                 },
                 "required": ["query"],
@@ -8634,22 +8824,22 @@ def _mcp_tools() -> list[dict[str, Any]]:
         {
             "name": "sourcebrief.search_code",
             "description": "Search indexed snapshot files without local repository access.",
-            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "minimum": 1, "maximum": 50}}, "required": ["query"]},
+            "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "resource_ref": {"type": "string"}, "top_k": {"type": "integer", "minimum": 1, "maximum": 50}}, "required": ["query"]},
         },
         {
             "name": "sourcebrief.grep_code",
             "description": "Run bounded grep over indexed snapshot files without local repository access.",
-            "inputSchema": {"type": "object", "properties": {"pattern": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "path_glob": {"type": "string"}, "max_matches": {"type": "integer", "minimum": 1, "maximum": 100}, "regex": {"type": "boolean"}}, "required": ["pattern"]},
+            "inputSchema": {"type": "object", "properties": {"pattern": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "resource_ref": {"type": "string"}, "path_glob": {"type": "string"}, "max_matches": {"type": "integer", "minimum": 1, "maximum": 100}, "regex": {"type": "boolean"}}, "required": ["pattern"]},
         },
         {
             "name": "sourcebrief.read_file",
             "description": "Read a line range from an indexed repo-relative file snapshot.",
-            "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "path": {"type": "string"}, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}}, "required": ["resource_id", "path"]},
+            "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "resource_ref": {"type": "string"}, "path": {"type": "string"}, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}}, "required": ["path"], "anyOf": [{"required": ["resource_id"]}, {"required": ["resource_ref"]}]},
         },
         {
             "name": "sourcebrief.find_symbol",
             "description": "Find indexed code symbols by name and optional kind.",
-            "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "kind": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["name"]},
+            "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "kind": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "resource_ref": {"type": "string"}, "top_k": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["name"]},
         },
         {
             "name": "sourcebrief.generate_patch",
@@ -8704,9 +8894,30 @@ async def mcp_endpoint(
             },
         }
     if method == "tools/list":
+        priority = {
+            "sourcebrief.ask": 0,
+            "sourcebrief.discover": 1,
+            "sourcebrief.lookup": 2,
+            "sourcebrief.get_agent_context": 3,
+            "sourcebrief.list_sources": 4,
+            "sourcebrief.get_architecture": 5,
+            "sourcebrief.get_context_pack": 6,
+            "sourcebrief.search": 7,
+            "sourcebrief.read_section": 8,
+            "sourcebrief.read_file": 9,
+            "sourcebrief.search_code": 10,
+            "sourcebrief.grep_code": 11,
+            "sourcebrief.find_symbol": 12,
+            "sourcebrief.get_resource_map": 13,
+            "sourcebrief.get_graph_inventory": 14,
+            "sourcebrief.graph_query": 15,
+            "sourcebrief.graph_path": 16,
+            "sourcebrief.generate_patch": 30,
+            "sourcebrief.open_pr": 31,
+        }
         tools = sorted(
             _mcp_tools(),
-            key=lambda tool: 0 if tool.get("name") == "sourcebrief.get_agent_context" else 1,
+            key=lambda tool: (priority.get(str(tool.get("name")), 50), str(tool.get("name"))),
         )
         return {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": tools}}
     if method == "tools/call":
@@ -8722,16 +8933,23 @@ async def mcp_endpoint(
             tool_name = "sourcebrief." + tool_name[len("contextsmith."):]
         result: Any
         try:
-            if tool_name == "sourcebrief.get_context_pack":
+            if tool_name == "sourcebrief.ask":
+                payload = AgentContextRequest(**_runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False))
+                result = agent_context(workspace_id, project_id, payload, principal, session)
+            elif tool_name == "sourcebrief.discover":
+                result = _runtime_discover(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "sourcebrief.lookup":
+                result = _runtime_lookup(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "sourcebrief.get_context_pack":
                 result = _runtime_get_context_pack(session, workspace_id, project_id, principal, arguments)
             elif tool_name == "sourcebrief.list_sources":
                 result = _runtime_list_sources(session, workspace_id, project_id, principal, arguments)
             elif tool_name == "sourcebrief.get_resource_map":
                 result = _runtime_get_resource_map(session, workspace_id, project_id, principal, arguments)
             elif tool_name == "sourcebrief.search":
-                result = _runtime_search(session, workspace_id, project_id, principal, arguments)
+                result = _runtime_search(session, workspace_id, project_id, principal, _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False))
             elif tool_name == "sourcebrief.read_section":
-                result = _runtime_read_section(session, workspace_id, project_id, principal, arguments)
+                result = _runtime_read_section(session, workspace_id, project_id, principal, _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=True))
             elif tool_name == "sourcebrief.get_architecture":
                 result = _runtime_graph_overview(session, workspace_id, project_id, principal, arguments)
             elif tool_name == "sourcebrief.get_graph_inventory":
@@ -8741,16 +8959,20 @@ async def mcp_endpoint(
             elif tool_name == "sourcebrief.graph_path":
                 result = _runtime_graph_path(session, workspace_id, project_id, principal, arguments)
             elif tool_name == "sourcebrief.get_agent_context":
-                payload = AgentContextRequest(**arguments)
+                payload = AgentContextRequest(**_runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False))
                 result = agent_context(workspace_id, project_id, payload, principal, session)
             elif tool_name == "sourcebrief.search_code":
-                result = remote_search_code(workspace_id, project_id, RemoteSearchCodeRequest(**arguments), principal, session)
+                code_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False)
+                result = remote_search_code(workspace_id, project_id, RemoteSearchCodeRequest(**_runtime_remote_args(code_args, {"query", "resource_ids", "top_k", "cursor"})), principal, session)
             elif tool_name == "sourcebrief.grep_code":
-                result = remote_grep_code(workspace_id, project_id, RemoteGrepCodeRequest(**arguments), principal, session)
+                grep_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False)
+                result = remote_grep_code(workspace_id, project_id, RemoteGrepCodeRequest(**_runtime_remote_args(grep_args, {"pattern", "resource_ids", "path_glob", "max_matches", "cursor", "regex", "context_lines"})), principal, session)
             elif tool_name == "sourcebrief.read_file":
-                result = remote_read_file(workspace_id, project_id, RemoteReadFileRequest(**arguments), principal, session)
+                read_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=True)
+                result = remote_read_file(workspace_id, project_id, RemoteReadFileRequest(**_runtime_remote_args(read_args, {"resource_id", "path", "start_line", "end_line"})), principal, session)
             elif tool_name == "sourcebrief.find_symbol":
-                result = remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**arguments), principal, session)
+                symbol_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False)
+                result = remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**_runtime_remote_args(symbol_args, {"name", "kind", "resource_ids", "top_k"})), principal, session)
             elif tool_name == "sourcebrief.generate_patch":
                 result = remote_generate_patch(workspace_id, project_id, GeneratePatchRequest(**arguments), principal, session)
             elif tool_name == "sourcebrief.open_pr":

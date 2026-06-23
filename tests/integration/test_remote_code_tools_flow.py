@@ -180,6 +180,24 @@ def test_remote_code_http_and_mcp_flow(tmp_path) -> None:
     mcp_paths = {match["path"] for match in mcp_grep.json()["result"]["structuredContent"]["matches"]}
     assert "src/checkout.py" in mcp_paths
 
+    mcp_read_ref = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "sourcebrief.read_file",
+                "arguments": {"resource_ref": "Remote Code Repo", "path": "src/checkout.py", "start_line": 1, "end_line": 7},
+            },
+        },
+        headers=headers,
+    )
+    assert mcp_read_ref.status_code == 200, mcp_read_ref.text
+    mcp_read_result = mcp_read_ref.json()["result"]
+    assert not mcp_read_result.get("isError"), mcp_read_result
+    assert "reconcile_cart" in mcp_read_result["structuredContent"]["content"]
+
 
 def test_remote_code_rejects_bad_paths_and_regex(tmp_path) -> None:
     require_real_services()

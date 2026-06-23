@@ -1166,6 +1166,7 @@ class AgentContextCitation(BaseModel):
     path: str | None = None
     title: str | None = None
     ordinal: int
+    content_hash: str | None = None
     version: str
     version_kind: str
     commit: str | None = None
@@ -1181,6 +1182,7 @@ class AgentContextResponse(BaseModel):
     context: str
     citations: list[AgentContextCitation]
     symbols: list[CodeSymbolHit] = Field(default_factory=list)
+    suggested_tool_calls: list[dict] = Field(default_factory=list)
     token_budget_hint: int
     context_pack_key: str | None = None
     context_pack_version: int | None = None

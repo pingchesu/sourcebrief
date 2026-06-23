@@ -132,7 +132,9 @@ Use these MCP tools for remote code:
 
 | Task | Tool |
 | --- | --- |
-| Start with a cited answer | `sourcebrief.get_agent_context` |
+| Start with a cited answer | `sourcebrief.ask` / `sourcebrief.get_agent_context` |
+| Discover available sources and architecture | `sourcebrief.discover` / `sourcebrief.list_sources` / `sourcebrief.get_architecture` |
+| Search docs/code/symbols by question | `sourcebrief.lookup` (`search_in=docs` works with context-only tokens; default `all` returns docs plus a warning when `code:read` is absent) |
 | Search indexed docs/artifacts | `sourcebrief.search` |
 | Read exact cited sections | `sourcebrief.read_section` |
 | Search indexed source files semantically | `sourcebrief.search_code` |
