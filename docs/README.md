@@ -36,6 +36,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | --- | --- | --- |
 | [Architecture](ARCHITECTURE.md) | Active reference | FastAPI, Postgres/pgvector, Redis/RQ, Next.js, agent-context, MCP, graph/code-symbol retrieval, tenant boundaries. |
 | [Guide](GUIDE.md) | API/CLI reference | Hands-on API/CLI walkthroughs beyond the quick start. |
+| [Eval manifests](EVAL_MANIFESTS.md) | Eval/release reference | Structured real-corpus eval manifests, hashable question artifacts, max-10 batching, and grading schema. |
 | [Alpha release notes](ALPHA_RELEASE_NOTES.md) | Release reference | Alpha capability summary and explicit boundaries. |
 | [Roadmap](ROADMAP.md) | Planning reference | Finite alpha roadmap and future work. |
 | [Git repo import product gaps](GIT_REPO_IMPORT_PRODUCT_GAPS.md) | Product backlog | Enterprise Git onboarding gaps. |

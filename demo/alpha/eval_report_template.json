@@ -1,0 +1,46 @@
+{
+  "schema_version": "sourcebrief.eval-report.v1",
+  "manifest_sha256": "sha256:NORMALIZED_MANIFEST_DIGEST",
+  "sourcebrief_commit": "NORMALIZED_SOURCEBRIEF_COMMIT",
+  "generated_at": "2026-06-24T00:00:00Z",
+  "aggregate": {
+    "mechanical_api_success_rate": 1.0,
+    "retrieval_quality_pass_rate": 1.0,
+    "human_answer_demo_pass_rate": 1.0,
+    "wrong_repo_failures": 0,
+    "unsupported_claim_failures": 0,
+    "verdict": "PASS"
+  },
+  "results": [
+    {
+      "id": "repo-symbol-001",
+      "grade": "PASS",
+      "rationale": "The context cited src/context_agent.py and included alpha_repo_symbol plus the expected marker.",
+      "checks": {
+        "mechanical_api_success": true,
+        "retrieval_quality": true,
+        "citation_support": true,
+        "wrong_repo_check": true,
+        "partial_corpus_caveat": true,
+        "human_answer_demo": "not_applicable"
+      },
+      "linked_child_issue_ids": [],
+      "raw_output_ref": "question-runs/repo-symbol-001.redacted.json"
+    },
+    {
+      "id": "negative-compliance-001",
+      "grade": "PASS",
+      "rationale": "The answer abstained from making SOC2/auditor claims because no supporting evidence was present.",
+      "checks": {
+        "mechanical_api_success": true,
+        "retrieval_quality": true,
+        "citation_support": true,
+        "wrong_repo_check": true,
+        "partial_corpus_caveat": true,
+        "human_answer_demo": true
+      },
+      "linked_child_issue_ids": [],
+      "raw_output_ref": "question-runs/negative-compliance-001.redacted.json"
+    }
+  ]
+}
