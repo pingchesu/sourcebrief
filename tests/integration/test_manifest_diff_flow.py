@@ -1479,6 +1479,7 @@ def test_expanded_mcp_runtime_tools_f(monkeypatch: pytest.MonkeyPatch, tmp_path:
         "sourcebrief.get_resource_map",
         "sourcebrief.search",
         "sourcebrief.read_section",
+        "sourcebrief.get_architecture",
         "sourcebrief.get_graph_inventory",
         "sourcebrief.graph_query",
         "sourcebrief.graph_path",
@@ -1511,6 +1512,55 @@ def test_expanded_mcp_runtime_tools_f(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert malformed["result"].get("isError") is True
     assert malformed["result"]["structuredContent"]["status_code"] == 422
 
+    architecture = call("sourcebrief.get_architecture", {"max_resources": 10, "max_items": 10})
+    assert architecture["resources"][0]["name"] == "F MCP Runtime bundle"
+    assert architecture["graphs"][0]["graph_key"] == "runtime-mcp-graph"
+    assert architecture["graphs"][0]["version_hash"].startswith("sha256:")
+    assert architecture["schema_hints"]["node_types"]
+    assert any(entry["path"] == "README.md" for entry in architecture["topology"]["entry_like_files"])
+    assert architecture["freshness"]["resources"]
+
+    hidden_upload = upload_bundle(
+        client,
+        workspace_id,
+        project_id,
+        token,
+        "Hidden Architecture bundle",
+        {"README.md": b"# Hidden\nThis resource must not leak into scoped architecture."},
+    )
+    hidden_resource_id = hidden_upload["resource"]["id"]
+    hidden_graph_draft = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{hidden_resource_id}/graph/versions",
+        headers=auth_headers(token),
+        json={"graph_key": "hidden-architecture-graph", "title": "Hidden Architecture Graph"},
+    )
+    assert hidden_graph_draft.status_code == 200, hidden_graph_draft.text
+    hidden_graph_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graphs/hidden-architecture-graph/versions/{hidden_graph_draft.json()['version']['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish hidden architecture graph."},
+    )
+    assert hidden_graph_publish.status_code == 200, hidden_graph_publish.text
+    rest_architecture = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/architecture",
+        headers=auth_headers(token),
+        params={"max_resources": 10, "max_items": 10},
+    )
+    assert rest_architecture.status_code == 200, rest_architecture.text
+    assert any(row["name"] == "Hidden Architecture bundle" for row in rest_architecture.json()["resources"])
+
+    scoped_visible = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        headers=auth_headers(token),
+        json={"name": "mcp f scoped visible", "scopes": ["resource:read", "project:query"], "allowed_project_ids": [project_id], "allowed_resource_ids": [resource_id]},
+    )
+    assert scoped_visible.status_code == 201, scoped_visible.text
+    visible_architecture = call("sourcebrief.get_architecture", {"max_resources": 10, "max_items": 10}, bearer=scoped_visible.json()["token"])
+    visible_payload = json.dumps(visible_architecture)
+    assert "F MCP Runtime bundle" in visible_payload
+    assert "Hidden Architecture bundle" not in visible_payload
+    assert "hidden-architecture-graph" not in visible_payload
+
     graph_inventory = call("sourcebrief.get_graph_inventory", {"query": "runtime", "kind": "all"})
     assert any(graph["graph_key"] == "runtime-mcp-graph" for graph in graph_inventory["resource_graphs"])
     graph_query = call("sourcebrief.graph_query", {"graph_key": "runtime-mcp-graph", "graph_kind": "resource", "query": "README", "limit": 10})
@@ -1526,3 +1576,8 @@ def test_expanded_mcp_runtime_tools_f(monkeypatch: pytest.MonkeyPatch, tmp_path:
     denied = mcp("tools/call", {"name": "sourcebrief.get_context_pack", "arguments": {"pack_key": "default"}}, bearer=denied_token.json()["token"])
     assert denied["result"].get("isError") is True
     assert "not found" in json.dumps(denied["result"]["structuredContent"]).lower()
+
+    denied_architecture = call("sourcebrief.get_architecture", {"max_resources": 10, "max_items": 10}, bearer=denied_token.json()["token"])
+    assert denied_architecture["resources"] == []
+    assert denied_architecture["graphs"] == []
+    assert "F MCP Runtime bundle" not in json.dumps(denied_architecture)

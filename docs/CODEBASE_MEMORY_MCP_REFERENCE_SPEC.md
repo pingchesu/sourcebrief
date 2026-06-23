@@ -357,4 +357,7 @@ Each PR should update this spec's status notes or the relevant user-facing docs 
 
 - Spec created from 10 reviewer viewpoints after codebase-memory-mcp analysis.
 - Claude Code reviewers were attempted but blocked by `401 Invalid authentication credentials`; five Hermes fallback reviewers supplied the corresponding lenses.
-- No implementation workstream is complete until its acceptance criteria and verification gates pass.
+- Workstream A completed in PR #58.
+- Workstream B completed in PR #59.
+- Workstream C in progress on `feat/architecture-overview`: adds `sourcebrief.get_architecture` / compact graph overview with scoped resource filtering.
+- No remaining implementation workstream is complete until its acceptance criteria and verification gates pass.
