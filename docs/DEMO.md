@@ -74,7 +74,7 @@ sourcebrief use \
 sourcebrief status
 ```
 
-Then add and index the source:
+Then add and index the source. Resource creation remains explicit so scripts do not accidentally add sources to the wrong project:
 
 ```bash
 RESOURCE_JSON=$(sourcebrief --json resource add-doc \

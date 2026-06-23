@@ -129,6 +129,13 @@ def patch_client(monkeypatch):
     monkeypatch.setattr(cli, "SourceBriefClient", FakeClient)
 
 
+@pytest.fixture(autouse=True)
+def isolate_cli_config_env(monkeypatch):
+    monkeypatch.delenv("SOURCEBRIEF_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_API_URL", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_API_URL", raising=False)
+
+
 def test_add_repo_builds_git_resource_and_waits(monkeypatch, capsys):
     patch_client(monkeypatch)
 
@@ -311,6 +318,80 @@ def test_cli_missing_selected_scope_errors(monkeypatch, capsys, tmp_path):
     err = capsys.readouterr().err
     assert "--workspace-id and --project-id required" in err
     assert "sourcebrief use" in err
+
+
+def test_cli_use_clear_and_partial_update_do_not_restore_stale_defaults(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(
+        json.dumps({"api_url": "http://api.example", "workspace_id": "ws-old", "project_id": "proj-old"}),
+        encoding="utf-8",
+    )
+
+    assert cli_main(["use", "--clear"]) == 0
+    cleared = json.loads(config_path.read_text(encoding="utf-8"))
+    assert cleared == {"api_url": "http://api.example"}
+    capsys.readouterr()
+
+    config_path.write_text(
+        json.dumps({"api_url": "http://api.example", "workspace_id": "ws-old", "project_id": "proj-old"}),
+        encoding="utf-8",
+    )
+    assert cli_main(["use", "--workspace-id", "ws-new"]) == 0
+    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    assert updated == {"api_url": "http://api.example", "workspace_id": "ws-new"}
+    assert json.loads(capsys.readouterr().out)["project_id"] is None
+
+
+def test_cli_saved_api_url_is_used_but_not_silently_overwritten(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(
+        json.dumps({"api_url": "http://api.example", "workspace_id": "ws-1", "project_id": "proj-1"}),
+        encoding="utf-8",
+    )
+
+    assert cli_main(["--json", "status"]) == 0
+    assert json.loads(capsys.readouterr().out)["api_url"] == "http://api.example"
+
+    assert cli_main(["--json", "ask", "demo"]) == 0
+    assert FakeClient.instances[-1].api_url == "http://api.example"
+    capsys.readouterr()
+
+    assert cli_main(["--api-url", "http://override.example", "--json", "ask", "demo"]) == 0
+    assert FakeClient.instances[-1].api_url == "http://override.example"
+    capsys.readouterr()
+
+    assert cli_main(["use", "--project-id", "proj-2"]) == 0
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["api_url"] == "http://api.example"
+    assert saved["project_id"] == "proj-2"
+
+
+def test_cli_selected_defaults_do_not_affect_token_scope_project_ids(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-selected", "project_id": "proj-selected"}), encoding="utf-8")
+
+    assert cli_main(["--json", "token", "create", "--workspace-id", "ws-1", "--name", "Hermes", "--scope", "project:query"]) == 0
+    body = FakeClient.instances[-1].calls[0][2]
+    assert body is not None
+    assert body["allowed_project_ids"] is None
+    assert body["allowed_resource_ids"] is None
+    assert body["scopes"] == ["project:query"]
+
+
+def test_cli_use_clear_recovers_from_invalid_config(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text("not json", encoding="utf-8")
+
+    assert cli_main(["use", "--clear"]) == 0
+    assert json.loads(config_path.read_text(encoding="utf-8"))["api_url"] == "http://localhost:18000"
 
 
 def test_agent_registry_and_resource_graph_commands(monkeypatch, capsys):
