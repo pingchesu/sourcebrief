@@ -161,9 +161,19 @@ def test_remote_code_http_and_mcp_flow(tmp_path) -> None:
     names = {tool["name"] for tool in mcp_tools.json()["result"]["tools"]}
     assert {"sourcebrief.get_agent_context", "sourcebrief.grep_code", "sourcebrief.read_file", "sourcebrief.search_code", "sourcebrief.find_symbol"}.issubset(names)
 
+    mcp_search = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "sourcebrief.search_code", "arguments": {"query": "checkout repo", "resource_ids": [resource_id]}}},
+        headers=headers,
+    )
+    assert mcp_search.status_code == 200, mcp_search.text
+    search_results = mcp_search.json()["result"]["structuredContent"]["results"]
+    assert search_results[0]["path"] == "src/checkout.py"
+    assert search_results[0]["score_components"]["identifier"] > 0
+
     mcp_grep = client.post(
         f"/mcp/{workspace_id}/{project_id}",
-        json={"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "sourcebrief.grep_code", "arguments": {"pattern": "checkoutrepo42", "resource_ids": [resource_id]}}},
+        json={"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "sourcebrief.grep_code", "arguments": {"pattern": "checkoutrepo42", "resource_ids": [resource_id]}}},
         headers=headers,
     )
     assert mcp_grep.status_code == 200, mcp_grep.text
@@ -281,6 +291,14 @@ def test_empty_resource_allowlist_cannot_expand_to_project_scope(tmp_path) -> No
     )
     assert grep.status_code == 200, grep.text
     assert grep.json()["matches"] == []
+
+    search_code = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/search_code",
+        json={"query": "checkout repo"},
+        headers=empty_scoped,
+    )
+    assert search_code.status_code == 200, search_code.text
+    assert search_code.json()["results"] == []
 
     symbol = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/find_symbol",

@@ -302,13 +302,22 @@ Improve code search and graph extraction precision without weakening SourceBrief
 - `search_code` p95 improves on SourceBrief repo fixture without widening resource leakage.
 - Symbol lookup accuracy improves on representative Python/TS fixtures.
 
+### Status
+
+Implemented as a bounded POC in Workstream E:
+
+- Remote `sourcebrief.search_code` now uses identifier-aware scoring over bounded current-snapshot files, splitting camelCase, snake_case, kebab-case, dotted paths, and file paths.
+- `sourcebrief.search_code` returns per-hit `score_components` (`lexical`, `exact`, `identifier`, `path`) and preserves resource id, snapshot id, indexed commit, path, line range, and snippet citations.
+- Symbol extraction now includes deterministic Python and TypeScript/JavaScript imports in addition to class/function definitions.
+- REST code symbol search uses the same identifier token fallback while keeping project/resource scoping and current-snapshot joins.
+- No tree-sitter dependency or parse cache landed in this POC; those remain follow-up work after measuring value from the lexical/import changes.
+
 ### Verification
 
-- Parser fixture tests.
-- Integration tests with real Postgres/pgvector where applicable.
-- Retrieval golden questions.
-- Auth denial tests for hidden resources.
-- Metrics artifact in docs or test output.
+- Unit fixtures cover identifier tokenization/scoring and Python/TypeScript import extraction.
+- Integration tests cover REST code symbol search for imports, MCP `search_code` score components, and empty-resource allowlist denial.
+- Measured local validation for this POC: `tests/unit/test_code_intel.py tests/unit/test_remote_code.py` -> 30 passed in 0.02s; targeted real Postgres/Redis integration for `test_remote_code_http_and_mcp_flow`, `test_empty_resource_allowlist_cannot_expand_to_project_scope`, and `test_git_ingestion_extracts_and_searches_code_symbols` -> 3 passed in 0.94s.
+- Full SourceBrief repo benchmark, one-file refresh reuse metrics, tree-sitter pilot, and staged graph insertion remain out of scope for this incremental PR.
 
 ## Workstream F - Trust and Supply-Chain Packaging
 

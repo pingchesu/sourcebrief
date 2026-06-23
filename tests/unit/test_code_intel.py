@@ -6,21 +6,24 @@ from sourcebrief_shared.code_intel import extract_code_symbols, language_for_pat
 def test_extract_python_symbols() -> None:
     symbols = extract_code_symbols(
         "src/app.py",
-        "class CheckoutService:\n    pass\n\nasync def refresh_resource():\n    pass\n\ndef helper(x):\n    return x\n",
+        "import os\nfrom sourcebrief_worker.jobs import run_index\n\nclass CheckoutService:\n    pass\n\nasync def refresh_resource():\n    pass\n\ndef helper(x):\n    return x\n",
     )
     assert [(s.kind, s.name, s.line_start) for s in symbols] == [
-        ("class", "CheckoutService", 1),
-        ("function", "refresh_resource", 4),
-        ("function", "helper", 7),
+        ("import", "os", 1),
+        ("import", "sourcebrief_worker.jobs.run_index", 2),
+        ("class", "CheckoutService", 4),
+        ("function", "refresh_resource", 7),
+        ("function", "helper", 10),
     ]
 
 
 def test_extract_typescript_symbols() -> None:
     symbols = extract_code_symbols(
         "app/page.tsx",
-        "export class SearchPage {}\nexport function runSearch() {}\nconst buildPacket = async () => {};\n",
+        "import { api } from '@/lib/api'\nexport class SearchPage {}\nexport function runSearch() {}\nconst buildPacket = async () => {};\n",
     )
     assert [(s.kind, s.name, s.language) for s in symbols] == [
+        ("import", "@/lib/api", "typescript"),
         ("class", "SearchPage", "typescript"),
         ("function", "runSearch", "typescript"),
         ("function", "buildPacket", "typescript"),
