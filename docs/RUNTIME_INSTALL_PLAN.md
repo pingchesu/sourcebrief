@@ -1,6 +1,6 @@
 # Runtime install plan
 
-SourceBrief can generate a copyable install plan for connecting an agent runtime to one SourceBrief project. The plan is intentionally a dry run: it shows the MCP URL, target runtime config, required token scopes, validation command, and rollback steps without editing Hermes, Claude Code, Codex, Cursor, shell profiles, or local config files. The separate guarded Hermes apply command requires an explicit mutation flag and writes a local receipt.
+SourceBrief can generate a copyable install plan for connecting an agent runtime to one SourceBrief project. The plan is intentionally a dry run: it shows the MCP URL, target runtime config, required token scopes, validation command, and rollback steps without editing Hermes, Claude Code, Codex, Cursor, shell profiles, or local config files. The separate guarded Hermes apply command supports a no-write preview, requires an explicit mutation flag for writes, and writes a local receipt when applied.
 
 Use this guide when you already have a running SourceBrief stack and want a coding agent to call SourceBrief for cited evidence while it works.
 
@@ -137,7 +137,7 @@ sourcebrief --json runtime apply --plan plan.json --target hermes --dry-run
 sourcebrief --json runtime apply --plan plan.json --target hermes --apply
 ```
 
-`apply` validates the plan schema, target, digest, and age before writing. The digest is an accidental-edit guard for a generated local plan, not a signature or trust boundary. `--dry-run` prints the exact file operation and writes nothing. `--apply` is required for mutation; legacy `--yes` remains only as a compatibility alias. SourceBrief does not run installer scripts from remote URLs, does not use mutable `latest` download commands, and does not verify release signatures because no signed release channel exists yet.
+`apply` validates the plan schema, target, digest, and age before writing. The digest is an accidental-edit guard for a generated local plan, not a signature or trust boundary. `--dry-run` prints the exact file operation and writes nothing. `--apply` is required for mutation, but the CLI does not persist or require proof of a prior dry run; legacy `--yes` remains only as a compatibility alias. SourceBrief does not run installer scripts from remote URLs, does not use mutable `latest` download commands, and does not verify release signatures because no signed release channel exists yet.
 
 For Hermes, apply rewrites the YAML file through the YAML parser while preserving existing top-level settings and MCP server entries semantically. It only adds or replaces the planned SourceBrief MCP server entry, but comments, anchors, and formatting may be normalized. The receipt records file hashes, token env var names, and rollback command. The receipt never stores the token value.
 

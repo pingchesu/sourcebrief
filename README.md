@@ -29,7 +29,7 @@ This walkthrough was captured from a real local SourceBrief stack with live API,
 
 SourceBrief can generate a dry-run runtime install plan for Hermes, Claude Code, or Codex. The plan shows the project-scoped MCP URL, target config shape, read-oriented token scopes, validator command, capabilities, warnings, and rollback steps.
 
-It is deliberately a plan, not a silent installer. SourceBrief does not edit Hermes, Claude, Codex, Cursor, shell profiles, or local runtime files by itself, and generated config uses token placeholders or runtime-native environment references instead of plaintext bearer tokens. The guarded Hermes apply path still requires a local `--dry-run` preview followed by explicit `--apply`; there is no remote `curl | sh`, mutable `latest`, or silent package-manager install flow.
+It is deliberately a plan, not a silent installer. SourceBrief does not edit Hermes, Claude, Codex, Cursor, shell profiles, or local runtime files by itself, and generated config uses token placeholders or runtime-native environment references instead of plaintext bearer tokens. The guarded Hermes apply path supports a local `--dry-run` preview and requires explicit `--apply` for mutation; there is no remote `curl | sh`, mutable `latest`, or silent package-manager install flow.
 
 Start in the web UI: choose a workspace/project by name, open **Agent Profile**, choose a runtime, and generate the plan. The UI keeps the human-facing project/resource context first.
 
