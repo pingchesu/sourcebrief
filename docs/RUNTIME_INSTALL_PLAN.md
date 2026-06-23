@@ -67,19 +67,35 @@ sourcebrief --json agent profile \
 Create a runtime token from a user/session-authenticated flow. In local dev, the CLI can create one when `SOURCEBRIEF_DEV_AUTH` is set to `true`:
 
 ```bash
-sourcebrief --json token create \
+sourcebrief --json token create-runtime \
   --workspace-id "$WORKSPACE_ID" \
   --name "SourceBrief runtime token" \
-  --scope project:read,project:query,resource:read,review:read,code:read \
+  --read-code \
   --project-id "$PROJECT_ID" \
   --resource-id "$RESOURCE_ID"
 ```
+
+Use `--context-only` if the runtime only needs cited context and not remote code drilldown tools. `create-runtime` requires at least one explicit project/resource allowlist by default; pass `--workspace-wide` only when you intentionally want a token that can read/query the whole workspace.
 
 The plaintext token is returned once. Store it in the runtime secret store or an environment variable such as `SOURCEBRIEF_TOKEN`; do not commit it. API tokens cannot mint child tokens in shared deployments. See [Agent runtime usage](AGENT_RUNTIME_USAGE.md#auth-for-agents) for the longer auth guidance.
 
 ## Generate a plan from the CLI
 
 The UI is the primary human-facing path because it lets you choose the workspace, project, and resource scope by name. Use the CLI when you are scripting or when you already have the IDs from the UI route, creation responses, or `sourcebrief --json agent profile` output.
+
+Guided dry-run setup:
+
+```bash
+sourcebrief use --workspace-id "$WORKSPACE_ID" --project-id "$PROJECT_ID"
+sourcebrief --json runtime setup hermes \
+  --public-api-url "http://localhost:18000" \
+  --resource-id "$RESOURCE_ID" \
+  --plan-out plan.json
+```
+
+`runtime setup` generates the same plan, writes it only when `--plan-out` is provided, previews the validator command, and prints next steps. It does not edit Hermes or any other runtime config.
+
+Lower-level explicit plan generation:
 
 ```bash
 sourcebrief --json runtime plan \

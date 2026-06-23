@@ -159,7 +159,7 @@ compose, not compete with each other.
 | Surface | Best for | What the agent gets |
 | --- | --- | --- |
 | Workbench UI | A human wants to inspect an answer before handing it to an agent. | Rendered packet, citations, evidence rows, and freshness signals. |
-| CLI `agent-context` | Scripts, demos, smoke tests, or one-off local experiments. | One JSON/text runtime packet with citations and runtime instructions. |
+| CLI `ask` / `agent-context` | Scripts, demos, smoke tests, or one-off local experiments. | One JSON/text runtime packet with citations and runtime instructions. |
 | MCP | Live agent sessions in Hermes, Claude Code, Codex, Cursor, or custom runtimes. | Discoverable tools for context, search, remote code drilldown, graph traversal, and guarded proposal flows. |
 | Generated agent pack | You want to configure a runtime for one SourceBrief project quickly. | `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `mcp.json`, golden questions, manifest, and usage notes. |
 | Context Pack Skill Export | You have a reviewed Context Pack and want a reusable team workflow. | Approved skill files, references, playbooks, citation policy, validation report, and leak-scan metadata. |
@@ -195,13 +195,15 @@ Do not use the narrowest token for generated agent packs or remote-code drilldow
 Token creation requires user/session authentication with `token:admin`; API tokens cannot mint child tokens. In local dev, the CLI can mint a token when `SOURCEBRIEF_DEV_AUTH=true` is enabled. In shared deployments, use a user-authenticated admin/session flow to mint scoped runtime tokens.
 
 ```bash
-sourcebrief --json token create \
+sourcebrief --json token create-runtime \
   --workspace-id "$WORKSPACE_ID" \
   --name "Hermes SourceBrief token" \
-  --scope project:read,project:query,resource:read,review:read,code:read \
+  --read-code \
   --project-id "$PROJECT_ID" \
   --resource-id "$RESOURCE_ID"
 ```
+
+Use `--context-only` instead of `--read-code` when the runtime only needs cited context and not remote file/symbol/grep drilldown. `create-runtime` requires an explicit project/resource allowlist by default; pass `--workspace-wide` only when you intentionally want a workspace-wide runtime token.
 
 The plaintext token is returned once. Store it in the runtime's secret manager or environment, not in Git. Treat local runtime config, generated plans, receipts, downloaded/generated agent packs, and cached context as sensitive workspace artifacts because they can expose endpoint URLs, project/resource IDs, source paths, and citations even when token values are not present:
 

@@ -129,6 +129,13 @@ def patch_client(monkeypatch):
     monkeypatch.setattr(cli, "SourceBriefClient", FakeClient)
 
 
+@pytest.fixture(autouse=True)
+def isolate_cli_config_env(monkeypatch):
+    monkeypatch.delenv("SOURCEBRIEF_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_API_URL", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_API_URL", raising=False)
+
+
 def test_add_repo_builds_git_resource_and_waits(monkeypatch, capsys):
     patch_client(monkeypatch)
 
@@ -233,6 +240,195 @@ def test_search_json_output(monkeypatch, capsys):
     assert data["query"] == "demo"
     client = FakeClient.instances[0]
     assert client.calls[0][2] == {"query": "demo", "top_k": 10, "resource_ids": ["res-1"]}
+
+
+def test_cli_use_status_and_ask_defaults(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+
+    assert (
+        cli_main(
+            [
+                "--api-url",
+                "http://api.example",
+                "use",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+            ]
+        )
+        == 0
+    )
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved == {"api_url": "http://api.example", "project_id": "proj-1", "workspace_id": "ws-1"}
+    assert json.loads(capsys.readouterr().out)["status"] == "saved"
+
+    assert cli_main(["--token", "cs_existing", "--json", "status"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["workspace_id"] == "ws-1"
+    assert status["project_id"] == "proj-1"
+    assert status["auth_mode"] == "bearer_token"
+    assert status["token_set"] is True
+    assert "cs_existing" not in json.dumps(status)
+
+    assert cli_main(["--json", "ask", "Where is retry policy?", "--runtime", "hermes", "--resource-id", "res-1"]) == 0
+    client = FakeClient.instances[-1]
+    assert client.calls[0] == (
+        "POST",
+        "/workspaces/ws-1/projects/proj-1/agent-context",
+        {
+            "query": "Where is retry policy?",
+            "runtime": "hermes",
+            "top_k": 8,
+            "resource_ids": ["res-1"],
+            "include_code_symbols": True,
+            "max_chars": 12000,
+        },
+        None,
+    )
+
+
+def test_cli_selected_defaults_apply_to_search_and_resource_list(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-1", "project_id": "proj-1"}), encoding="utf-8")
+
+    assert cli_main(["--json", "search", "--query", "demo"]) == 0
+    assert FakeClient.instances[-1].calls[0][0:2] == ("POST", "/workspaces/ws-1/projects/proj-1/search")
+    capsys.readouterr()
+
+    assert cli_main(["--json", "resource", "list"]) == 0
+    assert FakeClient.instances[-1].calls[0][0:2] == ("GET", "/workspaces/ws-1/projects/proj-1/resources")
+
+    assert cli_main(["--json", "search", "--workspace-id", "ws-explicit", "--project-id", "proj-explicit", "--query", "demo"]) == 0
+    assert FakeClient.instances[-1].calls[0][0:2] == (
+        "POST",
+        "/workspaces/ws-explicit/projects/proj-explicit/search",
+    )
+
+
+def test_cli_missing_selected_scope_errors(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "missing.json"))
+
+    assert cli_main(["search", "--query", "demo"]) == 1
+    err = capsys.readouterr().err
+    assert "--workspace-id and --project-id required" in err
+    assert "sourcebrief use" in err
+
+
+def test_cli_use_clear_and_partial_update_do_not_restore_stale_defaults(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(
+        json.dumps({"api_url": "http://api.example", "workspace_id": "ws-old", "project_id": "proj-old"}),
+        encoding="utf-8",
+    )
+
+    assert cli_main(["use", "--clear"]) == 0
+    cleared = json.loads(config_path.read_text(encoding="utf-8"))
+    assert cleared == {"api_url": "http://api.example"}
+    capsys.readouterr()
+
+    config_path.write_text(
+        json.dumps({"api_url": "http://api.example", "workspace_id": "ws-old", "project_id": "proj-old"}),
+        encoding="utf-8",
+    )
+    assert cli_main(["use", "--workspace-id", "ws-new"]) == 0
+    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    assert updated == {"api_url": "http://api.example", "workspace_id": "ws-new"}
+    assert json.loads(capsys.readouterr().out)["project_id"] is None
+
+
+def test_cli_saved_api_url_is_used_but_not_silently_overwritten(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(
+        json.dumps({"api_url": "http://api.example", "workspace_id": "ws-1", "project_id": "proj-1"}),
+        encoding="utf-8",
+    )
+
+    assert cli_main(["--json", "status"]) == 0
+    assert json.loads(capsys.readouterr().out)["api_url"] == "http://api.example"
+
+    assert cli_main(["--json", "ask", "demo"]) == 0
+    assert FakeClient.instances[-1].api_url == "http://api.example"
+    capsys.readouterr()
+
+    assert cli_main(["--api-url", "http://override.example", "--json", "ask", "demo"]) == 0
+    assert FakeClient.instances[-1].api_url == "http://override.example"
+    capsys.readouterr()
+
+    assert cli_main(["use", "--project-id", "proj-2"]) == 0
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["api_url"] == "http://api.example"
+    assert saved["project_id"] == "proj-2"
+
+
+def test_cli_selected_defaults_do_not_affect_token_scope_project_ids(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-selected", "project_id": "proj-selected"}), encoding="utf-8")
+
+    assert cli_main(["--json", "token", "create", "--workspace-id", "ws-1", "--name", "Hermes", "--scope", "project:query"]) == 0
+    body = FakeClient.instances[-1].calls[0][2]
+    assert body is not None
+    assert body["allowed_project_ids"] is None
+    assert body["allowed_resource_ids"] is None
+    assert body["scopes"] == ["project:query"]
+
+
+def test_token_create_runtime_presets(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "token",
+                "create-runtime",
+                "--workspace-id",
+                "ws-1",
+                "--name",
+                "Hermes Runtime",
+                "--project-id",
+                "proj-1",
+                "--read-code",
+            ]
+        )
+        == 0
+    )
+    body = FakeClient.instances[-1].calls[0][2]
+    assert body is not None
+    assert body["name"] == "Hermes Runtime"
+    assert body["scopes"] == ["project:read", "project:query", "resource:read", "review:read", "code:read"]
+    assert body["allowed_project_ids"] == ["proj-1"]
+    capsys.readouterr()
+
+    assert cli_main(["--json", "token", "create-runtime", "--workspace-id", "ws-1", "--context-only"]) == 1
+    assert "requires --project-id/--resource-id or explicit --workspace-wide" in capsys.readouterr().err
+
+    assert cli_main(["--json", "token", "create-runtime", "--workspace-id", "ws-1", "--context-only", "--workspace-wide"]) == 0
+    body = FakeClient.instances[-1].calls[0][2]
+    assert body is not None
+    assert body["scopes"] == ["project:read", "project:query", "resource:read", "review:read"]
+    assert body["allowed_project_ids"] is None
+
+
+def test_cli_use_clear_recovers_from_invalid_config(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text("not json", encoding="utf-8")
+
+    assert cli_main(["use", "--clear"]) == 0
+    assert json.loads(config_path.read_text(encoding="utf-8"))["api_url"] == "http://localhost:18000"
 
 
 def test_agent_registry_and_resource_graph_commands(monkeypatch, capsys):
@@ -629,6 +825,111 @@ def test_runtime_plan_output_includes_apply_metadata(monkeypatch, capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["schema_version"] == cli.runtime_apply.PLAN_SCHEMA_VERSION
     assert data["plan_digest"].startswith("sha256:")
+
+
+def test_doctor_uses_selected_defaults_and_optional_mcp_context(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-1", "project_id": "proj-1"}), encoding="utf-8")
+
+    assert cli_main(["--json", "doctor", "--query", "hello runtime"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["status"] == "passed"
+    assert [check["name"] for check in data["checks"]] == ["api", "auth_mode", "project", "mcp_context"]
+    assert data["checks"][1]["status"] == "info"
+    client = FakeClient.instances[-1]
+    assert ("GET", "/readyz", None, None) in client.calls
+    assert any(call[1] == "/mcp/ws-1/proj-1" for call in client.calls)
+
+
+def test_doctor_returns_nonzero_on_mcp_tool_error(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-1", "project_id": "proj-1"}), encoding="utf-8")
+
+    original_request = FakeClient.request
+
+    def fake_request(self, method, path, *, body=None, expected=None):
+        if path == "/mcp/ws-1/proj-1":
+            return {"jsonrpc": "2.0", "id": 1, "result": {"isError": True, "content": [{"type": "text", "text": "denied"}]}}
+        return original_request(self, method, path, body=body, expected=expected)
+
+    monkeypatch.setattr(FakeClient, "request", fake_request)
+
+    assert cli_main(["--json", "doctor", "--query", "hello runtime"]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["status"] == "failed"
+    assert data["checks"][-1]["name"] == "mcp_context"
+    assert data["checks"][-1]["status"] == "failed"
+
+
+def test_doctor_returns_nonzero_on_api_failure(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    def fake_request(self, method, path, *, body=None, expected=None):
+        if path == "/readyz":
+            raise cli.SourceBriefCliError("boom")
+        return {"status": "ok"}
+
+    monkeypatch.setattr(FakeClient, "request", fake_request)
+
+    assert cli_main(["--json", "doctor", "--workspace-id", "ws-1", "--project-id", "proj-1"]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["status"] == "failed"
+    assert data["checks"][0]["status"] == "failed"
+
+
+def test_runtime_setup_generates_plan_preview_without_apply(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    plan_out = tmp_path / "runtime-plan.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-1", "project_id": "proj-1"}), encoding="utf-8")
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "runtime",
+                "setup",
+                "hermes",
+                "--public-api-url",
+                "https://sourcebrief.example.com",
+                "--dry-run",
+                "--plan-out",
+                str(plan_out),
+            ]
+        )
+        == 0
+    )
+
+    data = json.loads(capsys.readouterr().out)
+    assert data["status"] == "dry_run_ready"
+    assert data["plan_path"] == str(plan_out)
+    assert data["plan"]["schema_version"] == cli.runtime_apply.PLAN_SCHEMA_VERSION
+    assert data["validation"]["status"] == "not_run"
+    assert "--read-code" in data["token_command"]
+    assert str(plan_out) in data["next_steps"][2]
+    assert plan_out.exists()
+    saved = json.loads(plan_out.read_text(encoding="utf-8"))
+    assert saved["plan_digest"].startswith("sha256:")
+    client = FakeClient.instances[-1]
+    assert client.calls[0][0:2] == ("POST", "/workspaces/ws-1/projects/proj-1/runtime-install-plan")
+
+
+def test_runtime_setup_default_output_is_human_readable(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-1", "project_id": "proj-1"}), encoding="utf-8")
+
+    assert cli_main(["runtime", "setup", "hermes"]) == 0
+    output = capsys.readouterr().out
+    assert "Runtime setup: dry-run ready" in output
+    assert "rerun with --plan-out plan.json" in output
+    assert "token_command:" in output
 
 
 def test_runtime_apply_dry_run_writes_nothing(tmp_path, capsys):
