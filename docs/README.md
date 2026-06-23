@@ -1,39 +1,45 @@
 # SourceBrief docs
 
-This directory contains user docs, operator docs, architecture notes, and product/RFC material. Start with the path that matches what you are trying to do.
+Use this page as a map. If you are new, follow the first section in order; the design specs and milestone archive are not required for normal use.
 
-## New users
+## Start here: understand the product
 
-- [Quick start](QUICKSTART.md) - run the local stack and get to the first product moment.
-- [Product walkthrough](WALKTHROUGH.md) - see real UI screenshots and a captured agent-context response.
-- [Concepts](CONCEPTS.md) - learn the vocabulary: Source, Snapshot, Resource Map, Context Pack, Skill Pack, MCP tools.
-- [Guide](GUIDE.md) - walk through API, CLI, Git resources, MCP, and review workflows.
-- [Project status](STATUS.md) - what works today, what is experimental, and what is intentionally not ready.
+1. [Product walkthrough](WALKTHROUGH.md) - see real UI screenshots and a captured `agent-context` response before installing anything.
+2. [5-minute demo](DEMO.md) - use a tiny deterministic source to prove the indexed-evidence and MCP-shaped path quickly.
+3. [Concepts](CONCEPTS.md) - learn the minimum vocabulary: Source, Snapshot, Citation, Agent Context, Resource Map, Context Pack, Skill Pack, and MCP tools.
+4. [Project status](STATUS.md) - understand what is shipped, experimental, and intentionally not production/SaaS-ready yet.
 
-## Agent/runtime integration
+## Run SourceBrief locally
+
+- [Quick start](QUICKSTART.md) - start the local stack, open the web console, connect a source, ask in Workbench, and reach the first useful SourceBrief product moment.
+- [Guide](GUIDE.md) - hands-on API/CLI walkthrough for workspaces, projects, resources, search, context packets, MCP calls, review, and Git imports.
+
+## Use SourceBrief with agents
 
 - [Agent runtime usage](AGENT_RUNTIME_USAGE.md) - practical Hermes, Claude Code, Codex, Cursor, MCP, skill, and remote-code workflows.
-- [Runtime install plan](RUNTIME_INSTALL_PLAN.md) - generate dry-run Hermes, Claude, or Codex connection plans, review required scopes, copy config, validate MCP, and roll back without silent local profile mutation.
-- [Guide](GUIDE.md) - `agent-context`, MCP calls, CLI workflow, and resource review.
-- [Remote repo agent skill pack spec](REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md) - adapter and package design notes.
-- [Context Artifact Compiler repo-agent spec](CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md) - repo agent lifecycle and compiler direction.
-- [C2 Skill Pack Compiler spec](context-artifact-compiler/C2-skill-pack-compiler-spec.md) - citation-backed Skill Pack package model and real E2E value gate.
+- [Runtime install plan](RUNTIME_INSTALL_PLAN.md) - generate dry-run Hermes, Claude, or Codex connection plans, review scopes/config, validate MCP, and roll back without silent local profile mutation.
+- [Captured agent-context output](examples/agent-context-output.md) - normalized example of a real runtime-shaped response.
 
-## Developers
+## Understand the system
 
-- [Architecture](ARCHITECTURE.md) - system design and runtime components.
-- [Product spec](SPEC.md) - full product and architecture specification.
-- [Roadmap](ROADMAP.md) - finite alpha roadmap after the first milestone set.
+- [Architecture](ARCHITECTURE.md) - system design and runtime components: FastAPI, PostgreSQL/pgvector, Redis/RQ workers, Next.js, agent-context, MCP routes, graph/code-symbol retrieval, and tenant boundaries.
+- [Operations](OPERATIONS.md) - health checks, logs, queues, migrations, stuck jobs, rollback, restore, purge lifecycle, and local reset.
 - [Alpha release notes](ALPHA_RELEASE_NOTES.md) - shipped alpha capabilities and explicit non-goals.
 
-## Operators
+## Trust, status, and product gaps
 
-- [Operations](OPERATIONS.md) - health checks, logs, queues, migrations, stuck jobs, rollback, and local reset.
+- [Project status](STATUS.md) - deployment readiness, alpha limits, experimental areas, and future work.
 - [Git repo import product gaps](GIT_REPO_IMPORT_PRODUCT_GAPS.md) - enterprise product backlog for Git source onboarding.
+- [Roadmap](ROADMAP.md) - finite alpha roadmap after the first milestone set.
 
-## RFCs and implementation specs
+## Deep reference and design specs
 
-- [Codebase Memory MCP reference spec](CODEBASE_MEMORY_MCP_REFERENCE_SPEC.md) - follow-up roadmap for easy runtime onboarding, cross-repo context, architecture graph views, service-link candidates, and indexing/search POCs inspired by `DeusData/codebase-memory-mcp`.
+These documents are design/reference material. They are useful for contributors and reviewers, but they should not be the first read for new users.
+
+- [Product spec](SPEC.md) - broad product and architecture specification.
+- [Codebase Memory MCP reference spec](CODEBASE_MEMORY_MCP_REFERENCE_SPEC.md) - follow-up roadmap for runtime onboarding, cross-repo context, graph views, service-link candidates, and indexing/search POCs.
+- [Remote repo agent skill pack spec](REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md) - adapter and package design notes.
+- [Context Artifact Compiler repo-agent spec](CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md) - repo agent lifecycle and compiler direction.
 
 Context Artifact Compiler specs live in [`context-artifact-compiler/`](context-artifact-compiler/):
 
@@ -50,9 +56,9 @@ Context Artifact Compiler specs live in [`context-artifact-compiler/`](context-a
 - [E1 Graph merge v0](context-artifact-compiler/E1-graph-merge-v0-spec.md)
 - [F Expanded MCP tools](context-artifact-compiler/F-expanded-mcp-tools-spec.md)
 
-## Milestone archive
+## Implementation history
 
-Milestone documents are retained as implementation history. They are useful when reviewing how the alpha was built, but they are not the best first read for new users.
+Milestone documents are retained as implementation history. They explain how the alpha was built, but they are archive material.
 
 - [M1 Foundation runtime](MILESTONE-1.md)
 - [M2 Resource ingestion and lexical search](MILESTONE-2.md)

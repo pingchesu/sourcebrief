@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="620" viewBox="0 0 1160 620" role="img" aria-labelledby="title desc">
+  <title id="title">SourceBrief mental model</title>
+  <desc id="desc">A project boundary contains sources, snapshots, derived evidence, reviewed artifacts, and runtime access. Agents use SourceBrief for evidence and edit in the real checkout.</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1f4fd6" />
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1f7a4d" />
+    </marker>
+    <filter id="shadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#1b2430" flood-opacity="0.12" />
+    </filter>
+    <style>
+      .bg { fill: #f4f2ec; }
+      .boundary { fill: #fffdf8; stroke: #1b2430; stroke-width: 2.5; stroke-dasharray: 10 7; }
+      .card { fill: #ffffff; stroke: #d7d2c6; stroke-width: 1.5; filter: url(#shadow); }
+      .dark { fill: #14181f; stroke: #2d3440; stroke-width: 1.5; filter: url(#shadow); }
+      .title { font: 700 30px Georgia, 'Times New Roman', serif; fill: #1b2430; }
+      .subtitle { font: 500 14px Georgia, 'Times New Roman', serif; fill: #5d6b7a; }
+      .h { font: 700 17px Georgia, 'Times New Roman', serif; fill: #1b2430; }
+      .hdark { font: 700 17px Georgia, 'Times New Roman', serif; fill: #ffffff; }
+      .body { font: 13px Georgia, 'Times New Roman', serif; fill: #5d6b7a; }
+      .bodydark { font: 13px Georgia, 'Times New Roman', serif; fill: #d9e2f2; }
+      .mono { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #314153; }
+      .monodark { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #b9c7ff; }
+      .chip { font: 700 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .04em; }
+      .small { font: 12px Georgia, 'Times New Roman', serif; fill: #5d6b7a; }
+      .arrow { stroke: #1f4fd6; stroke-width: 3; fill: none; marker-end: url(#arrow-blue); }
+      .loop { stroke: #1f7a4d; stroke-width: 2.5; fill: none; marker-end: url(#arrow-green); stroke-dasharray: 7 5; }
+      .guard { stroke: #b32820; stroke-width: 2.5; fill: none; stroke-dasharray: 8 6; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1160" height="620" rx="28" />
+  <text class="title" x="44" y="54">SourceBrief mental model</text>
+  <text class="subtitle" x="44" y="80">From source material to cited agent evidence, with provenance and permissions attached.</text>
+
+  <rect class="boundary" x="34" y="112" width="870" height="430" rx="28" />
+  <text class="chip" x="60" y="145" fill="#1f4fd6">WORKSPACE / PROJECT BOUNDARY</text>
+  <text class="small" x="280" y="145">One permission-scoped context boundary across repos, docs, runbooks, URLs, uploads, and bundles.</text>
+
+  <rect class="card" x="62" y="184" width="150" height="150" rx="18" />
+  <text class="h" x="82" y="218">1. Sources</text>
+  <text class="body" x="82" y="246">Git repos</text>
+  <text class="body" x="82" y="268">Docs + runbooks</text>
+  <text class="body" x="82" y="290">URLs, uploads</text>
+  <text class="body" x="82" y="312">Folder bundles</text>
+
+  <rect class="card" x="250" y="184" width="150" height="150" rx="18" />
+  <text class="h" x="270" y="218">2. Snapshots</text>
+  <text class="body" x="270" y="246">Exact indexed</text>
+  <text class="body" x="270" y="268">version</text>
+  <text class="mono" x="270" y="295">commit / hash</text>
+  <text class="mono" x="270" y="315">path / time</text>
+
+  <rect class="card" x="438" y="184" width="170" height="150" rx="18" />
+  <text class="h" x="458" y="218">3. Evidence index</text>
+  <text class="body" x="458" y="246">Chunks + sections</text>
+  <text class="body" x="458" y="268">Embeddings</text>
+  <text class="body" x="458" y="290">Code symbols</text>
+  <text class="body" x="458" y="312">Graphs + edges</text>
+
+  <rect class="card" x="646" y="184" width="190" height="150" rx="18" />
+  <text class="h" x="666" y="218">4. Reviewed artifacts</text>
+  <text class="body" x="666" y="246">Resource Maps</text>
+  <text class="body" x="666" y="268">Context Packs</text>
+  <text class="body" x="666" y="290">Skill Exports</text>
+  <text class="body" x="666" y="312">Freshness + coverage</text>
+
+  <rect class="dark" x="278" y="376" width="330" height="116" rx="18" />
+  <text class="hdark" x="300" y="411">5. Runtime access</text>
+  <text class="bodydark" x="300" y="438">Workbench, HTTP API, CLI, MCP tools</text>
+  <text class="monodark" x="300" y="466">get_agent_context · search · read_section</text>
+
+  <path class="arrow" d="M212 259 L250 259" />
+  <path class="arrow" d="M400 259 L438 259" />
+  <path class="arrow" d="M608 259 L646 259" />
+  <path class="arrow" d="M741 334 C741 380 650 421 608 431" />
+  <path class="arrow" d="M523 334 C523 356 500 371 486 376" />
+  <path class="loop" d="M735 188 C805 124 516 112 403 176" />
+  <text class="small" x="520" y="120">review · approve · refresh · republish</text>
+
+  <rect class="card" x="62" y="376" width="172" height="116" rx="18" />
+  <text class="h" x="82" y="410">Citation rail</text>
+  <text class="mono" x="82" y="438">resource → snapshot</text>
+  <text class="mono" x="82" y="460">path:line → hash</text>
+  <text class="body" x="82" y="480">Every claim traces back.</text>
+
+  <rect class="card" x="954" y="166" width="164" height="150" rx="18" />
+  <text class="h" x="976" y="200">6. Agents</text>
+  <text class="body" x="976" y="228">Hermes</text>
+  <text class="body" x="976" y="250">Claude Code</text>
+  <text class="body" x="976" y="272">Codex</text>
+  <text class="body" x="976" y="294">Cursor</text>
+
+  <path class="arrow" d="M608 434 C742 434 815 260 954 238" />
+
+  <line class="guard" x1="920" y1="96" x2="920" y2="558" />
+  <text class="chip" x="936" y="388" fill="#b32820">BOUNDARY</text>
+  <text class="small" x="936" y="414">SourceBrief provides evidence.</text>
+  <text class="small" x="936" y="434">Agents edit, test, commit,</text>
+  <text class="small" x="936" y="454">and open PRs elsewhere.</text>
+
+  <rect x="62" y="556" width="362" height="34" rx="17" fill="#eaf5ef" stroke="#b7d8c4" />
+  <text class="chip" x="82" y="578" fill="#1f7a4d">READY</text>
+  <text class="small" x="134" y="578">reviewed evidence and fresh snapshots</text>
+  <rect x="450" y="556" width="382" height="34" rx="17" fill="#fff4d9" stroke="#e7c96f" />
+  <text class="chip" x="470" y="578" fill="#936300">REVIEW</text>
+  <text class="small" x="534" y="578">stale, noisy, failed, or low-value context</text>
+</svg>

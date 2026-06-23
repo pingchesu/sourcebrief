@@ -1,0 +1,107 @@
+# SourceBrief 5-minute demo
+
+This demo proves the shortest SourceBrief loop without waiting on a large Git import:
+
+```text
+small source -> indexed snapshot -> cited agent context -> MCP-shaped response
+```
+
+It is intentionally deterministic. Use it when you want to show the product idea before moving to a real repository.
+
+## Assumptions
+
+- The local stack is already running. See [Quick start](QUICKSTART.md).
+- The CLI is on your path.
+- Local dev auth is enabled only for this local demo:
+
+```bash
+export SOURCEBRIEF_API_URL=http://localhost:18000
+export SOURCEBRIEF_EMAIL=demo@example.com
+```
+
+For shared or production-like deployments, use bearer tokens instead of dev auth.
+
+## 1. Create a tiny source
+
+```bash
+cat > /tmp/sourcebrief-demo-runbook.md <<'EOF'
+# Payment retry runbook
+
+If the payment retry queue stalls, check queue depth, worker status,
+provider health, and recent deploys.
+
+The SourceBrief demo marker is sb-demo-retry-42.
+EOF
+```
+
+## 2. Create a workspace and project
+
+```bash
+WORKSPACE_ID=$(sourcebrief --json workspace create \
+  --name "Demo" \
+  --slug "demo-$(date +%s)" \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+PROJECT_ID=$(sourcebrief --json project create \
+  --workspace-id "$WORKSPACE_ID" \
+  --name "Demo Project" \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```
+
+The CLI is automation-oriented and currently uses IDs. The web UI is the easier human path when choosing existing workspaces and projects by name.
+
+## 3. Add and index the source
+
+```bash
+RESOURCE_JSON=$(sourcebrief --json resource add-doc \
+  --workspace-id "$WORKSPACE_ID" \
+  --project-id "$PROJECT_ID" \
+  --name "Payment retry runbook" \
+  --uri "doc://payment-retry-runbook" \
+  --content-file /tmp/sourcebrief-demo-runbook.md \
+  --refresh \
+  --wait)
+
+RESOURCE_ID=$(printf '%s' "$RESOURCE_JSON" \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["resource"]["id"])')
+```
+
+## 4. Ask for agent-shaped context
+
+```bash
+sourcebrief --json agent-context \
+  --workspace-id "$WORKSPACE_ID" \
+  --project-id "$PROJECT_ID" \
+  --resource-id "$RESOURCE_ID" \
+  --runtime hermes \
+  --query "What should I check when the payment retry queue stalls?"
+```
+
+A useful response should mention the queue depth, worker status, provider health, and recent deploys, with citations back to the demo runbook.
+
+## 5. Exercise the MCP-shaped path
+
+```bash
+sourcebrief --json mcp-context \
+  --workspace-id "$WORKSPACE_ID" \
+  --project-id "$PROJECT_ID" \
+  --resource-id "$RESOURCE_ID" \
+  --runtime hermes \
+  --query "What should I check when the payment retry queue stalls?"
+```
+
+This calls the same project-scoped MCP surface an agent runtime would use. The important proof is not that the answer sounds right; it should be inspectable and cite the exact indexed source.
+
+## What this demo proves
+
+- SourceBrief can index source material into a snapshot.
+- Agent-shaped context is generated from that indexed evidence.
+- The response carries citations and follow-up handles instead of unsupported prose.
+- MCP is the runtime path for agents; SourceBrief still does not edit, test, commit, or deploy anything.
+
+## What to try next
+
+- Use the web Workbench to ask the same question and inspect citations visually.
+- Add a real Git resource from [Quick start](QUICKSTART.md).
+- Generate a runtime install plan from [Runtime install plan](RUNTIME_INSTALL_PLAN.md).
+- Connect an actual agent using [Agent runtime usage](AGENT_RUNTIME_USAGE.md).

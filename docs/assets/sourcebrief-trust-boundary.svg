@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="520" viewBox="0 0 1160 520" role="img" aria-labelledby="title desc">
+  <title id="title">SourceBrief trust boundary</title>
+  <desc id="desc">SourceBrief generates runtime plans and serves evidence through scoped MCP calls. Local runtime configuration and production mutations stay outside the SourceBrief boundary.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1f4fd6" />
+    </marker>
+    <style>
+      .bg { fill: #f4f2ec; }
+      .card { fill: #ffffff; stroke: #d7d2c6; stroke-width: 1.5; }
+      .server { fill: #14181f; stroke: #2d3440; stroke-width: 1.5; }
+      .safe { fill: #eaf5ef; stroke: #b7d8c4; stroke-width: 1.5; }
+      .warn { fill: #fff4d9; stroke: #e7c96f; stroke-width: 1.5; }
+      .no { fill: #fff4f2; stroke: #d79b96; stroke-width: 1.5; }
+      .title { font: 700 30px Georgia, 'Times New Roman', serif; fill: #1b2430; }
+      .subtitle { font: 500 14px Georgia, 'Times New Roman', serif; fill: #5d6b7a; }
+      .h { font: 700 16px Georgia, 'Times New Roman', serif; fill: #1b2430; }
+      .hdark { font: 700 16px Georgia, 'Times New Roman', serif; fill: #ffffff; }
+      .body { font: 13px Georgia, 'Times New Roman', serif; fill: #5d6b7a; }
+      .bodydark { font: 13px Georgia, 'Times New Roman', serif; fill: #d9e2f2; }
+      .mono { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #314153; }
+      .monodark { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #b9c7ff; }
+      .chip { font: 700 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .04em; }
+      .arrow { stroke: #1f4fd6; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #b32820; stroke-width: 2.5; fill: none; stroke-dasharray: 8 6; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1160" height="520" rx="28" />
+  <text class="title" x="44" y="54">Runtime trust boundary</text>
+  <text class="subtitle" x="44" y="80">SourceBrief makes the evidence path inspectable. Local config, tokens, edits, tests, PRs, and production actions stay explicit.</text>
+
+  <rect class="server" x="62" y="134" width="248" height="122" rx="20" />
+  <text class="hdark" x="90" y="170">SourceBrief project</text>
+  <text class="bodydark" x="90" y="198">scoped evidence service</text>
+  <text class="monodark" x="90" y="224">MCP URL + citations</text>
+
+  <rect class="card" x="366" y="134" width="248" height="122" rx="20" />
+  <text class="h" x="394" y="170">Runtime plan</text>
+  <text class="body" x="394" y="198">config shape, scopes,</text>
+  <text class="body" x="394" y="218">validator, rollback</text>
+  <text class="mono" x="394" y="242">no token value</text>
+
+  <rect class="warn" x="670" y="134" width="248" height="122" rx="20" />
+  <text class="h" x="698" y="170">Local runtime config</text>
+  <text class="body" x="698" y="198">Hermes / Claude / Codex</text>
+  <text class="body" x="698" y="218">stores env reference</text>
+  <text class="mono" x="698" y="242">SOURCEBRIEF_TOKEN</text>
+
+  <path class="arrow" d="M310 195 L366 195" />
+  <path class="arrow" d="M614 195 L670 195" />
+
+  <rect class="safe" x="214" y="316" width="224" height="108" rx="18" />
+  <text class="h" x="240" y="350">MCP evidence calls</text>
+  <text class="body" x="240" y="378">initialize, tools/list,</text>
+  <text class="body" x="240" y="398">get_agent_context</text>
+
+  <rect class="safe" x="500" y="316" width="224" height="108" rx="18" />
+  <text class="h" x="526" y="350">Agent receives</text>
+  <text class="body" x="526" y="378">cited snippets, paths,</text>
+  <text class="body" x="526" y="398">line ranges, hashes</text>
+
+  <rect class="no" x="786" y="316" width="250" height="108" rx="18" />
+  <text class="h" x="812" y="350">Outside SourceBrief</text>
+  <text class="body" x="812" y="378">edit, test, git, PR, deploy</text>
+  <text class="body" x="812" y="398">need separate approval/tools</text>
+
+  <path class="arrow" d="M794 256 C794 292 441 294 372 316" />
+  <path class="arrow" d="M438 370 L500 370" />
+  <path class="dash" d="M724 370 L786 370" />
+
+  <text class="chip" x="62" y="468" fill="#1f7a4d">DOES</text>
+  <text class="body" x="116" y="468">serve scoped cited evidence, generate dry-run plans, validate API/MCP, write guarded Hermes config only with explicit apply</text>
+  <text class="chip" x="62" y="494" fill="#b32820">DOES NOT</text>
+  <text class="body" x="142" y="494">silently edit profiles, store plaintext tokens in generated artifacts, run curl|sh installers, or execute production mutations</text>
+</svg>

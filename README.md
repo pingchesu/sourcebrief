@@ -1,51 +1,18 @@
 # SourceBrief
 
-> The evidence layer for coding agents.
+> Cited project context for coding agents.
 
-SourceBrief turns repos, docs, runbooks, and uploaded knowledge into cited context that agents can actually trust.
+Coding agents do not need bigger prompts. They need evidence they can inspect before they edit.
 
-It is not a chatbot, a vector database wrapper, or an autonomous production agent. It is the context control plane between your source material and Claude Code, Codex, Cursor, Hermes, or any MCP-compatible runtime.
+SourceBrief turns repos, docs, runbooks, URLs, uploads, and folder bundles into versioned context that Hermes, Claude Code, Codex, Cursor, and other MCP-compatible agents can query on demand. A good SourceBrief answer is not just plausible; it points back to source material with citations, snapshots, paths, line ranges, hashes, and follow-up read handles.
 
-Agents should not guess from whatever files happened to fit in the prompt. They should ask for structured citations: resource and snapshot identifiers, paths or titles, versions or commits when available, scores, and follow-up handles for exact evidence.
+Use it when you need agents to answer with evidence, not vibes.
 
-| SourceBrief today | What that means |
-| --- | --- |
-| Cited evidence for agents | Answers include structured citations, paths or titles, versions or commits when available, and follow-up handles for exact reads. |
-| One project-scoped MCP endpoint | Hermes, Claude Code, Codex, Cursor, and custom runtimes can ask one authorized endpoint for project context. |
-| Cross-repo and docs-aware projects | One project can contain repos, docs, runbooks, URLs, uploads, and zip bundles without per-repo MCP sprawl. |
-| Read-only by default | SourceBrief supplies context; it does not execute production mutations. External actions need separate typed tools, explicit approvals, and rollback workflows. |
-| Dry-run runtime plans | SourceBrief can show config, scopes, validation, and rollback without silently editing local agent profiles or putting plaintext tokens in generated config or plan artifacts. |
-| Local alpha | SourceBrief is ready for local development and product exploration, not public-internet SaaS deployment yet. |
+[See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Read the docs](docs/README.md)
 
-<img src="docs/assets/sourcebrief-context-flow.svg" alt="SourceBrief turns sources into reviewed context packs and serves them to agents through API and MCP" width="100%" />
+<img src="docs/assets/sourcebrief-mental-model.svg" alt="SourceBrief mental model from sources to snapshots to reviewed evidence to MCP/API agent access" width="100%" />
 
-## See it running
-
-<img src="docs/assets/sourcebrief-product-walkthrough.gif" alt="Animated SourceBrief walkthrough showing Command Center, Sources, and Workbench citations" width="100%" />
-
-This walkthrough was captured from a real local SourceBrief stack with live API, workers, Postgres, Redis, two indexed resources, and a real `agent-context` response. See the full [product walkthrough](docs/WALKTHROUGH.md) and the captured [agent-context output](docs/examples/agent-context-output.md).
-
-## Connect an agent safely
-
-SourceBrief can generate a dry-run runtime install plan for Hermes, Claude Code, or Codex. The plan shows the project-scoped MCP URL, target config shape, read-oriented token scopes, validator command, capabilities, warnings, and rollback steps.
-
-It is deliberately a plan, not a silent installer. SourceBrief does not edit Hermes, Claude, Codex, Cursor, shell profiles, or local runtime files by itself, and generated config uses token placeholders or runtime-native environment references instead of plaintext bearer tokens. The guarded Hermes apply path supports a local `--dry-run` preview and requires explicit `--apply` for mutation; there is no remote `curl | sh`, mutable `latest`, or silent package-manager install flow.
-
-Start in the web UI: choose a workspace/project by name, open **Agent Profile**, choose a runtime, and generate the plan. The UI keeps the human-facing project/resource context first.
-
-For automation or advanced CLI use, pass the current workspace/project IDs from the UI route or API responses:
-
-```bash
-sourcebrief --json runtime plan \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
-  --target hermes \
-  --public-api-url "http://localhost:18000"
-```
-
-Then validate the SourceBrief API/MCP endpoint and token before relying on the connection, and separately confirm your chosen runtime loaded the copied config. See [Runtime install plan](docs/RUNTIME_INSTALL_PLAN.md) for the full flow.
-
-## Why SourceBrief exists
+## The problem
 
 AI coding agents are becoming daily engineering tools, but the context layer is still handled like a hack:
 
@@ -56,111 +23,115 @@ AI coding agents are becoming daily engineering tools, but the context layer is 
 - every repo wants its own MCP server, prompt bundle, or ad hoc retrieval script
 - teams have no review loop for stale, noisy, or low-value context
 
-SourceBrief gives teams a governed context supply chain:
+SourceBrief exists so agents can ask the project for cited, permission-scoped evidence before they act.
+
+## See it work
+
+<img src="docs/assets/sourcebrief-product-walkthrough.gif" alt="Animated SourceBrief walkthrough showing Command Center, Sources, and Workbench citations" width="100%" />
+
+This walkthrough was captured from a real local SourceBrief stack with live API, workers, Postgres, Redis, two indexed resources, and a real `agent-context` response. See the full [product walkthrough](docs/WALKTHROUGH.md) and the captured [agent-context output](docs/examples/agent-context-output.md).
+
+A useful SourceBrief answer looks like this:
 
 ```text
-connect sources
-    -> index versioned snapshots
-    -> review maps, freshness, and coverage
-    -> publish pinned context packs
-    -> serve cited evidence through API or MCP
-```
+Question: How does this project expose context to agents?
 
-Use it when you need agents to answer with evidence, not vibes.
-
-## Cross-repo and docs-aware context
-
-A SourceBrief project is a context boundary for a product, service, or repo group. Put multiple repos, runbooks, architecture notes, URLs, uploads, and zip/folder bundles into one project, then let agents ask one project-scoped MCP endpoint for cited evidence across the authorized resources.
-
-That cross-resource view keeps the boundaries visible: responses include structured citations such as resource and snapshot identifiers, paths or titles, versions or commits when available, scores, and follow-up handles. Exact file reads, retained sections, graph queries, and resource maps provide deeper line, freshness, and provenance evidence where that specific tool exposes it. The goal is not to merge every repo into one opaque graph; it is to let agents follow evidence across code and docs without losing provenance or permissions.
-
-## What SourceBrief does
-
-| Capability | What it means for an agent |
-| --- | --- |
-| Resource ingestion | Add Git repos, Markdown/runbooks, URLs, uploads, and zip folder bundles. |
-| Versioned snapshots | Keep context tied to commit SHA, content hash, path, and indexed version. |
-| Resource Maps | Generate reviewable maps of what SourceBrief found in a repo or folder. |
-| Context Packs | Publish pinned, permission-scoped evidence bundles for agent tasks. |
-| Graph and symbols | Follow relationships across resources, directories, files, and code symbols. |
-| MCP and HTTP runtime | Give Hermes, Claude Code, Codex, Cursor, and custom agents one project-scoped API/MCP surface for `get_agent_context`, cited search, exact section reads, indexed code grep/read/symbol lookup, and graph queries. |
-| Skill Packs | Turn reviewed Context Packs into installable runtime packages: `SKILL.md`, references, playbooks, validation metadata, citation policy, freshness rules, and leak-scan results. |
-| Review and quality | Track freshness, failed imports, usage, and low-value context before drift piles up. |
-
-SourceBrief provides context. It does not execute production mutations; any external production action needs separate typed tools, explicit approvals, and rollback workflows.
-
-## A good SourceBrief answer
-
-Ask:
-
-```text
-How does this project expose context to agents?
-```
-
-SourceBrief should return the files, docs, and symbols that matter, with citations the caller can inspect:
-
-```text
+Answer:
 SourceBrief exposes agent context through the project-scoped agent-context API
 and the central MCP endpoint.
 
 Evidence:
-- apps/api/sourcebrief_api/main.py:6906-6949
+- apps/api/sourcebrief_api/main.py
   agent-context response shape and route
-- apps/api/sourcebrief_api/main.py:8007-8196
+- apps/api/sourcebrief_api/main.py
   MCP tools/list and tools/call dispatch
-- docs/ARCHITECTURE.md:124-166
+- docs/ARCHITECTURE.md
   agent context and MCP runtime paths
 
 The response includes runtime instructions, cited snippets, structured citations,
 optional code symbols, and a token budget hint.
 ```
 
-That is the product bar: source-backed answers a coding agent can use without pretending it read the whole repo.
+That is the product bar: an agent can act on the answer because every claim points back to source.
 
-## Use it with agents
+## How SourceBrief works
 
-This is the point of SourceBrief: agents should not work from whatever happened
-to fit in the prompt. They should be able to ask for the project evidence they
-need, cite it, drill into exact files or docs, and only then edit the real
-checkout.
+```text
+connect sources
+    -> index versioned snapshots
+    -> build chunks, embeddings, code symbols, and graphs
+    -> review freshness, coverage, and low-value context
+    -> publish pinned Context Packs when a workflow needs reviewed evidence
+    -> serve cited evidence through Workbench, HTTP, CLI, or MCP
+```
+
+| Layer | What it means |
+| --- | --- |
+| Sources | Git repos, Markdown/runbooks, URLs, uploads, and zip folder bundles. |
+| Snapshots | Exact indexed versions with commit, content hash, path, and timestamp provenance. |
+| Evidence index | Chunks, retained sections, embeddings, code symbols, graph nodes/edges, and citation locators. |
+| Review artifacts | Resource Maps, freshness, coverage, Context Packs, and Skill Exports for repeatable workflows. |
+| Runtime access | Workbench, HTTP API, CLI, and project-scoped MCP tools for agents. |
+
+A SourceBrief project is a context boundary for a product, service, or repo group. Put multiple repos, runbooks, architecture notes, URLs, uploads, and zip/folder bundles into one project, then let agents ask one authorized endpoint for evidence across the resources they are allowed to see.
+
+## The agent workflow
+
+<img src="docs/assets/sourcebrief-agent-workflow.svg" alt="Agent workflow showing SourceBrief evidence lookup before local checkout edits and tests" width="100%" />
+
+SourceBrief changes the agent loop:
 
 ```text
 coding agent gets an issue
-    -> asks SourceBrief MCP for the relevant docs, files, symbols, and risks
+    -> asks SourceBrief MCP for relevant docs, files, symbols, and risks
     -> reads exact cited sections from indexed snapshots
     -> edits and tests in the real checkout
-    -> can explain the change with citations instead of vibes
+    -> explains the change with citations instead of vibes
 ```
 
-The runtime pieces are deliberately small, but they change the agent workflow:
+Start broad with `sourcebrief.get_agent_context`. Drill down with `search`, `read_section`, `search_code`, `grep_code`, `read_file`, `find_symbol`, and graph tools when the task needs exact evidence. Use SourceBrief to know where to look and what to trust; use the coding agent's normal tools to edit, test, commit, and open PRs.
 
-| Runtime piece | What it gives the agent | Why it matters |
+For runtime setup, prompts, token scopes, remote-code safety, generated skills, and exact MCP tool guidance, read [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md).
+
+## Before and after SourceBrief
+
+| Task | Without SourceBrief | With SourceBrief |
 | --- | --- | --- |
-| **MCP** | Live tools such as `sourcebrief.get_agent_context`, cited search, indexed code grep/read, symbol lookup, graph queries, and guarded patch proposals. | The agent can fetch project context on demand instead of pretending the prompt or local checkout is complete. |
-| **Generated agent pack** | A portable package with `hermes/SKILL.md`, `claude/CLAUDE.md`, `codex/AGENTS.md`, `mcp.json`, golden questions, and usage notes. | You can hand a project-specific context contract to Hermes, Claude Code, Codex, Cursor, or another MCP-capable runtime. |
-| **Context Pack Skill Export** | A reviewed, citation-backed skill package generated from a published Context Pack. | Repeatable workflows can carry approved evidence, references, freshness rules, and leak-scan metadata instead of tribal knowledge. |
+| Review a runtime-auth change | The agent searches whatever files are local, guesses which token path matters, and may miss docs or tests in sibling folders. | The agent asks SourceBrief for service-token evidence, gets cited API routes, CLI commands, MCP auth docs, and tests, then edits the real checkout with a source-backed plan. |
+| Onboard to an unfamiliar repo group | The agent reads a README and a few files that fit in context, then invents a mental model. | The agent asks for architecture evidence across repos, docs, runbooks, symbols, and graph paths, then follows citations into exact sections before summarizing. |
+| Triage a stale runbook | The agent repeats old instructions because they were pasted into the prompt. | SourceBrief reports the indexed snapshot, freshness/review state, and cited sections, so the agent can say what is current, stale, or missing. |
 
-Good agent prompts become much more specific:
+## Choose your path
 
-```text
-Before editing auth, ask SourceBrief which routes, CLI commands, MCP tools,
-tests, and docs mention service tokens. Use the cited files to plan the change.
-```
+| I want to... | Start here |
+| --- | --- |
+| See the product before installing | [Product walkthrough](docs/WALKTHROUGH.md) |
+| Try a deterministic 5-minute demo | [5-minute demo](docs/DEMO.md) |
+| Run the full local stack | [Quick start](docs/QUICKSTART.md) |
+| Connect Hermes, Claude Code, Codex, Cursor, or another MCP client | [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md) |
+| Generate a guarded runtime config plan | [Runtime install plan](docs/RUNTIME_INSTALL_PLAN.md) |
+| Learn the vocabulary | [Concepts](docs/CONCEPTS.md) |
+| Understand the system design | [Architecture](docs/ARCHITECTURE.md) |
+| Operate or debug the local stack | [Operations](docs/OPERATIONS.md) |
+| Check alpha readiness and limits | [Project status](docs/STATUS.md) |
 
-```text
-Review this PR for runtime-agent impact. Start with SourceBrief evidence for
-agent-context, MCP auth, generated skills, and token scopes.
-```
+## Trust boundaries
 
-Start with [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md). It is the main
-guide for wiring this into Hermes, Claude Code, Codex, Cursor, or any
-MCP-capable runtime, including scoped tokens, remote-code safety, generated
-skills, and the exact MCP tools an agent should call before it edits or reviews
-code.
+<img src="docs/assets/sourcebrief-trust-boundary.svg" alt="SourceBrief runtime trust boundary showing evidence service, dry-run plan, local runtime config, MCP calls, and out-of-scope production mutations" width="100%" />
 
-## Quick start
+| Boundary | SourceBrief does | SourceBrief does not |
+| --- | --- | --- |
+| Project/resource access | Enforces workspace, project, resource, and token scopes. | Widen token-scoped access silently. |
+| Runtime install | Generates inspectable plans, config snippets, validator commands, and rollback steps. | Silently edit Hermes, Claude, Codex, Cursor, shell profiles, or local runtime files. |
+| Tokens | Uses placeholders or runtime-native environment references. | Put plaintext bearer tokens in generated plans, config snippets, or receipts. |
+| Remote code | Serves indexed evidence with citations and exact-read handles. | Pretend indexed code is the editable local checkout. |
+| Mutation | Can produce guarded proposals when explicitly enabled. | Deploy, restart services, mutate production, or open PRs without separate approval/tooling. |
 
-This is the shortest honest local path. It starts the real stack and opens the web console.
+SourceBrief is a local alpha for development and product exploration. It is not a public-internet-hardened SaaS distribution yet. See [project status](docs/STATUS.md) for shipped, experimental, and future work.
+
+## Run it locally
+
+This starts the real local stack and opens the web console.
 
 ### Prerequisites
 
@@ -171,7 +142,7 @@ This is the shortest honest local path. It starts the real stack and opens the w
 - npm
 - git
 
-### Run SourceBrief locally
+### Start the stack
 
 ```bash
 git clone https://github.com/pingchesu/sourcebrief.git
@@ -199,82 +170,11 @@ SOURCEBRIEF_ADMIN_EMAIL
 SOURCEBRIEF_ADMIN_PASSWORD
 ```
 
-From the UI, connect a source, inspect its indexing lifecycle, ask in Workbench, and review citations before using the context from an agent runtime.
+From the UI, connect a source, inspect its indexing lifecycle, ask in Workbench, and review citations before using the context from an agent runtime. The full [Quick start](docs/QUICKSTART.md) includes CLI experiments, verification commands, and troubleshooting.
 
-### CLI experiments
-
-The CLI supports either a bearer token or local development header auth.
-
-For local-only CLI demos, set `SOURCEBRIEF_DEV_AUTH=true` in `.env` before startup, then use `SOURCEBRIEF_EMAIL`:
-
-```bash
-make venv
-export PATH="$PWD/.venv/bin:$PATH"
-export SOURCEBRIEF_API_URL=http://localhost:18000
-export SOURCEBRIEF_EMAIL=demo@example.com
-
-sourcebrief health
-sourcebrief --help
-```
-
-For automation, pass a bearer API token as `SOURCEBRIEF_TOKEN` or `--token`. Do not use dev auth for shared or production-like deployments.
-
-### Full verification gate
-
-Use this when contributing or cutting a local release gate:
-
-```bash
-make verify
-```
-
-`make verify` runs lint, typecheck, unit tests, real-service integration tests, Docker Compose startup, migrations, QA smoke, and alpha eval. It is intentionally heavier than the quick start.
-
-## Core workflow
-
-```text
-1. Connect sources
-   Git repos, docs, runbooks, URLs, uploads, or zip folder bundles.
-
-2. Index snapshots
-   Workers create chunks, embeddings, code symbols, graph edges, and citations.
-
-3. Inspect and review
-   See freshness, indexing status, skipped files, usage, and low-value resources.
-
-4. Ask with evidence
-   Workbench and API requests return cited context packets and runtime instructions.
-
-5. Serve agents
-   Claude, Codex, Cursor, Hermes, and custom runtimes call HTTP or MCP tools.
-
-6. Package reusable context
-   Published Context Packs can export citation-backed Skill Packs.
-```
-
-## What SourceBrief is and is not
-
-| SourceBrief is | SourceBrief is not |
-| --- | --- |
-| A cited context control plane for coding agents. | A general chat UI. |
-| A project-scoped MCP/API surface across authorized resources. | One MCP server per repository. |
-| A way to package reviewed context into agent packs and Skill Packs. | Prompt stuffing or a private-corpus dump. |
-| Read-only by default, with patch/PR flows treated as opt-in proposals. | A tool that executes production mutations. |
-| An early alpha for local development and product exploration. | A public-internet-hardened SaaS distribution yet. |
-
-See [project status](docs/STATUS.md) for what is shipped, experimental, or future work.
-
-## Architecture
+## Architecture, briefly
 
 SourceBrief uses boring infrastructure on purpose:
-
-- FastAPI
-- PostgreSQL + pgvector
-- Redis + RQ
-- SQLAlchemy + Alembic
-- Next.js
-- Docker Compose
-
-Runtime shape:
 
 ```text
 Web UI / CLI / Agent client
@@ -284,84 +184,19 @@ Web UI / CLI / Agent client
         -> source snapshots, chunks, symbols, graphs, context packs, skill exports
 ```
 
-Read the full design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Documentation and related links
-
-### Start here
-
-- [Quick start](docs/QUICKSTART.md) - shortest local path to a real running
-  stack: Compose services, API readiness, web console login, and the first
-  useful SourceBrief product moment.
-- [Product walkthrough](docs/WALKTHROUGH.md) - screenshots and a captured
-  `agent-context` response from the local alpha. Use this when you want to see
-  what the product looks like before reading architecture.
-- [Concepts](docs/CONCEPTS.md) - the vocabulary map: Source, Snapshot, Resource
-  Map, Context Packet, Agent Context, Context Pack, Skill Pack, Repo Agent, and
-  MCP tools. Read this first if those terms are starting to blur together.
-- [Guide](docs/GUIDE.md) - hands-on API / CLI walkthrough for creating a
-  workspace, adding resources, indexing, searching, building context packets,
-  calling the central MCP endpoint, reviewing freshness, and importing Git repos.
-
-### Agent runtime, MCP, and skills
-
-- [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md) - the page to read if you
-  care about the agent story. It shows the actual loop: agent asks SourceBrief
-  for evidence, uses MCP to drill into cited remote code, edits only in the real
-  checkout, then runs tests through the normal coding-agent workflow.
-- [Runtime install plan](docs/RUNTIME_INSTALL_PLAN.md) - generate dry-run Hermes,
-  Claude, or Codex connection plans with scopes, config, validation, and
-  rollback steps without silent local profile mutation.
-- [MCP integration in the runtime guide](docs/AGENT_RUNTIME_USAGE.md#install-and-use-mcp)
-  - the practical setup path: project-scoped MCP URL, scoped bearer-token auth,
-  Hermes config, Claude/Codex/Cursor config examples, integration validator, and
-  the tools agents should discover (`get_agent_context`, `search`,
-  `read_section`, `search_code`, `grep_code`, `read_file`, `find_symbol`, graph
-  tools, and guarded proposal flows).
-- [Generated skills and agent packs](docs/AGENT_RUNTIME_USAGE.md#install-and-use-skills)
-  - the packaging story: SourceBrief can produce `hermes/SKILL.md`,
-  `claude/CLAUDE.md`, `codex/AGENTS.md`, `mcp.json`, golden questions, and a
-  changelog without embedding the private corpus. The files teach the runtime how
-  to ask SourceBrief, not how to bypass it.
-- [Remote repo agent skill pack spec](docs/REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md)
-  - design notes for packaging a repository as agent-usable context while
-  keeping the pack separate from the target checkout and from SourceBrief's
-  indexed corpus.
-- [C2 Skill Pack Compiler spec](docs/context-artifact-compiler/C2-skill-pack-compiler-spec.md)
-  - the deeper product contract for citation-backed Skill Pack exports,
-  approval, validation, leak-scan metadata, and the E2E value gate.
-
-### Architecture and operations
-
-- [Architecture](docs/ARCHITECTURE.md) - system design and runtime components:
-  FastAPI, PostgreSQL/pgvector, Redis/RQ workers, Next.js, agent-context, MCP
-  routes, graph/code-symbol retrieval, tenant boundaries, and the non-negotiable
-  rule that production mutations stay outside SourceBrief.
-- [Operations](docs/OPERATIONS.md) - health checks, logs, queues, migrations,
-  stuck jobs, rollback, restore, purge lifecycle, and local reset.
-- [Project status](docs/STATUS.md) - what the alpha actually ships today, what is
-  experimental, what is intentionally not ready, and which gaps matter before a
-  shared or production-like deployment.
-- [Docs home](docs/README.md) - full documentation map, including RFCs,
-  compiler specs, milestones, product gaps, and backlog material.
+Read the full design in [Architecture](docs/ARCHITECTURE.md).
 
 ## Development
 
 Useful commands:
 
 ```bash
-make help              # list common commands
-make compose-up        # start local services
-make compose-down      # stop local services
-make lint              # Python lint + frontend typecheck
-make typecheck         # backend mypy + frontend typecheck
-make test              # unit tests
-make test-integration  # integration tests against real services
-make qa-smoke          # real API/worker/frontend smoke flow
-make verify            # full local acceptance gate
+make help       # list common commands
+make compose-up # start local services
+make verify     # full local acceptance gate
 ```
 
-The smoke test covers document and Git ingestion, snapshots, chunks, embeddings, code symbols, hybrid retrieval, usage analytics, review lifecycle, agent-context API, MCP tools, audit events, authorization denial, worker execution, and frontend health.
+`make verify` runs lint, typecheck, unit tests, real-service integration tests, Docker Compose startup, migrations, QA smoke, and alpha eval. It is intentionally heavier than the quick start.
 
 ## Security and privacy
 

@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="560" viewBox="0 0 1160 560" role="img" aria-labelledby="title desc">
+  <title id="title">SourceBrief agent workflow</title>
+  <desc id="desc">A coding agent asks SourceBrief for evidence, drills into cited sources, then edits and tests in the real checkout.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1f4fd6" />
+    </marker>
+    <style>
+      .bg { fill: #f4f2ec; }
+      .lane { fill: #fffdf8; stroke: #d7d2c6; stroke-width: 1.5; }
+      .laneTitle { font: 700 16px Georgia, 'Times New Roman', serif; fill: #1b2430; }
+      .card { fill: #ffffff; stroke: #d7d2c6; stroke-width: 1.5; }
+      .dark { fill: #14181f; stroke: #2d3440; stroke-width: 1.5; }
+      .risk { fill: #fff4f2; stroke: #d79b96; stroke-width: 1.5; }
+      .title { font: 700 30px Georgia, 'Times New Roman', serif; fill: #1b2430; }
+      .subtitle { font: 500 14px Georgia, 'Times New Roman', serif; fill: #5d6b7a; }
+      .h { font: 700 15px Georgia, 'Times New Roman', serif; fill: #1b2430; }
+      .hdark { font: 700 15px Georgia, 'Times New Roman', serif; fill: #ffffff; }
+      .body { font: 12.5px Georgia, 'Times New Roman', serif; fill: #5d6b7a; }
+      .bodydark { font: 12.5px Georgia, 'Times New Roman', serif; fill: #d9e2f2; }
+      .mono { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #314153; }
+      .monodark { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #b9c7ff; }
+      .chip { font: 700 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .04em; }
+      .arrow { stroke: #1f4fd6; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .guard { stroke: #b32820; stroke-width: 2.5; fill: none; stroke-dasharray: 8 6; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1160" height="560" rx="28" />
+  <text class="title" x="44" y="54">The agent loop SourceBrief enables</text>
+  <text class="subtitle" x="44" y="80">SourceBrief answers where to look and what to trust. The coding agent still edits and tests in the real checkout.</text>
+
+  <rect class="lane" x="44" y="118" width="1072" height="90" rx="18" />
+  <text class="laneTitle" x="68" y="151">Developer / task</text>
+  <rect class="card" x="252" y="136" width="180" height="54" rx="14" />
+  <text class="h" x="272" y="160">Issue arrives</text>
+  <text class="body" x="272" y="180">“Review runtime auth.”</text>
+  <rect class="card" x="880" y="136" width="190" height="54" rx="14" />
+  <text class="h" x="900" y="160">Review result</text>
+  <text class="body" x="900" y="180">Citations + test output</text>
+
+  <rect class="lane" x="44" y="232" width="1072" height="118" rx="18" />
+  <text class="laneTitle" x="68" y="265">Coding agent</text>
+  <rect class="card" x="198" y="252" width="162" height="72" rx="14" />
+  <text class="h" x="216" y="276">Ask first</text>
+  <text class="mono" x="216" y="298">get_agent_context</text>
+  <text class="body" x="216" y="318">before editing</text>
+  <rect class="card" x="420" y="252" width="162" height="72" rx="14" />
+  <text class="h" x="438" y="276">Drill down</text>
+  <text class="mono" x="438" y="298">read_section</text>
+  <text class="mono" x="438" y="316">grep_code</text>
+  <rect class="risk" x="642" y="252" width="162" height="72" rx="14" />
+  <text class="h" x="660" y="276">Plan change</text>
+  <text class="body" x="660" y="298">with cited risks, docs,</text>
+  <text class="body" x="660" y="316">symbols, and tests</text>
+  <rect class="card" x="864" y="252" width="162" height="72" rx="14" />
+  <text class="h" x="882" y="276">Explain</text>
+  <text class="body" x="882" y="298">what changed and why</text>
+  <text class="body" x="882" y="316">with evidence</text>
+
+  <rect class="lane" x="44" y="374" width="514" height="112" rx="18" />
+  <text class="laneTitle" x="68" y="407">SourceBrief</text>
+  <rect class="dark" x="198" y="394" width="300" height="72" rx="14" />
+  <text class="hdark" x="220" y="418">Return cited evidence</text>
+  <text class="bodydark" x="220" y="440">authorized snapshots, docs, files, symbols, graphs</text>
+  <text class="monodark" x="220" y="458">resource → snapshot → path:line → hash</text>
+
+  <rect class="lane" x="602" y="374" width="514" height="112" rx="18" />
+  <text class="laneTitle" x="626" y="407">Real checkout / tools</text>
+  <rect class="card" x="742" y="394" width="300" height="72" rx="14" />
+  <text class="h" x="764" y="418">Edit, test, commit, PR</text>
+  <text class="body" x="764" y="440">Normal local agent tools do mutation.</text>
+  <text class="body" x="764" y="458">SourceBrief does not deploy or restart prod.</text>
+
+  <path class="arrow" d="M432 163 C506 163 140 250 198 288" />
+  <path class="arrow" d="M360 288 L420 288" />
+  <path class="arrow" d="M501 324 C501 358 442 380 406 394" />
+  <path class="arrow" d="M498 430 C564 430 583 299 642 288" />
+  <path class="arrow" d="M804 288 L864 288" />
+  <path class="arrow" d="M723 324 C723 360 790 380 836 394" />
+  <path class="arrow" d="M945 252 C952 210 947 194 930 190" />
+
+  <line class="guard" x1="580" y1="360" x2="580" y2="498" />
+  <text class="chip" x="536" y="520" fill="#b32820">EVIDENCE / MUTATION BOUNDARY</text>
+</svg>
