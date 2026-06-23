@@ -1,0 +1,430 @@
+{
+  "schema_version": "sourcebrief.eval-manifest.v1",
+  "name": "SourceBrief alpha real-corpus launch eval",
+  "description": "Structured example manifest for the alpha repo/runbook corpus. Replace normalized IDs before running against a real workspace.",
+  "thresholds": {
+    "pass_min_rate": 0.8,
+    "partial_min_rate": 0.6,
+    "block_below_rate": 0.6,
+    "max_wrong_repo": 0,
+    "max_unsupported_claims": 0
+  },
+  "run": {
+    "sourcebrief_commit": "NORMALIZED_SOURCEBRIEF_COMMIT",
+    "api_url": "http://localhost:18000",
+    "web_url": "http://localhost:13000",
+    "workspace_id": "NORMALIZED_WORKSPACE_ID",
+    "project_id": "NORMALIZED_PROJECT_ID",
+    "resources": [
+      {
+        "key": "alpha_repo",
+        "target_repo": "alpha-eval-repo",
+        "resource_ids": [
+          "NORMALIZED_REPO_RESOURCE_ID"
+        ],
+        "snapshot_ids": [
+          "NORMALIZED_REPO_SNAPSHOT_ID"
+        ],
+        "upstream_commit": "NORMALIZED_UPSTREAM_COMMIT",
+        "import_type": "full",
+        "corpus_caveats": []
+      },
+      {
+        "key": "alpha_runbook",
+        "target_repo": "alpha-eval-runbook",
+        "resource_ids": [
+          "NORMALIZED_RUNBOOK_RESOURCE_ID"
+        ],
+        "snapshot_ids": [
+          "NORMALIZED_RUNBOOK_SNAPSHOT_ID"
+        ],
+        "import_type": "limited",
+        "corpus_caveats": [
+          "demo-sized runbook fixture; not a full production corpus"
+        ]
+      }
+    ]
+  },
+  "questions": [
+    {
+      "id": "repo-symbol-001",
+      "query": "Where is alpha_repo_symbol implemented and what marker does it return?",
+      "target_repo": "alpha_repo",
+      "resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_REPO_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "code-symbol",
+      "customer_job": "locate implementation",
+      "difficulty": "easy",
+      "demo_type": "retrieval-quality",
+      "expected_paths": [
+        "src/context_agent.py"
+      ],
+      "expected_symbols": [
+        "alpha_repo_symbol"
+      ],
+      "required_texts": [
+        "alpharepoagent42"
+      ],
+      "forbidden_resource_ids": [
+        "NORMALIZED_RUNBOOK_RESOURCE_ID"
+      ],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 6000,
+      "include_code_symbols": true,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "cites the runbook as the implementation",
+        "omits the source path"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ]
+    },
+    {
+      "id": "runbook-escalation-001",
+      "query": "What should I check when agent context lacks citations?",
+      "target_repo": "alpha_runbook",
+      "resource_ids": [
+        "NORMALIZED_RUNBOOK_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_RUNBOOK_SNAPSHOT_ID"
+      ],
+      "import_type": "limited",
+      "category": "runbook",
+      "customer_job": "operate failure mode",
+      "difficulty": "easy",
+      "demo_type": "human-answer-demo",
+      "expected_paths": [
+        "doc://alpha-eval-runbook"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "provider-health",
+        "index runs",
+        "reindex"
+      ],
+      "forbidden_resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 6000,
+      "include_code_symbols": false,
+      "expected_result": "partial",
+      "bad_answer_criteria": [
+        "claims full production coverage despite limited import caveat"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_RUNBOOK_RESOURCE_ID"
+      ]
+    },
+    {
+      "id": "negative-compliance-001",
+      "query": "Does this project guarantee SOC2 compliance and list the auditor?",
+      "target_repo": "alpha_repo",
+      "resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID",
+        "NORMALIZED_RUNBOOK_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_REPO_SNAPSHOT_ID",
+        "NORMALIZED_RUNBOOK_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "negative-control",
+      "customer_job": "avoid unsupported claims",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "expected_paths": [],
+      "expected_symbols": [],
+      "required_texts": [],
+      "forbidden_resource_ids": [],
+      "min_citations": 0,
+      "top_k": 5,
+      "max_chars": 4000,
+      "include_code_symbols": false,
+      "expected_result": "expected_unanswerable",
+      "bad_answer_criteria": [
+        "asserts SOC2 compliance",
+        "names an auditor without citation",
+        "confuses missing evidence with proof"
+      ],
+      "expected_resource_ids": []
+    },
+    {
+      "id": "wrong-repo-001",
+      "query": "Which file in the runbook implements alpha_repo_symbol?",
+      "target_repo": "alpha_runbook",
+      "resource_ids": [
+        "NORMALIZED_RUNBOOK_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_RUNBOOK_SNAPSHOT_ID"
+      ],
+      "import_type": "limited",
+      "category": "negative-control",
+      "customer_job": "prevent wrong-repo contamination",
+      "difficulty": "medium",
+      "demo_type": "wrong-repo-check",
+      "expected_paths": [],
+      "expected_symbols": [],
+      "required_texts": [],
+      "forbidden_resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ],
+      "min_citations": 0,
+      "top_k": 5,
+      "max_chars": 4000,
+      "include_code_symbols": true,
+      "expected_result": "expected_unanswerable",
+      "bad_answer_criteria": [
+        "answers using alpha_repo instead of abstaining",
+        "cites forbidden repo resource"
+      ],
+      "expected_resource_ids": []
+    },
+    {
+      "id": "repo-context-002",
+      "query": "How does SourceBrief expose repository agent context in this fixture?",
+      "target_repo": "alpha_repo",
+      "resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_REPO_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "architecture",
+      "customer_job": "understand capability",
+      "difficulty": "easy",
+      "demo_type": "retrieval-quality",
+      "expected_paths": [
+        "README.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "REST",
+        "central MCP tools"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 6000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "omits REST and MCP evidence"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ]
+    },
+    {
+      "id": "batch-fill-006",
+      "query": "Repeatable eval placeholder 6: what marker anchors the repo question?",
+      "target_repo": "alpha_repo",
+      "resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_REPO_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "batching",
+      "customer_job": "exercise max-10 split",
+      "difficulty": "easy",
+      "demo_type": "retrieval-quality",
+      "expected_paths": [
+        "src/context_agent.py"
+      ],
+      "expected_symbols": [
+        "alpha_repo_symbol"
+      ],
+      "required_texts": [
+        "alpharepoagent42"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 6000,
+      "include_code_symbols": true,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "no citation"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ]
+    },
+    {
+      "id": "batch-fill-007",
+      "query": "Repeatable eval placeholder 7: what runbook marker anchors escalation?",
+      "target_repo": "alpha_runbook",
+      "resource_ids": [
+        "NORMALIZED_RUNBOOK_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_RUNBOOK_SNAPSHOT_ID"
+      ],
+      "import_type": "limited",
+      "category": "batching",
+      "customer_job": "exercise max-10 split",
+      "difficulty": "easy",
+      "demo_type": "retrieval-quality",
+      "expected_paths": [
+        "doc://alpha-eval-runbook"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "alpharunbook42"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 6000,
+      "include_code_symbols": false,
+      "expected_result": "partial",
+      "bad_answer_criteria": [
+        "ignores partial corpus caveat"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_RUNBOOK_RESOURCE_ID"
+      ]
+    },
+    {
+      "id": "batch-fill-008",
+      "query": "Repeatable eval placeholder 8: should unsupported security guarantees be answered?",
+      "target_repo": "alpha_repo",
+      "resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_REPO_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "negative-control",
+      "customer_job": "abstain when evidence missing",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "expected_paths": [],
+      "expected_symbols": [],
+      "required_texts": [],
+      "forbidden_resource_ids": [],
+      "min_citations": 0,
+      "top_k": 5,
+      "max_chars": 4000,
+      "include_code_symbols": false,
+      "expected_result": "expected_unanswerable",
+      "bad_answer_criteria": [
+        "claims unsupported security guarantee"
+      ],
+      "expected_resource_ids": []
+    },
+    {
+      "id": "batch-fill-009",
+      "query": "Repeatable eval placeholder 9: where is the alpha eval README evidence?",
+      "target_repo": "alpha_repo",
+      "resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_REPO_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "retrieval",
+      "customer_job": "cite docs",
+      "difficulty": "easy",
+      "demo_type": "retrieval-quality",
+      "expected_paths": [
+        "README.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Alpha Eval Repo"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 6000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "no README citation"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ]
+    },
+    {
+      "id": "batch-fill-010",
+      "query": "Repeatable eval placeholder 10: what operational step follows missing citations?",
+      "target_repo": "alpha_runbook",
+      "resource_ids": [
+        "NORMALIZED_RUNBOOK_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_RUNBOOK_SNAPSHOT_ID"
+      ],
+      "import_type": "limited",
+      "category": "runbook",
+      "customer_job": "operate failure mode",
+      "difficulty": "easy",
+      "demo_type": "human-answer-demo",
+      "expected_paths": [
+        "doc://alpha-eval-runbook"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "reindex"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 6000,
+      "include_code_symbols": false,
+      "expected_result": "partial",
+      "bad_answer_criteria": [
+        "skips citation support"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_RUNBOOK_RESOURCE_ID"
+      ]
+    },
+    {
+      "id": "batch-fill-011",
+      "query": "Repeatable eval placeholder 11: does the fixture mention a Kubernetes deployment?",
+      "target_repo": "alpha_repo",
+      "resource_ids": [
+        "NORMALIZED_REPO_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_REPO_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "negative-control",
+      "customer_job": "avoid hallucination",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "expected_paths": [],
+      "expected_symbols": [],
+      "required_texts": [],
+      "forbidden_resource_ids": [],
+      "min_citations": 0,
+      "top_k": 5,
+      "max_chars": 4000,
+      "include_code_symbols": false,
+      "expected_result": "expected_unanswerable",
+      "bad_answer_criteria": [
+        "invents Kubernetes deployment details"
+      ],
+      "expected_resource_ids": []
+    }
+  ]
+}
