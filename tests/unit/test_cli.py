@@ -235,6 +235,84 @@ def test_search_json_output(monkeypatch, capsys):
     assert client.calls[0][2] == {"query": "demo", "top_k": 10, "resource_ids": ["res-1"]}
 
 
+def test_cli_use_status_and_ask_defaults(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+
+    assert (
+        cli_main(
+            [
+                "--api-url",
+                "http://api.example",
+                "use",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+            ]
+        )
+        == 0
+    )
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved == {"api_url": "http://api.example", "project_id": "proj-1", "workspace_id": "ws-1"}
+    assert json.loads(capsys.readouterr().out)["status"] == "saved"
+
+    assert cli_main(["--token", "cs_existing", "--json", "status"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["workspace_id"] == "ws-1"
+    assert status["project_id"] == "proj-1"
+    assert status["auth_mode"] == "bearer_token"
+    assert status["token_set"] is True
+    assert "cs_existing" not in json.dumps(status)
+
+    assert cli_main(["--json", "ask", "Where is retry policy?", "--runtime", "hermes", "--resource-id", "res-1"]) == 0
+    client = FakeClient.instances[-1]
+    assert client.calls[0] == (
+        "POST",
+        "/workspaces/ws-1/projects/proj-1/agent-context",
+        {
+            "query": "Where is retry policy?",
+            "runtime": "hermes",
+            "top_k": 8,
+            "resource_ids": ["res-1"],
+            "include_code_symbols": True,
+            "max_chars": 12000,
+        },
+        None,
+    )
+
+
+def test_cli_selected_defaults_apply_to_search_and_resource_list(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-1", "project_id": "proj-1"}), encoding="utf-8")
+
+    assert cli_main(["--json", "search", "--query", "demo"]) == 0
+    assert FakeClient.instances[-1].calls[0][0:2] == ("POST", "/workspaces/ws-1/projects/proj-1/search")
+    capsys.readouterr()
+
+    assert cli_main(["--json", "resource", "list"]) == 0
+    assert FakeClient.instances[-1].calls[0][0:2] == ("GET", "/workspaces/ws-1/projects/proj-1/resources")
+
+    assert cli_main(["--json", "search", "--workspace-id", "ws-explicit", "--project-id", "proj-explicit", "--query", "demo"]) == 0
+    assert FakeClient.instances[-1].calls[0][0:2] == (
+        "POST",
+        "/workspaces/ws-explicit/projects/proj-explicit/search",
+    )
+
+
+def test_cli_missing_selected_scope_errors(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "missing.json"))
+
+    assert cli_main(["search", "--query", "demo"]) == 1
+    err = capsys.readouterr().err
+    assert "--workspace-id and --project-id required" in err
+    assert "sourcebrief use" in err
+
+
 def test_agent_registry_and_resource_graph_commands(monkeypatch, capsys):
     patch_client(monkeypatch)
 

@@ -64,6 +64,18 @@ The CLI is automation-oriented and currently uses IDs. The web UI is the easier 
 
 ## 3. Add and index the source
 
+Save the workspace/project IDs once so later commands can use the human-facing golden path:
+
+```bash
+sourcebrief use \
+  --workspace-id "$WORKSPACE_ID" \
+  --project-id "$PROJECT_ID"
+
+sourcebrief status
+```
+
+Then add and index the source:
+
 ```bash
 RESOURCE_JSON=$(sourcebrief --json resource add-doc \
   --workspace-id "$WORKSPACE_ID" \
@@ -79,6 +91,17 @@ RESOURCE_ID=$(printf '%s' "$RESOURCE_JSON" \
 ```
 
 ## 4. Ask for agent-shaped context
+
+Golden path:
+
+```bash
+sourcebrief --json ask \
+  --runtime hermes \
+  --resource-id "$RESOURCE_ID" \
+  "What should I check when the payment retry queue stalls?"
+```
+
+Equivalent explicit/API-shaped form:
 
 ```bash
 sourcebrief --json agent-context \

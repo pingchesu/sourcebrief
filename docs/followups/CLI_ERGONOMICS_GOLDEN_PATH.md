@@ -1,5 +1,15 @@
 # CLI ergonomics golden path
 
+## Implementation status
+
+Implemented in this PR:
+
+- `sourcebrief use` persists workspace/project defaults in a local JSON config.
+- `sourcebrief status` reports selected defaults and auth mode without exposing tokens.
+- `sourcebrief ask "question"` calls the same runtime-shaped context path as `agent-context`.
+- `search`, `agent-context`, `mcp-context`, and `resource list` can use selected workspace/project defaults when IDs are omitted.
+- Explicit `--workspace-id` / `--project-id` still override saved defaults.
+
 ## Problem
 
 The README/front-door rewrite made SourceBrief easier to understand, but the CLI still feels lower-level than the product story. First-time users must pass workspace/project/resource IDs through many commands, and the most common runtime query is named `agent-context` instead of the simpler action users expect: ask SourceBrief.

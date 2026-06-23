@@ -159,7 +159,7 @@ compose, not compete with each other.
 | Surface | Best for | What the agent gets |
 | --- | --- | --- |
 | Workbench UI | A human wants to inspect an answer before handing it to an agent. | Rendered packet, citations, evidence rows, and freshness signals. |
-| CLI `agent-context` | Scripts, demos, smoke tests, or one-off local experiments. | One JSON/text runtime packet with citations and runtime instructions. |
+| CLI `ask` / `agent-context` | Scripts, demos, smoke tests, or one-off local experiments. | One JSON/text runtime packet with citations and runtime instructions. |
 | MCP | Live agent sessions in Hermes, Claude Code, Codex, Cursor, or custom runtimes. | Discoverable tools for context, search, remote code drilldown, graph traversal, and guarded proposal flows. |
 | Generated agent pack | You want to configure a runtime for one SourceBrief project quickly. | `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `mcp.json`, golden questions, manifest, and usage notes. |
 | Context Pack Skill Export | You have a reviewed Context Pack and want a reusable team workflow. | Approved skill files, references, playbooks, citation policy, validation report, and leak-scan metadata. |
