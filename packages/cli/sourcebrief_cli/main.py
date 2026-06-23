@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,8 @@ from sourcebrief_cli import runtime_apply
 
 DEFAULT_API_URL = "http://localhost:18000"
 DEFAULT_EMAIL = "demo@example.com"
+CONTEXT_RUNTIME_SCOPES = ["project:read", "project:query", "resource:read", "review:read"]
+READ_CODE_RUNTIME_SCOPES = [*CONTEXT_RUNTIME_SCOPES, "code:read"]
 
 
 class SourceBriefCliError(RuntimeError):
@@ -127,9 +131,11 @@ def _selected_value(config: dict[str, Any], key: str) -> str | None:
 
 
 def _command_uses_selected_scope(args: argparse.Namespace) -> bool:
-    if args.command in {"ask", "search", "agent-context", "mcp-context"}:
+    if args.command in {"ask", "search", "agent-context", "mcp-context", "doctor"}:
         return True
-    return args.command == "resource" and getattr(args, "resource_command", None) == "list"
+    if args.command == "resource" and getattr(args, "resource_command", None) == "list":
+        return True
+    return args.command == "runtime" and getattr(args, "runtime_command", None) == "setup"
 
 
 def _apply_selected_defaults(args: argparse.Namespace, config: dict[str, Any]) -> None:
@@ -212,6 +218,73 @@ def cmd_status(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
     }
 
 
+def _check_result(name: str, status: str, **extra: Any) -> dict[str, Any]:
+    return {"name": name, "status": status, **extra}
+
+
+def _mcp_error_message(response: Any) -> str | None:
+    if not isinstance(response, dict):
+        return "MCP response was not a JSON object"
+    error = response.get("error")
+    if error:
+        return json.dumps(error, sort_keys=True) if isinstance(error, dict) else str(error)
+    result = response.get("result")
+    if isinstance(result, dict) and result.get("isError") is True:
+        content = result.get("content")
+        return "MCP tool returned isError=true" + (f": {content!r}" if content else "")
+    return None
+
+
+def cmd_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    checks: list[dict[str, Any]] = []
+    try:
+        health = client.request("GET", "/readyz")
+        checks.append(_check_result("api", "passed", api_url=args.api_url.rstrip("/"), response=health))
+    except SourceBriefCliError as exc:
+        checks.append(_check_result("api", "failed", api_url=args.api_url.rstrip("/"), error=str(exc)))
+
+    auth_mode = "bearer_token" if args.token else "email_header"
+    checks.append(
+        _check_result(
+            "auth_mode",
+            "info",
+            mode=auth_mode,
+            email=None if args.token else args.email,
+            token_set=bool(args.token),
+            message="auth mode selected; authenticated project/MCP checks below prove access",
+        )
+    )
+
+    if args.workspace_id and args.project_id:
+        try:
+            resources = client.request("GET", f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources")
+            checks.append(_check_result("project", "passed", workspace_id=args.workspace_id, project_id=args.project_id, resource_count=len(resources) if isinstance(resources, list) else None))
+        except SourceBriefCliError as exc:
+            checks.append(_check_result("project", "failed", workspace_id=args.workspace_id, project_id=args.project_id, error=str(exc)))
+        if args.query:
+            try:
+                mcp = cmd_mcp_context(client, args)
+                error = _mcp_error_message(mcp)
+                if error:
+                    checks.append(_check_result("mcp_context", "failed", query=args.query, error=error))
+                else:
+                    checks.append(_check_result("mcp_context", "passed", query=args.query, has_result=bool(mcp)))
+            except SourceBriefCliError as exc:
+                checks.append(_check_result("mcp_context", "failed", query=args.query, error=str(exc)))
+    else:
+        checks.append(
+            _check_result(
+                "project",
+                "warning",
+                message="workspace/project not selected; run `sourcebrief use --workspace-id ... --project-id ...` or pass IDs",
+            )
+        )
+
+    failed = [check for check in checks if check["status"] == "failed"]
+    warnings = [check for check in checks if check["status"] == "warning"]
+    return {"status": "failed" if failed else "warning" if warnings else "passed", "checks": checks}
+
+
 def cmd_workspace_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     return client.request(
         "POST",
@@ -239,6 +312,28 @@ def cmd_token_create(client: SourceBriefClient, args: argparse.Namespace) -> Any
             "scopes": _split_csv_or_repeated(args.scope) or [],
             "allowed_project_ids": _split_csv_or_repeated(args.project_id),
             "allowed_resource_ids": _split_csv_or_repeated(args.resource_id),
+            "expires_at": args.expires_at,
+        },
+        expected={201},
+    )
+
+
+def cmd_token_create_runtime(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    allowed_project_ids = _split_csv_or_repeated(args.project_id)
+    allowed_resource_ids = _split_csv_or_repeated(args.resource_id)
+    if not args.workspace_wide and not (allowed_project_ids or allowed_resource_ids):
+        raise SourceBriefCliError(
+            "token create-runtime requires --project-id/--resource-id or explicit --workspace-wide"
+        )
+    scopes = READ_CODE_RUNTIME_SCOPES if args.read_code else CONTEXT_RUNTIME_SCOPES
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/api-tokens",
+        body={
+            "name": args.name,
+            "scopes": scopes,
+            "allowed_project_ids": None if args.workspace_wide else allowed_project_ids,
+            "allowed_resource_ids": None if args.workspace_wide else allowed_resource_ids,
             "expires_at": args.expires_at,
         },
         expected={201},
@@ -456,7 +551,8 @@ def cmd_mcp_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     )
 
 
-def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
+    _require_scope(args)
     plan = client.request(
         "POST",
         f"/workspaces/{args.workspace_id}/projects/{args.project_id}/runtime-install-plan",
@@ -469,6 +565,76 @@ def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any
         },
     )
     return runtime_apply.attach_plan_metadata(plan)
+
+
+def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    return _runtime_plan_request(client, args)
+
+
+def _validation_preview(plan: dict[str, Any], target: str, max_age_seconds: int) -> dict[str, Any]:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+        json.dump(plan, handle)
+        path = Path(handle.name)
+    try:
+        validation = runtime_apply.read_plan(path, target=target, max_age_seconds=max_age_seconds)
+        return runtime_apply.validate_plan(validation, run=False)
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def _runtime_token_command(plan: dict[str, Any]) -> str:
+    parts = [
+        "sourcebrief",
+        "token",
+        "create-runtime",
+        "--workspace-id",
+        sh_quote(str(plan.get("workspace_id") or "<workspace-id>")),
+    ]
+    if "code:read" in (plan.get("required_scopes") or []):
+        parts.append("--read-code")
+    else:
+        parts.append("--context-only")
+    project_id = plan.get("project_id")
+    if project_id:
+        parts.extend(["--project-id", sh_quote(str(project_id))])
+    resources = (plan.get("resource_scope") or {}).get("resources") or []
+    for resource_id in resources:
+        parts.extend(["--resource-id", sh_quote(str(resource_id))])
+    return " ".join(parts)
+
+
+def sh_quote(value: str) -> str:
+    return shlex.quote(value)
+
+
+def cmd_runtime_setup(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    plan = _runtime_plan_request(client, args)
+    validation = _validation_preview(plan, args.target, args.max_age_seconds)
+    if args.plan_out:
+        out = Path(args.plan_out).expanduser()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        plan_path: str | None = str(out)
+    else:
+        plan_path = None
+    plan_ref = plan_path or "<save first with: sourcebrief runtime setup hermes --plan-out plan.json>"
+    return {
+        "status": "dry_run_ready",
+        "target": args.target,
+        "workspace_id": plan.get("workspace_id"),
+        "project_id": plan.get("project_id"),
+        "server_name": plan.get("server_name"),
+        "plan_path": plan_path,
+        "plan": plan,
+        "validation": validation,
+        "token_command": _runtime_token_command(plan),
+        "next_steps": [
+            "Review the plan and generated MCP config.",
+            f"Create/export a runtime token: {_runtime_token_command(plan)}",
+            f"Run `sourcebrief runtime validate --plan {plan_ref} --run` after exporting SOURCEBRIEF_TOKEN.",
+            f"Apply only with `sourcebrief runtime apply --plan {plan_ref} --target hermes --apply` when ready.",
+        ],
+    }
 
 
 def _read_validated_runtime_plan(args: argparse.Namespace) -> runtime_apply.PlanValidation:
@@ -569,6 +735,15 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="show selected CLI defaults and auth mode without secrets")
     status.set_defaults(func=cmd_status)
 
+    doctor = sub.add_parser("doctor", help="check API/auth/project/MCP readiness")
+    doctor.add_argument("--workspace-id", help="workspace ID; defaults to sourcebrief use selection")
+    doctor.add_argument("--project-id", help="project ID; defaults to sourcebrief use selection")
+    doctor.add_argument("--query", help="optional MCP context smoke-test query")
+    doctor.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
+    doctor.add_argument("--resource-id", action="append")
+    doctor.add_argument("--top-k", type=int, default=3)
+    doctor.set_defaults(func=cmd_doctor)
+
     ws = sub.add_parser("workspace", help="workspace commands").add_subparsers(dest="workspace_command")
     ws_create = ws.add_parser("create", help="create a workspace")
     ws_create.add_argument("--name", required=True)
@@ -591,6 +766,18 @@ def build_parser() -> argparse.ArgumentParser:
     token_create.add_argument("--resource-id", action="append", help="allowed resource ID, repeatable or comma-separated")
     token_create.add_argument("--expires-at", help="ISO-8601 timestamp")
     token_create.set_defaults(func=cmd_token_create)
+
+    token_runtime = tokens.add_parser("create-runtime", help="create a preset runtime token")
+    token_runtime.add_argument("--workspace-id", required=True)
+    token_runtime.add_argument("--name", default="SourceBrief runtime")
+    preset = token_runtime.add_mutually_exclusive_group()
+    preset.add_argument("--context-only", dest="read_code", action="store_false", help="project/query/resource/review read scopes only")
+    preset.add_argument("--read-code", dest="read_code", action="store_true", help="include code:read for source drill-down tools")
+    token_runtime.add_argument("--project-id", action="append", help="allowed project ID, repeatable or comma-separated")
+    token_runtime.add_argument("--resource-id", action="append", help="allowed resource ID, repeatable or comma-separated")
+    token_runtime.add_argument("--workspace-wide", action="store_true", help="explicitly allow this runtime token across the whole workspace")
+    token_runtime.add_argument("--expires-at", help="ISO-8601 timestamp")
+    token_runtime.set_defaults(func=cmd_token_create_runtime, read_code=False)
 
     token_list = tokens.add_parser("list", help="list API tokens without plaintext secrets")
     token_list.add_argument("--workspace-id", required=True)
@@ -742,6 +929,19 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_plan.add_argument("--no-optional-tools", dest="include_optional_tools", action="store_false")
     runtime_plan.set_defaults(func=cmd_runtime_plan, include_optional_tools=True)
 
+    runtime_setup = runtime.add_parser("setup", help="guided dry-run runtime setup; never writes local config")
+    runtime_setup.add_argument("target", choices=["hermes"])
+    runtime_setup.add_argument("--workspace-id", help="workspace ID; defaults to sourcebrief use selection")
+    runtime_setup.add_argument("--project-id", help="project ID; defaults to sourcebrief use selection")
+    runtime_setup.add_argument("--public-api-url")
+    runtime_setup.add_argument("--server-name")
+    runtime_setup.add_argument("--resource-id", action="append")
+    runtime_setup.add_argument("--no-optional-tools", dest="include_optional_tools", action="store_false")
+    runtime_setup.add_argument("--dry-run", action="store_true", help="accepted for clarity; setup is always dry-run and never applies config")
+    runtime_setup.add_argument("--plan-out", help="write the generated plan JSON to this path")
+    runtime_setup.add_argument("--max-age-seconds", type=int, default=86400)
+    runtime_setup.set_defaults(func=cmd_runtime_setup, include_optional_tools=True)
+
     runtime_detect = runtime.add_parser("detect", help="detect local runtime config paths without writing files")
     runtime_detect.add_argument("--config", help="Hermes config path; defaults to ~/.hermes/config.yaml")
     runtime_detect.set_defaults(func=cmd_runtime_detect)
@@ -787,7 +987,20 @@ def _print_default(command: str | None, data: Any) -> None:
             for hit in data.get("hits", []):
                 print(f"- {hit.get('path') or hit.get('title') or hit.get('resource_id')}: {hit.get('snippet')}")
             return
-        if command in {"agent-context", "mcp-context", "ask", "agent", "token", "runtime", "use", "status"}:
+        if command == "runtime" and data.get("status") == "dry_run_ready":
+            print("Runtime setup: dry-run ready")
+            print(f"  target: {data.get('target')}")
+            print(f"  workspace_id: {data.get('workspace_id')}")
+            print(f"  project_id: {data.get('project_id')}")
+            print(f"  server_name: {data.get('server_name')}")
+            print(f"  plan_path: {data.get('plan_path') or '(not saved; rerun with --plan-out plan.json)'}")
+            print(f"  validation: {(data.get('validation') or {}).get('status')}")
+            print(f"  token_command: {data.get('token_command')}")
+            print("Next steps:")
+            for step in data.get("next_steps", []):
+                print(f"- {step}")
+            return
+        if command in {"agent-context", "mcp-context", "ask", "agent", "token", "runtime", "use", "status", "doctor"}:
             _print_json(data)
             return
     _print_json(data)
@@ -819,11 +1032,12 @@ def main(argv: list[str] | None = None) -> int:
     except (SourceBriefCliError, runtime_apply.RuntimeApplyError) as exc:
         print(f"sourcebrief: error: {exc}", file=sys.stderr)
         return 1
+    exit_code = 1 if args.command == "doctor" and isinstance(data, dict) and data.get("status") == "failed" else 0
     if args.json:
         _print_json(data)
     else:
         _print_default(args.command, data)
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
