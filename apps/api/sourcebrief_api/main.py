@@ -7235,11 +7235,27 @@ def _agent_context_resource_coverage(
     resources = [resource for resource in resources if token_allows_resource(principal, resource.id)]
     by_id = {resource.id: resource for resource in resources}
     ordered_ids = ids or [resource.id for resource in resources]
-    coverage = [_resource_coverage_entry(session, by_id[rid]) for rid in ordered_ids if rid in by_id]
+    citation_counts = Counter(citation.resource_id for citation in citations)
+    explicit_multi_resource_request = bool(resource_ids and len(ids) > 1)
+    coverage = []
+    for rid in ordered_ids:
+        if rid not in by_id:
+            continue
+        entry = _resource_coverage_entry(session, by_id[rid])
+        citation_count = int(citation_counts.get(rid, 0))
+        entry["citation_count"] = citation_count
+        entry["evidence_status"] = "cited" if citation_count > 0 else "missing_citations"
+        coverage.append(entry)
     warnings: list[str] = []
     for entry in coverage:
         for warning in entry.get("coverage_warnings", []):
             warnings.append(f"{entry['name']}: {warning}")
+        if explicit_multi_resource_request and entry.get("citation_count", 0) == 0:
+            warnings.append(
+                "missing_requested_resources: "
+                f"{entry['name']} ({entry['resource_id']}) returned zero citations for this query; "
+                "narrow the query, raise top_k, or inspect the resource directly before making a comparison claim"
+            )
     return coverage, warnings
 
 
@@ -7338,20 +7354,26 @@ def _build_pack_agent_context_response(
     )
 
 
-def _agent_context_retrieval_metadata(candidates: list[RetrievalCandidate]) -> dict[str, Any]:
+def _agent_context_retrieval_metadata(candidates: list[RetrievalCandidate], requested_resource_ids: list[UUID] | None = None) -> dict[str, Any]:
     paths = [candidate.path for candidate in candidates if candidate.path]
     unique_paths = {path for path in paths}
     diversity = candidates[0].ranking_diagnostics.get("retrieval_diversity") if candidates and candidates[0].ranking_diagnostics else None
     path_prior_hits: dict[str, int] = {}
+    cited_resource_counts = Counter(str(candidate.resource_id) for candidate in candidates)
     for candidate in candidates:
         diagnostics = candidate.ranking_diagnostics or {}
         for reason in diagnostics.get("path_prior_reasons", []) or []:
             path_prior_hits[reason] = path_prior_hits.get(reason, 0) + 1
+    requested_ids = [str(rid) for rid in requested_resource_ids or []]
+    missing_requested_ids = [rid for rid in requested_ids if cited_resource_counts.get(rid, 0) == 0]
     metadata = {
         "selected_count": len(candidates),
         "unique_citation_paths": len(unique_paths),
         "duplicate_citation_count": max(0, len(paths) - len(unique_paths)),
         "path_prior_hits": path_prior_hits,
+        "requested_resource_ids": requested_ids,
+        "cited_resource_counts": dict(sorted(cited_resource_counts.items())),
+        "missing_requested_resource_ids": missing_requested_ids,
     }
     if isinstance(diversity, dict):
         metadata["candidate_pool_count"] = diversity.get("candidate_pool_count", len(candidates))
@@ -7359,9 +7381,13 @@ def _agent_context_retrieval_metadata(candidates: list[RetrievalCandidate]) -> d
         metadata["retriever_selected_count"] = diversity.get("selected_count")
         metadata["retriever_unique_citation_paths"] = diversity.get("unique_citation_paths")
         metadata["retriever_duplicate_citation_count"] = diversity.get("duplicate_citation_count")
+        metadata["candidate_resource_counts"] = diversity.get("candidate_resource_counts", {})
+        metadata["retriever_selected_resource_counts"] = diversity.get("selected_resource_counts", {})
     else:
         metadata["candidate_pool_count"] = len(candidates)
         metadata["deduped_from_count"] = 0
+        metadata["candidate_resource_counts"] = dict(sorted(cited_resource_counts.items()))
+        metadata["retriever_selected_resource_counts"] = dict(sorted(cited_resource_counts.items()))
     return metadata
 
 
@@ -7471,7 +7497,7 @@ def _build_agent_context_response(
         token_budget_hint=max(1, payload.max_chars // 4),
         resource_coverage=resource_coverage,
         coverage_warnings=coverage_warnings,
-        retrieval_metadata=_agent_context_retrieval_metadata(used_candidates),
+        retrieval_metadata=_agent_context_retrieval_metadata(used_candidates, payload.resource_ids),
     )
 
 
@@ -7929,6 +7955,7 @@ def run_retrieval_eval(
     )
     results: list[RetrievalEvalResult] = []
     all_failure_reasons: list[str] = []
+    question_resource_coverage: list[dict[str, Any]] = []
     for question, effective_resource_ids in zip(payload.questions, effective_resource_ids_by_question, strict=True):
         started = perf_counter()
         response = _build_agent_context_response(
@@ -7950,6 +7977,18 @@ def run_retrieval_eval(
         cited_resource_ids = {citation.resource_id for citation in response.citations}
         cited_paths = {citation.path for citation in response.citations if citation.path}
         cited_symbol_names = {symbol.name for symbol in response.symbols}
+        requested_for_question = effective_resource_ids or []
+        resource_count_by_id = Counter(str(citation.resource_id) for citation in response.citations)
+        missing_requested_for_question = [str(rid) for rid in requested_for_question if resource_count_by_id.get(str(rid), 0) == 0]
+        question_resource_coverage.append(
+            {
+                "question_id": question.id,
+                "requested_resource_ids": [str(rid) for rid in requested_for_question],
+                "cited_resource_counts": dict(sorted(resource_count_by_id.items())),
+                "missing_requested_resource_ids": missing_requested_for_question,
+                "coverage_warnings": response.coverage_warnings,
+            }
+        )
         failures: list[str] = []
         if len(response.citations) < question.min_citations:
             failures.append("missing_citations")
@@ -8014,6 +8053,7 @@ def run_retrieval_eval(
             "retrieval_profile": eval_profile.name,
             "retrieval_profile_weights": retrieval_profile_manifest()[eval_profile.name]["weights"],
             "rerank_score_range": [0.0, 1.0],
+            "question_resource_coverage": question_resource_coverage,
         },
         summary=RetrievalEvalSummary(
             status="passed" if passed_count == len(results) else "failed",

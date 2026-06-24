@@ -285,12 +285,22 @@ def diversify_ranked_candidates(candidates: list[RetrievalCandidate], *, top_k: 
                 break
     unique_paths = {_normalized_path(candidate.path) for candidate in selected if candidate.path}
     duplicate_path_count = max(0, len(selected) - len(unique_paths))
+    candidate_resource_counts: dict[str, int] = {}
+    for candidate in candidates:
+        key = str(candidate.resource_id)
+        candidate_resource_counts[key] = candidate_resource_counts.get(key, 0) + 1
+    selected_resource_counts: dict[str, int] = {}
+    for candidate in selected:
+        key = str(candidate.resource_id)
+        selected_resource_counts[key] = selected_resource_counts.get(key, 0) + 1
     return selected, {
         "candidate_pool_count": len(candidates),
         "selected_count": len(selected),
         "unique_citation_paths": len(unique_paths),
         "duplicate_citation_count": duplicate_path_count,
         "deduped_from_count": max(0, len(candidates) - len(selected)),
+        "candidate_resource_counts": candidate_resource_counts,
+        "selected_resource_counts": selected_resource_counts,
     }
 
 
