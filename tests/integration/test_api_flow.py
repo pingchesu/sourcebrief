@@ -161,6 +161,66 @@ def test_agent_context_reports_unindexed_resource_coverage_warning() -> None:
     assert "no current snapshot" in " ".join(project_body["coverage_warnings"])
 
 
+def test_agent_context_discloses_missing_requested_resource_citations() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id, resource_id = create_flow(client, "cross-resource")
+    other = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={
+            "type": "markdown",
+            "name": "Unrelated comparison source",
+            "uri": "doc://unrelated-comparison",
+            "source_config": {"content": "This source discusses billing policy and onboarding notes only."},
+        },
+        headers=headers,
+    )
+    assert other.status_code == 201, other.text
+    other_resource_id = other.json()["id"]
+    for rid in (resource_id, other_resource_id):
+        run = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{rid}/refresh", headers=headers)
+        assert run.status_code == 202, run.text
+        assert wait_for_run(client, workspace_id, run.json()["id"], headers)["status"] == "succeeded"
+
+    response = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "indexable marker token", "resource_ids": [resource_id, other_resource_id], "top_k": 5, "include_code_symbols": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert {citation["resource_id"] for citation in body["citations"]} == {resource_id}
+    coverage_by_id = {entry["resource_id"]: entry for entry in body["resource_coverage"]}
+    assert coverage_by_id[resource_id]["citation_count"] >= 1
+    assert coverage_by_id[other_resource_id]["citation_count"] == 0
+    assert coverage_by_id[other_resource_id]["evidence_status"] == "missing_citations"
+    assert "missing_requested_resources" in " ".join(body["coverage_warnings"])
+    assert body["retrieval_metadata"]["missing_requested_resource_ids"] == [other_resource_id]
+
+    eval_response = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals",
+        json={
+            "questions": [
+                {
+                    "id": "cross-resource-missing-coverage",
+                    "query": "indexable marker token",
+                    "resource_ids": [resource_id, other_resource_id],
+                    "min_citations": 1,
+                    "top_k": 5,
+                    "include_code_symbols": False,
+                }
+            ]
+        },
+        headers=headers,
+    )
+    assert eval_response.status_code == 200, eval_response.text
+    eval_coverage = eval_response.json()["diagnostics"]["question_resource_coverage"][0]
+    assert eval_coverage["question_id"] == "cross-resource-missing-coverage"
+    assert eval_coverage["missing_requested_resource_ids"] == [other_resource_id]
+    assert "missing_requested_resources" in " ".join(eval_coverage["coverage_warnings"])
+
+
 def test_agent_context_sanitizes_latest_index_failure_for_query_only_tokens() -> None:
     require_real_services()
     client = TestClient(app)

@@ -92,3 +92,19 @@ def test_diversify_ranked_candidates_uses_resource_soft_cap_when_pool_has_multip
     assert selected[-1].path == "b/one.md"
     assert [candidate.resource_id for candidate in small_selected] == [resource_a, resource_b]
     assert [candidate.path for candidate in small_selected] == ["a/one.md", "b/one.md"]
+
+
+def test_diversify_ranked_candidates_exposes_resource_count_diagnostics() -> None:
+    resource_a = uuid4()
+    resource_b = uuid4()
+    candidates = [
+        _candidate(path="a/one.md", content_hash="a1", resource_id=resource_a, score=1.0),
+        _candidate(path="a/two.md", content_hash="a2", resource_id=resource_a, score=0.90),
+        _candidate(path="b/one.md", content_hash="b1", resource_id=resource_b, score=0.80),
+    ]
+
+    selected, metadata = diversify_ranked_candidates(candidates, top_k=2)
+
+    assert {candidate.resource_id for candidate in selected} == {resource_a, resource_b}
+    assert metadata["candidate_resource_counts"] == {str(resource_a): 2, str(resource_b): 1}
+    assert metadata["selected_resource_counts"] == {str(resource_a): 1, str(resource_b): 1}
