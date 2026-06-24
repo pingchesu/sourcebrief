@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from sourcebrief_api.remote_code import query_identifier_tokens
 from sourcebrief_shared.embeddings import (
     current_embedding_config,
     embed_text,
@@ -59,7 +60,6 @@ RETRIEVAL_PROFILES: dict[str, RetrievalProfile] = {
         vector_weight=0.40,
         graph_weight=0.0,
         rerank_weight=0.15,
-        use_graph=False,
     ),
     "hybrid_rerank": RetrievalProfile(
         name="hybrid_rerank",
@@ -68,7 +68,6 @@ RETRIEVAL_PROFILES: dict[str, RetrievalProfile] = {
         vector_weight=0.35,
         graph_weight=0.0,
         rerank_weight=0.30,
-        use_graph=False,
     ),
     "graph": RetrievalProfile(
         name="graph",
@@ -420,6 +419,7 @@ def retrieve_context_candidates(
         "proj": str(project_id),
         "q": query,
         "limit": candidate_limit,
+        "query_tokens": query_identifier_tokens(query),
     }
     resource_clause = _resource_filter_clause(resource_ids, base_params)
     common_from = f"""
@@ -449,9 +449,23 @@ def retrieve_context_candidates(
     lexical_sql = text(
         f"""
         {select_columns},
-               ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', :q)) AS score
+               ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', :q)) + (
+                   SELECT count(*)
+                   FROM unnest(CAST(:query_tokens AS text[])) AS qt(token)
+                   WHERE lower(c.path || ' ' || coalesce(c.title, '') || ' ' || c.content) LIKE '%' || qt.token || '%'
+               ) AS score
         {common_from}
-          AND to_tsvector('english', c.content) @@ plainto_tsquery('english', :q)
+          AND (
+              to_tsvector('english', c.content) @@ plainto_tsquery('english', :q)
+              OR (
+                  cardinality(CAST(:query_tokens AS text[])) > 0
+                  AND (
+                      SELECT count(*)
+                      FROM unnest(CAST(:query_tokens AS text[])) AS qt(token)
+                      WHERE lower(c.path || ' ' || coalesce(c.title, '') || ' ' || c.content) LIKE '%' || qt.token || '%'
+                  ) >= LEAST(2, cardinality(CAST(:query_tokens AS text[])))
+              )
+          )
         ORDER BY score DESC, c.resource_id, c.ordinal ASC
         LIMIT :limit
         """
@@ -525,8 +539,18 @@ def retrieve_context_candidates(
           AND c.project_id = CAST(:proj AS uuid)
           AND c.deleted_at IS NULL
           AND c.id = ANY(CAST(:chunk_ids AS uuid[]))
-          AND to_tsvector('simple', n.label || ' ' || coalesce(n.path, ''))
-              @@ plainto_tsquery('simple', :q)
+          AND (
+              to_tsvector('simple', n.label || ' ' || coalesce(n.path, ''))
+                  @@ plainto_tsquery('simple', :q)
+              OR (
+                  cardinality(CAST(:query_tokens AS text[])) > 0
+                  AND (
+                      SELECT count(*)
+                      FROM unnest(CAST(:query_tokens AS text[])) AS qt(token)
+                      WHERE lower(n.label || ' ' || coalesce(n.path, '')) LIKE '%' || qt.token || '%'
+                  ) >= LEAST(2, cardinality(CAST(:query_tokens AS text[])))
+              )
+          )
         GROUP BY c.id
         """
     )

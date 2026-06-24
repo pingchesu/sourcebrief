@@ -176,6 +176,24 @@ def test_git_ingestion_extracts_and_searches_code_symbols(tmp_path) -> None:
     assert missing_token.status_code == 200, missing_token.text
     assert missing_token.json()["count"] == 0
 
+    natural_symbol = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/code-search",
+        json={"query": "How does reconcile_cart work in checkout?", "resource_ids": [resource_id]},
+        headers=headers,
+    )
+    assert natural_symbol.status_code == 200, natural_symbol.text
+    assert any(symbol["name"] == "reconcile_cart" for symbol in natural_symbol.json()["symbols"])
+
+    agent_context = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "How does reconcile_cart work in checkout?", "resource_ids": [resource_id], "top_k": 5, "include_code_symbols": True},
+        headers=headers,
+    )
+    assert agent_context.status_code == 200, agent_context.text
+    context_body = agent_context.json()
+    assert any(symbol["name"] == "reconcile_cart" for symbol in context_body["symbols"])
+    assert any(citation["graph_score"] > 0 for citation in context_body["citations"])
+
 
 def test_code_search_denies_non_workspace_member() -> None:
     require_real_services()

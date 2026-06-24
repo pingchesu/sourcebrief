@@ -100,10 +100,10 @@ from sourcebrief_api.remote_code import (
     check_scan_budget,
     compile_safe_regex,
     identifier_score,
-    identifier_tokens,
     line_range,
     line_window,
     path_matches,
+    query_identifier_tokens,
     snippet_for_line,
     validate_path_glob,
     validate_repo_path,
@@ -6301,7 +6301,7 @@ def code_search_project(
     resource_ids = _effective_resource_ids(principal, payload.resource_ids)
     _require_project_access(session, workspace_id, project_id, principal)
     resource_clause = ""
-    query_tokens = identifier_tokens(payload.query)
+    query_tokens = query_identifier_tokens(payload.query)
     params: dict = {
         "ws": str(workspace_id),
         "proj": str(project_id),
@@ -6324,7 +6324,12 @@ def code_search_project(
                    ts_rank(
                      to_tsvector('simple', sym.name || ' ' || sym.path || ' ' || sym.signature),
                      plainto_tsquery('simple', :q)
-                   ) AS score
+                   ) AS lexical_score,
+                   (
+                     SELECT count(*)
+                     FROM unnest(CAST(:query_tokens AS text[])) AS qt(token)
+                     WHERE lower(sym.name || ' ' || sym.path || ' ' || sym.signature) LIKE '%' || qt.token || '%'
+                   ) AS token_hit_count
             FROM code_symbols sym
             JOIN resources r ON r.current_snapshot_id = sym.source_snapshot_id
               AND r.id = sym.resource_id
@@ -6347,13 +6352,14 @@ def code_search_project(
                   @@ plainto_tsquery('simple', :q)
                 OR (
                   cardinality(CAST(:query_tokens AS text[])) > 0
-                  AND NOT EXISTS (
-                    SELECT 1 FROM unnest(CAST(:query_tokens AS text[])) AS qt(token)
-                    WHERE lower(sym.name || ' ' || sym.path || ' ' || sym.signature) NOT LIKE '%' || qt.token || '%'
-                  )
+                  AND (
+                    SELECT count(*)
+                    FROM unnest(CAST(:query_tokens AS text[])) AS qt(token)
+                    WHERE lower(sym.name || ' ' || sym.path || ' ' || sym.signature) LIKE '%' || qt.token || '%'
+                  ) >= LEAST(2, cardinality(CAST(:query_tokens AS text[])))
                 )
               )
-            ORDER BY score DESC, sym.path ASC, sym.line_start ASC
+            ORDER BY token_hit_count DESC, lexical_score DESC, sym.path ASC, sym.line_start ASC
             LIMIT :limit
             """
         ),
@@ -6377,7 +6383,7 @@ def code_search_project(
                 version=row["version"],
                 version_kind=row["version_kind"],
                 commit=snap_meta.get("commit"),
-                score=float(row["score"] or 0.0),
+                score=float(row["lexical_score"] or 0.0) + float(row["token_hit_count"] or 0.0),
             )
         )
     return CodeSearchResponse(query=payload.query, count=len(symbols), symbols=symbols)

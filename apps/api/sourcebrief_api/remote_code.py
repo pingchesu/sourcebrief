@@ -24,6 +24,42 @@ _INVALID_PATH_PREFIXES = ("file://", "http://", "https://")
 
 _IDENTIFIER_SPLIT_RE = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+")
 _IDENTIFIER_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+_QUERY_IDENTIFIER_STOPWORDS = {
+    "a",
+    "about",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "can",
+    "does",
+    "explain",
+    "find",
+    "for",
+    "from",
+    "how",
+    "in",
+    "is",
+    "it",
+    "me",
+    "of",
+    "on",
+    "or",
+    "show",
+    "the",
+    "this",
+    "to",
+    "use",
+    "what",
+    "where",
+    "which",
+    "with",
+    "work",
+    "works",
+}
 
 
 def identifier_tokens(value: str) -> list[str]:
@@ -36,6 +72,18 @@ def identifier_tokens(value: str) -> list[str]:
             if lowered and lowered not in tokens:
                 tokens.append(lowered)
     return tokens
+
+
+def query_identifier_tokens(value: str) -> list[str]:
+    """Return query tokens useful for code/symbol matching.
+
+    Natural-language agent questions often contain a single code identifier plus
+    filler words, for example "how does reconcile_cart work?". PostgreSQL
+    `plainto_tsquery` treats those words as an AND query, so symbol and graph
+    lookup can miss indexed symbols unless we also match the identifier-like
+    residue.
+    """
+    return [token for token in identifier_tokens(value) if len(token) >= 2 and token not in _QUERY_IDENTIFIER_STOPWORDS]
 
 
 def identifier_score(query: str, *, path: str, content: str) -> tuple[float, dict[str, float]]:

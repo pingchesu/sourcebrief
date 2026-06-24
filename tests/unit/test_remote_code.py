@@ -8,6 +8,7 @@ from sourcebrief_api.remote_code import (
     identifier_score,
     identifier_tokens,
     line_range,
+    query_identifier_tokens,
     validate_path_glob,
     validate_repo_path,
 )
@@ -69,3 +70,7 @@ def test_identifier_score_rewards_token_overlap_and_path() -> None:
     assert score >= 0.45
     assert components["identifier"] == 1.0
     assert components["path"] == 0.5
+
+def test_query_identifier_tokens_preserves_code_terms_and_drops_filler_words() -> None:
+    assert query_identifier_tokens("How does reconcile_cart work in checkout?") == ["reconcile", "cart", "checkout"]
+    assert query_identifier_tokens("runtime_symbol") == ["runtime", "symbol"]
