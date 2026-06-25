@@ -58,6 +58,46 @@ class FakeClient:
                 "count": 1,
                 "hits": [{"path": "README.md", "snippet": "demo"}],
             }
+        if method == "POST" and path == "/workspaces":
+            assert body is not None
+            return {"id": "ws-1", "name": body["name"], "slug": body["slug"], "status": "active"}
+        if method == "POST" and path == "/workspaces/ws-1/projects":
+            assert body is not None
+            return {"id": "proj-1", "workspace_id": "ws-1", "name": body["name"], "status": "active"}
+        if method == "POST" and path == "/workspaces/ws-1/projects/proj-1/agent-context":
+            assert body is not None
+            return {
+                "query": body["query"],
+                "profile": "hybrid",
+                "runtime": body["runtime"],
+                "instruction": "Use citations.",
+                "context": "[1] resource=res-1 snapshot=snap-1 path=runbooks/payment-retry.md ordinal=1 score=0.9\nRetry payment jobs with exponential backoff. Escalate after three failures.",
+                "citations": [
+                    {
+                        "resource_id": "res-1",
+                        "snapshot_id": "snap-1",
+                        "chunk_id": "chunk-1",
+                        "path": "runbooks/payment-retry.md",
+                        "title": "Payment retry runbook",
+                        "ordinal": 1,
+                        "content_hash": "hash-1",
+                        "version": "v1",
+                        "version_kind": "snapshot",
+                        "commit": None,
+                        "score": 0.91,
+                        "graph_score": 0.0,
+                        "score_components": {},
+                    }
+                ],
+                "symbols": [],
+                "suggested_tool_calls": [
+                    {"name": "sourcebrief.read_section", "arguments": {"path": "runbooks/payment-retry.md"}}
+                ],
+                "token_budget_hint": 3000,
+                "resource_coverage": [],
+                "coverage_warnings": [],
+                "retrieval_metadata": {},
+            }
         if method == "GET" and path == "/workspaces/ws-1/agents":
             return [{"project_id": "proj-1", "name": "SourceBrief repo", "resource_count": 1}]
         if method == "GET" and path == "/workspaces/ws-1/projects/proj-1/agent-profile":
@@ -302,6 +342,14 @@ def test_cli_selected_defaults_apply_to_search_and_resource_list(monkeypatch, ca
 
     assert cli_main(["--json", "resource", "list"]) == 0
     assert FakeClient.instances[-1].calls[0][0:2] == ("GET", "/workspaces/ws-1/projects/proj-1/resources")
+    capsys.readouterr()
+
+    assert cli_main(["resource", "add-doc", "--name", "Runbook", "--uri", "doc://runbook", "--content", "hello", "--refresh", "--wait"]) == 0
+    resource_out = capsys.readouterr().out
+    assert "Resource" in resource_out
+    client = FakeClient.instances[-1]
+    assert client.calls[0][0:2] == ("POST", "/workspaces/ws-1/projects/proj-1/resources")
+    assert client.calls[-1][0:2] == ("GET", "/workspaces/ws-1/index-runs/run-1")
 
     assert cli_main(["--json", "search", "--workspace-id", "ws-explicit", "--project-id", "proj-explicit", "--query", "demo"]) == 0
     assert FakeClient.instances[-1].calls[0][0:2] == (
@@ -359,6 +407,14 @@ def test_cli_saved_api_url_is_used_but_not_silently_overwritten(monkeypatch, cap
     assert cli_main(["--json", "ask", "demo"]) == 0
     assert FakeClient.instances[-1].api_url == "http://api.example"
     capsys.readouterr()
+
+    assert cli_main(["ask", "demo", "--resource", "Payment retry runbook"]) == 0
+    ask_out = capsys.readouterr().out
+    assert "Answer:" in ask_out
+    assert "Citations:" in ask_out
+    body = FakeClient.instances[-1].calls[0][2]
+    assert body is not None
+    assert body["resource_ref"] == "Payment retry runbook"
 
     assert cli_main(["--api-url", "http://override.example", "--json", "ask", "demo"]) == 0
     assert FakeClient.instances[-1].api_url == "http://override.example"
@@ -760,6 +816,21 @@ def test_hermes_integration_token_env_avoids_token_argv(monkeypatch):
 
     assert token == "cs_env_secret"
     assert api_token is None
+
+
+def test_quickstart_demo_creates_isolated_resource_and_prints_answer(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    assert cli_main(["quickstart-demo", "--slug", "demo-cli-test"]) == 0
+
+    out = capsys.readouterr().out
+    assert "Quickstart demo: indexed and ready for retrieval" in out
+    assert "Answer:" in out
+    assert "sourcebrief ask" in out
+    client = FakeClient.instances[-1]
+    assert client.calls[0][0:2] == ("POST", "/workspaces")
+    assert client.calls[1][0:2] == ("POST", "/workspaces/ws-1/projects")
+    assert any(call[1] == "/workspaces/ws-1/projects/proj-1/agent-context" for call in client.calls)
 
 
 def _runtime_plan(tmp_path: Path, *, target: str = "hermes", generated_at: str | None = None) -> Path:

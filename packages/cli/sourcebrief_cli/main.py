@@ -86,6 +86,13 @@ def _resource_ids(values: list[str] | None) -> list[str] | None:
     return values or None
 
 
+def _resource_ref(args: argparse.Namespace) -> str | None:
+    values = getattr(args, "resource", None) or []
+    if len(values) > 1:
+        raise SourceBriefCliError("--resource accepts one unambiguous name/ref; use repeated --resource-id for multiple resources")
+    return values[0] if values else None
+
+
 def _split_csv_or_repeated(values: list[str] | None) -> list[str] | None:
     if not values:
         return None
@@ -133,7 +140,13 @@ def _selected_value(config: dict[str, Any], key: str) -> str | None:
 def _command_uses_selected_scope(args: argparse.Namespace) -> bool:
     if args.command in {"ask", "search", "agent-context", "mcp-context", "doctor"}:
         return True
-    if args.command == "resource" and getattr(args, "resource_command", None) == "list":
+    if args.command == "resource" and getattr(args, "resource_command", None) in {
+        "add-doc",
+        "add-repo",
+        "add-upload",
+        "add-url",
+        "list",
+    }:
         return True
     return args.command == "runtime" and getattr(args, "runtime_command", None) == "setup"
 
@@ -515,22 +528,33 @@ def cmd_search(client: SourceBriefClient, args: argparse.Namespace) -> Any:
 
 def cmd_agent_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     _require_scope(args)
+    body = {
+        "query": args.query,
+        "runtime": args.runtime,
+        "top_k": args.top_k,
+        "resource_ids": _resource_ids(args.resource_id),
+        "include_code_symbols": args.include_code_symbols,
+        "max_chars": args.max_chars,
+    }
+    if resource_ref := _resource_ref(args):
+        body["resource_ref"] = resource_ref
     return client.request(
         "POST",
         f"/workspaces/{args.workspace_id}/projects/{args.project_id}/agent-context",
-        body={
-            "query": args.query,
-            "runtime": args.runtime,
-            "top_k": args.top_k,
-            "resource_ids": _resource_ids(args.resource_id),
-            "include_code_symbols": args.include_code_symbols,
-            "max_chars": args.max_chars,
-        },
+        body=body,
     )
 
 
 def cmd_mcp_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     _require_scope(args)
+    arguments = {
+        "query": args.query,
+        "runtime": args.runtime,
+        "top_k": args.top_k,
+        "resource_ids": _resource_ids(args.resource_id),
+    }
+    if resource_ref := _resource_ref(args):
+        arguments["resource_ref"] = resource_ref
     return client.request(
         "POST",
         f"/mcp/{args.workspace_id}/{args.project_id}",
@@ -540,15 +564,123 @@ def cmd_mcp_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
             "method": "tools/call",
             "params": {
                 "name": "sourcebrief.get_agent_context",
-                "arguments": {
-                    "query": args.query,
-                    "runtime": args.runtime,
-                    "top_k": args.top_k,
-                    "resource_ids": _resource_ids(args.resource_id),
-                },
+                "arguments": arguments,
             },
         },
     )
+
+
+def _pick_answer_lines(context: str, *, limit: int = 3) -> list[str]:
+    lines: list[str] = []
+    for raw_line in context.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("[") or line.startswith("#"):
+            continue
+        lines.append(line)
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _human_answer_brief(data: dict[str, Any]) -> dict[str, Any]:
+    citations = data.get("citations") or []
+    warnings = data.get("coverage_warnings") or []
+    answer_lines = _pick_answer_lines(str(data.get("context") or ""))
+    if answer_lines:
+        answer = " ".join(answer_lines)
+    elif citations:
+        answer = "SourceBrief found cited context, but no readable snippet fit the response budget. Use --json to inspect the full packet."
+    else:
+        answer = "No grounded answer is available from the selected SourceBrief evidence."
+    cited = citations[:3]
+    return {
+        "query": data.get("query"),
+        "answer": answer,
+        "citations_used": [
+            {
+                "label": f"[{idx}]",
+                "path": citation.get("path") or citation.get("title") or str(citation.get("resource_id")),
+                "resource_id": citation.get("resource_id"),
+                "snapshot_id": citation.get("snapshot_id"),
+                "content_hash": citation.get("content_hash"),
+                "score": citation.get("score"),
+            }
+            for idx, citation in enumerate(cited, start=1)
+        ],
+        "confidence": "low" if warnings or not citations else "medium",
+        "missing_evidence": warnings,
+        "suggested_follow_up_reads": [call.get("arguments", {}) for call in data.get("suggested_tool_calls", [])[:2]],
+        "raw_packet_hint": "Run with --json for the full agent-context packet.",
+    }
+
+
+def cmd_ask(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    data = cmd_agent_context(client, args)
+    if args.json:
+        return data
+    return _human_answer_brief(data)
+
+
+def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    workspace_slug = args.slug or f"sourcebrief-demo-{int(time.time())}"
+    workspace = client.request("POST", "/workspaces", body={"name": args.workspace_name, "slug": workspace_slug}, expected={201})
+    project = client.request(
+        "POST",
+        f"/workspaces/{workspace['id']}/projects",
+        body={"name": args.project_name, "description": "Isolated SourceBrief CLI quickstart demo"},
+        expected={201},
+    )
+    content = (
+        "# Payment retry runbook\n\n"
+        "If a payment job fails with retryable upstream errors, retry it with exponential backoff. "
+        "Escalate after three failed attempts and include the order id, upstream status, and retry timestamps.\n"
+    )
+    resource_result = cmd_resource_add_doc(
+        client,
+        argparse.Namespace(
+            workspace_id=workspace["id"],
+            project_id=project["id"],
+            name="Payment retry runbook",
+            uri="demo://payment-retry-runbook",
+            update_frequency="manual",
+            content=content,
+            content_file=None,
+            path="runbooks/payment-retry.md",
+            title="Payment retry runbook",
+            refresh=True,
+            wait=True,
+            timeout=args.timeout,
+        ),
+    )
+    resource = resource_result["resource"]
+    answer_packet = cmd_agent_context(
+        client,
+        argparse.Namespace(
+            workspace_id=workspace["id"],
+            project_id=project["id"],
+            query="What should an operator do when a payment job hits retryable upstream errors?",
+            runtime="api",
+            top_k=3,
+            resource_id=[resource["id"]],
+            resource=None,
+            include_code_symbols=False,
+            max_chars=6000,
+        ),
+    )
+    return {
+        "status": "indexed_and_ready_for_retrieval",
+        "workspace_id": workspace["id"],
+        "project_id": project["id"],
+        "resource_id": resource["id"],
+        "index_run": resource_result.get("index_run"),
+        "answer": _human_answer_brief(answer_packet),
+        "next_command": (
+            "sourcebrief ask --workspace-id "
+            f"{workspace['id']} --project-id {project['id']} --resource {resource['id']} "
+            "\"What should an operator do when payment retries fail?\""
+        ),
+        "cleanup": "Delete the demo workspace from the web console when finished, or keep it for CLI experiments.",
+    }
 
 
 def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
@@ -689,8 +821,8 @@ def cmd_resource_graph(client: SourceBriefClient, args: argparse.Namespace) -> A
 
 
 def _add_common_resource_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--workspace-id", required=True)
-    parser.add_argument("--project-id", required=True)
+    parser.add_argument("--workspace-id", help="workspace ID; defaults to sourcebrief use selection")
+    parser.add_argument("--project-id", help="project ID; defaults to sourcebrief use selection")
     parser.add_argument("--name", required=True)
     parser.add_argument("--update-frequency", default="manual")
     parser.add_argument("--refresh", action="store_true", help="refresh after creating the resource")
@@ -734,6 +866,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     status = sub.add_parser("status", help="show selected CLI defaults and auth mode without secrets")
     status.set_defaults(func=cmd_status)
+
+    quickstart = sub.add_parser(
+        "quickstart-demo",
+        help="run a one-command local demo that ends with a cited human answer",
+    )
+    quickstart.add_argument("--workspace-name", default="SourceBrief CLI Demo")
+    quickstart.add_argument("--project-name", default="First useful moment")
+    quickstart.add_argument("--slug", help="workspace slug; defaults to a timestamped sourcebrief-demo-* slug")
+    quickstart.add_argument("--timeout", type=int, default=120, help="seconds to wait for indexing")
+    quickstart.set_defaults(func=cmd_quickstart_demo)
 
     doctor = sub.add_parser("doctor", help="check API/auth/project/MCP readiness")
     doctor.add_argument("--workspace-id", help="workspace ID; defaults to sourcebrief use selection")
@@ -880,6 +1022,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--project-id")
     search.add_argument("--query", required=True)
     search.add_argument("--resource-id", action="append")
+    search.add_argument("--resource", action="append", help="resource ID or unambiguous resource ref/name")
     search.add_argument("--top-k", type=int, default=10)
     search.set_defaults(func=cmd_search)
 
@@ -893,10 +1036,11 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("--project-id", help="project ID; overrides saved sourcebrief use value")
     ask.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
     ask.add_argument("--resource-id", action="append")
+    ask.add_argument("--resource", action="append", help="resource ID or unambiguous resource ref/name")
     ask.add_argument("--top-k", type=int, default=8)
     ask.add_argument("--max-chars", type=int, default=12000)
     ask.add_argument("--no-code-symbols", dest="include_code_symbols", action="store_false")
-    ask.set_defaults(func=cmd_agent_context, include_code_symbols=True)
+    ask.set_defaults(func=cmd_ask, include_code_symbols=True)
 
     agent = sub.add_parser("agent-context", help="request runtime-shaped context")
     agent.add_argument("--workspace-id")
@@ -904,6 +1048,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent.add_argument("--query", required=True)
     agent.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
     agent.add_argument("--resource-id", action="append")
+    agent.add_argument("--resource", action="append", help="resource ID or unambiguous resource ref/name")
     agent.add_argument("--top-k", type=int, default=8)
     agent.add_argument("--max-chars", type=int, default=12000)
     agent.add_argument("--no-code-symbols", dest="include_code_symbols", action="store_false")
@@ -915,6 +1060,7 @@ def build_parser() -> argparse.ArgumentParser:
     mcp.add_argument("--query", required=True)
     mcp.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
     mcp.add_argument("--resource-id", action="append")
+    mcp.add_argument("--resource", action="append", help="resource ID or unambiguous resource ref/name")
     mcp.add_argument("--top-k", type=int, default=8)
     mcp.set_defaults(func=cmd_mcp_context)
 
@@ -999,6 +1145,36 @@ def _print_default(command: str | None, data: Any) -> None:
             print("Next steps:")
             for step in data.get("next_steps", []):
                 print(f"- {step}")
+            return
+        if command == "ask" and "answer" in data:
+            print(f"Question: {data.get('query')}")
+            print(f"Answer: {data.get('answer')}")
+            print(f"Confidence: {data.get('confidence')}")
+            citations = data.get("citations_used") or []
+            if citations:
+                print("Citations:")
+                for citation in citations:
+                    print(f"- {citation.get('label')} {citation.get('path')} score={citation.get('score')}")
+            if data.get("missing_evidence"):
+                print("Missing evidence / warnings:")
+                for warning in data.get("missing_evidence", []):
+                    print(f"- {warning}")
+            print(data.get("raw_packet_hint"))
+            return
+        if command == "quickstart-demo" and data.get("status") == "indexed_and_ready_for_retrieval":
+            print("Quickstart demo: indexed and ready for retrieval")
+            print(f"  workspace_id: {data.get('workspace_id')}")
+            print(f"  project_id: {data.get('project_id')}")
+            print(f"  resource_id: {data.get('resource_id')}")
+            print(f"  index_status: {(data.get('index_run') or {}).get('status')}")
+            answer = data.get("answer") or {}
+            print(f"Answer: {answer.get('answer')}")
+            print("Citations:")
+            for citation in answer.get("citations_used", []):
+                print(f"- {citation.get('label')} {citation.get('path')} score={citation.get('score')}")
+            print("Next:")
+            print(f"- {data.get('next_command')}")
+            print(f"- {data.get('cleanup')}")
             return
         if command in {"agent-context", "mcp-context", "ask", "agent", "token", "runtime", "use", "status", "doctor"}:
             _print_json(data)

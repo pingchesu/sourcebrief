@@ -7265,6 +7265,35 @@ def _agent_context_resource_coverage(
     return coverage, warnings
 
 
+def _looks_like_uuid(value: str) -> bool:
+    try:
+        UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _agent_context_with_resource_ref(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    payload: AgentContextRequest,
+) -> AgentContextRequest:
+    if not payload.resource_ref:
+        return payload
+    if payload.resource_ids:
+        raise HTTPException(status_code=422, detail={"code": "conflicting_resource_locator", "message": "use resource_ids or resource_ref, not both"})
+    resource = _runtime_resolve_resource_ref(
+        session,
+        workspace_id,
+        project_id,
+        principal,
+        {"resource_ref": payload.resource_ref},
+    )
+    return payload.model_copy(update={"resource_ids": [resource.id], "resource_ref": None})
+
+
 def _build_pack_agent_context_response(
     session: Session,
     *,
@@ -7519,6 +7548,7 @@ def agent_context(
     session: Session = Depends(get_session),
 ) -> AgentContextResponse:
     require_scope(principal, "project:query")
+    payload = _agent_context_with_resource_ref(session, workspace_id, project_id, principal, payload)
     resource_ids = _effective_resource_ids(principal, payload.resource_ids)
     payload = payload.model_copy(update={"resource_ids": resource_ids})
     _require_project_access(session, workspace_id, project_id, principal)
@@ -8239,6 +8269,9 @@ def _runtime_resolve_resource_ref(session: Session, workspace_id: UUID, project_
             raise HTTPException(status_code=404, detail={"code": "not_found", "message": "resource not found"})
         _runtime_resource_allowed_or_404(principal, artifact.resource_id)
         resource_id = artifact.resource_id
+    if resource_id and not _looks_like_uuid(str(resource_id)):
+        args = {**args, "resource_ref": str(resource_id), "resource_id": None}
+        resource_id = None
     if resource_id:
         resource = session.scalar(select(Resource).where(Resource.id == UUID(str(resource_id)), Resource.workspace_id == workspace_id, Resource.project_id == project_id, Resource.deleted_at.is_(None), Resource.archived_at.is_(None)))
         if resource is None:

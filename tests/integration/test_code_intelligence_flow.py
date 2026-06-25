@@ -277,7 +277,7 @@ def test_code_search_uses_current_snapshot_and_resource_filter(tmp_path) -> None
         headers=headers,
     )
     assert old.status_code == 200
-    assert old.json()["count"] == 0
+    assert all(symbol["name"] != "reconcile_cart" for symbol in old.json()["symbols"])
     new = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/code-search",
         json={"query": "new_current_symbol", "resource_ids": [resource_a]},

@@ -1226,6 +1226,7 @@ class AgentContextRequest(BaseModel):
     query: str = Field(min_length=1)
     profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph)$")
     resource_ids: list[UUID] | None = None
+    resource_ref: str | None = Field(default=None, min_length=1)
     top_k: int = Field(default=8, ge=1, le=50)
     runtime: str | None = Field(default=None, pattern=r"^(api|hermes|claude|codex|cursor)$")
     include_code_symbols: bool = True

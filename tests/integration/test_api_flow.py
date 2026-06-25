@@ -221,6 +221,33 @@ def test_agent_context_discloses_missing_requested_resource_citations() -> None:
     assert "missing_requested_resources" in " ".join(eval_coverage["coverage_warnings"])
 
 
+def test_agent_context_resource_ref_resolves_unambiguous_source_name() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id, resource_id = create_flow(client, "resource-ref")
+    run = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh", headers=headers)
+    assert run.status_code == 202, run.text
+    assert wait_for_run(client, workspace_id, run.json()["id"], headers)["status"] == "succeeded"
+
+    by_ref = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "indexable marker token", "resource_ref": "Runbook", "top_k": 5, "include_code_symbols": False},
+        headers=headers,
+    )
+
+    assert by_ref.status_code == 200, by_ref.text
+    body = by_ref.json()
+    assert body["citations"]
+    assert {citation["resource_id"] for citation in body["citations"]} == {resource_id}
+
+    conflict = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "indexable marker token", "resource_ids": [resource_id], "resource_ref": "Runbook"},
+        headers=headers,
+    )
+    assert conflict.status_code == 422
+
+
 def test_agent_context_sanitizes_latest_index_failure_for_query_only_tokens() -> None:
     require_real_services()
     client = TestClient(app)
