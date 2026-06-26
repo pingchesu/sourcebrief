@@ -99,7 +99,21 @@ For this corpus, SourceBrief produced cited context for all 50 questions once th
 
 ## Reproduce
 
-With the local SourceBrief stack ready:
+With the local SourceBrief stack ready, verify auth before the runner creates any eval resources. Use one of:
+
+- session login: `SOURCEBRIEF_ADMIN_EMAIL` + `SOURCEBRIEF_ADMIN_PASSWORD` (or `CONTEXTSMITH_*` aliases)
+- bearer/session token: `SOURCEBRIEF_TOKEN`
+- local dev auth: stack accepts `X-User-Email: demo@example.com`
+
+Quick auth check:
+
+```bash
+API_URL="$(make -s print-api-url)"
+curl -fsS -H 'X-User-Email: demo@example.com' "$API_URL/auth/me" \
+  || curl -fsS -H "Authorization: Bearer $SOURCEBRIEF_TOKEN" "$API_URL/auth/me"
+```
+
+Then run the evaluation:
 
 ```bash
 API_URL="$(make -s print-api-url)"

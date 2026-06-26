@@ -111,19 +111,75 @@ def first_config_value(dotenv: dict[str, str], *names: str, default: str | None 
     return default
 
 
+def _auth_setup_guidance() -> list[str]:
+    return [
+        "set SOURCEBRIEF_ADMIN_EMAIL and SOURCEBRIEF_ADMIN_PASSWORD (or CONTEXTSMITH_* aliases) for session-login auth",
+        "set SOURCEBRIEF_TOKEN to a valid account session bearer token",
+        "or run the local stack with SOURCEBRIEF_DEV_AUTH=true so X-User-Email dev-header auth is accepted",
+    ]
+
+
+def _auth_failure_message(reason: str) -> str:
+    return (
+        "Authentication preflight failed before creating eval resources: "
+        f"{reason}. Configure one of: " + "; ".join(_auth_setup_guidance()) + ". "
+        "Quick check: curl -fsS -H 'X-User-Email: demo@example.com' \"$SOURCEBRIEF_API_URL/auth/me\" "
+        "or curl -fsS -H 'Authorization: Bearer $SOURCEBRIEF_TOKEN' \"$SOURCEBRIEF_API_URL/auth/me\"."
+    )
+
+
+def _write_auth_failure(out_dir: Path, *, mode: str, reason: str, attempted: list[str]) -> None:
+    write_json(
+        out_dir / "auth-mode.json",
+        {
+            "mode": mode,
+            "usable": False,
+            "reason": reason,
+            "attempted": attempted,
+            "setup_guidance": _auth_setup_guidance(),
+        },
+    )
+
+
 def authenticate(client: ApiClient, out_dir: Path) -> None:
     dotenv = load_dotenv(REPO_ROOT / ".env")
+    token = first_config_value(dotenv, "SOURCEBRIEF_TOKEN", "CONTEXTSMITH_TOKEN")
+    if token:
+        client.token = token
+        try:
+            probe = client.request("GET", "/auth/me")
+        except RuntimeError as exc:
+            reason = f"SOURCEBRIEF_TOKEN was set but /auth/me rejected it: {exc}"
+            _write_auth_failure(out_dir, mode="bearer-token", reason=reason, attempted=["bearer-token"])
+            raise RuntimeError(_auth_failure_message(reason)) from exc
+        write_json(out_dir / "auth-mode.json", {"mode": "bearer-token", "token_env": "SOURCEBRIEF_TOKEN", "probe": probe})
+        return
+
     email = first_config_value(dotenv, "SOURCEBRIEF_ADMIN_EMAIL", "CONTEXTSMITH_ADMIN_EMAIL", default="admin@sourcebrief.local")
     password = first_config_value(dotenv, "SOURCEBRIEF_ADMIN_PASSWORD", "CONTEXTSMITH_ADMIN_PASSWORD")
-    if not email or not password:
-        write_json(out_dir / "auth-mode.json", {"mode": "dev-header", "email": client.email})
+    if email and password:
+        try:
+            login = client.request("POST", "/auth/login", body={"email": email, "password": password})
+        except RuntimeError as exc:
+            reason = f"session-login failed for {email}: {exc}"
+            _write_auth_failure(out_dir, mode="session-login", reason=reason, attempted=["session-login"])
+            raise RuntimeError(_auth_failure_message(reason)) from exc
+        session_token = login.get("session_token")
+        if not isinstance(session_token, str) or not session_token:
+            reason = "/auth/login response did not include session_token"
+            _write_auth_failure(out_dir, mode="session-login", reason=reason, attempted=["session-login"])
+            raise RuntimeError(_auth_failure_message(reason))
+        client.token = session_token
+        write_json(out_dir / "auth-mode.json", {"mode": "session-login", "email": email, "login": login})
         return
-    login = client.request("POST", "/auth/login", body={"email": email, "password": password})
-    token = login.get("session_token")
-    if not isinstance(token, str) or not token:
-        raise RuntimeError("/auth/login response did not include session_token")
-    client.token = token
-    write_json(out_dir / "auth-mode.json", {"mode": "session-login", "email": email, "login": login})
+
+    try:
+        probe = client.request("GET", "/auth/me")
+    except RuntimeError as exc:
+        reason = f"dev-header auth for {client.email} was rejected: {exc}"
+        _write_auth_failure(out_dir, mode="unsupported/missing-auth", reason=reason, attempted=["dev-header"])
+        raise RuntimeError(_auth_failure_message(reason)) from exc
+    write_json(out_dir / "auth-mode.json", {"mode": "dev-header", "email": client.email, "probe": probe})
 
 
 def write_json(path: Path, data: Any) -> None:

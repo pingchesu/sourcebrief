@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 def load_eval_module():
     module_path = Path(__file__).resolve().parents[2] / "scripts" / "run_awesome_agent_harness_eval.py"
@@ -236,3 +238,38 @@ def test_grade_report_counts_partial_corpus_risk_separately() -> None:
     assert limited_result["checks"]["partial_corpus_caveat"] == "partial"
     assert limited_result["checks"]["retrieval_quality"] is True
     assert report["aggregate"]["partial_corpus_risk_count"] == 1
+
+def test_authenticate_fails_before_mutation_with_actionable_auth_guidance(tmp_path, monkeypatch) -> None:
+    module = load_eval_module()
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    for name in (
+        "SOURCEBRIEF_TOKEN",
+        "CONTEXTSMITH_TOKEN",
+        "SOURCEBRIEF_ADMIN_EMAIL",
+        "CONTEXTSMITH_ADMIN_EMAIL",
+        "SOURCEBRIEF_ADMIN_PASSWORD",
+        "CONTEXTSMITH_ADMIN_PASSWORD",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    class RejectingClient:
+        email = "demo@example.com"
+        token = None
+
+        def request(self, method: str, path: str, *, body=None, expected=None):
+            assert (method, path) == ("GET", "/auth/me")
+            raise RuntimeError('GET /auth/me failed with HTTP 401: {"detail":"authentication required"}')
+
+    with pytest.raises(RuntimeError) as excinfo:
+        module.authenticate(RejectingClient(), tmp_path / "out")
+
+    message = str(excinfo.value)
+    assert "Authentication preflight failed before creating eval resources" in message
+    assert "SOURCEBRIEF_ADMIN_EMAIL" in message
+    assert "SOURCEBRIEF_ADMIN_PASSWORD" in message
+    assert "SOURCEBRIEF_TOKEN" in message
+    auth_mode = module.json.loads((tmp_path / "out" / "auth-mode.json").read_text(encoding="utf-8"))
+    assert auth_mode["mode"] == "unsupported/missing-auth"
+    assert auth_mode["usable"] is False
+    assert auth_mode["attempted"] == ["dev-header"]
+    assert "authentication required" in auth_mode["reason"]
