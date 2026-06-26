@@ -18,6 +18,12 @@ HEADERS: dict[str, str] = {}
 AUTH_DEFAULT_WORKSPACE_ID: str | None = None
 MARKER = "sourcebriefqamarker"
 TOKEN_PATTERN = re.compile(r"cs_[A-Za-z0-9_-]{20,}")
+GOLDEN_MCP_TOOL_ORDER = [
+    "sourcebrief.ask",
+    "sourcebrief.discover",
+    "sourcebrief.lookup",
+    "sourcebrief.get_agent_context",
+]
 
 
 def request(method: str, path: str, expected: int, **kwargs):
@@ -34,6 +40,17 @@ def request(method: str, path: str, expected: int, **kwargs):
 def fail(message: str) -> None:
     print(message, file=sys.stderr)
     raise SystemExit(1)
+
+
+def assert_golden_mcp_tool_order(mcp_tools: dict[str, Any]) -> None:
+    tools = mcp_tools.get("result", {}).get("tools", [])
+    names = [tool.get("name") for tool in tools]
+    expected = GOLDEN_MCP_TOOL_ORDER
+    if names[: len(expected)] != expected:
+        fail(
+            f"MCP tools/list golden tools must be first in order {expected}, "
+            f"got {names[: len(expected)]}: {mcp_tools}"
+        )
 
 
 def authenticate() -> None:
@@ -600,8 +617,7 @@ def main() -> None:
         json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
         headers=HEADERS,
     )
-    if mcp_tools["result"]["tools"][0]["name"] != "sourcebrief.get_agent_context":
-        fail(f"MCP tools/list missing context tool: {mcp_tools}")
+    assert_golden_mcp_tool_order(mcp_tools)
     mcp_call = request(
         "POST",
         f"/mcp/{ws}/{proj}",
