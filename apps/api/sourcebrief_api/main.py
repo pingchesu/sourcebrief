@@ -7255,7 +7255,16 @@ def _agent_unsupported_claim_terms(query: str, context_parts: list[str]) -> list
     return unsupported
 
 
-def _agent_answer_citations_used(citations: list[AgentContextCitation], *, count: int) -> list[dict[str, Any]]:
+def _agent_answer_citations_used(
+    citations: list[AgentContextCitation],
+    *,
+    count: int | None = None,
+    citation_indices: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    if citation_indices:
+        indices = [idx for idx in dict.fromkeys(citation_indices) if 1 <= idx <= len(citations)]
+    else:
+        indices = list(range(1, min(len(citations), max(1, count or 0)) + 1))
     return [
         {
             "label": f"[{idx}]",
@@ -7265,7 +7274,8 @@ def _agent_answer_citations_used(citations: list[AgentContextCitation], *, count
             "content_hash": citation.content_hash,
             "score": citation.score,
         }
-        for idx, citation in enumerate(citations[: max(1, count)], start=1)
+        for idx in indices
+        for citation in [citations[idx - 1]]
     ]
 
 
@@ -7316,7 +7326,11 @@ def _synthesize_agent_answer(
         text = "SourceBrief found cited context for this question; inspect the cited sections before making claims."
     if caveats:
         text += " Caveat: " + " ".join(caveats[:2])
-    citations_used = _agent_answer_citations_used(citations, count=len(snippets) or 3)
+    citations_used = _agent_answer_citations_used(
+        citations,
+        count=3,
+        citation_indices=[idx for idx, _snippet in snippets] if snippets else None,
+    )
     return AgentContextAnswer(
         text=text,
         citations_used=citations_used,
