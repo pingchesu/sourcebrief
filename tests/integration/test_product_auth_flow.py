@@ -80,6 +80,49 @@ def test_reserved_web_session_prefix_cannot_create_api_token(monkeypatch: pytest
     assert all(not item["name"].startswith("Web session for ") for item in listed.json())
 
 
+def test_session_can_create_project_in_new_workspace_without_widening_api_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    require_real_services()
+    client = TestClient(app)
+    _, session_token, default_workspace_id, _ = login_admin(client, monkeypatch, "auth-workspace-refresh")
+    session_headers = {"Authorization": f"Bearer {session_token}"}
+    suffix = int(time.time() * 1000)
+
+    created_workspace = client.post(
+        "/workspaces",
+        headers=session_headers,
+        json={"name": f"Clean E2E Workspace {suffix}", "slug": f"clean-e2e-{suffix}"},
+    )
+    assert created_workspace.status_code == 201, created_workspace.text
+    workspace_id = created_workspace.json()["id"]
+
+    created_project = client.post(
+        f"/workspaces/{workspace_id}/projects",
+        headers=session_headers,
+        json={"name": f"Clean E2E Project {suffix}", "description": "same-session workspace smoke"},
+    )
+    assert created_project.status_code == 201, created_project.text
+    project_id = created_project.json()["id"]
+
+    workspaces = client.get("/workspaces", headers=session_headers)
+    assert workspaces.status_code == 200, workspaces.text
+    assert workspace_id in {workspace["id"] for workspace in workspaces.json()}
+
+    projects = client.get(f"/workspaces/{workspace_id}/projects", headers=session_headers)
+    assert projects.status_code == 200, projects.text
+    assert project_id in {project["id"] for project in projects.json()}
+
+    scoped_token = client.post(
+        f"/workspaces/{default_workspace_id}/api-tokens",
+        headers=session_headers,
+        json={"name": f"default workspace reader {suffix}", "scopes": ["project:read"]},
+    )
+    assert scoped_token.status_code == 201, scoped_token.text
+    token_headers = {"Authorization": f"Bearer {scoped_token.json()['token']}"}
+
+    denied = client.get(f"/workspaces/{workspace_id}/projects", headers=token_headers)
+    assert denied.status_code == 404
+
+
 def test_member_upsert_cannot_remove_final_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     require_real_services()
     client = TestClient(app)

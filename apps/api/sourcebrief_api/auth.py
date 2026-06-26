@@ -161,7 +161,7 @@ def require_any_scope(principal: Principal, scopes: set[str]) -> None:
 def require_workspace_member(session: Session, workspace_id: UUID, principal: Principal | User) -> WorkspaceMembership:
     user = principal.user if isinstance(principal, Principal) else principal
     token = principal.api_token if isinstance(principal, Principal) and principal.api_token is not None else None
-    if token is not None and token.workspace_id != workspace_id:
+    if isinstance(principal, Principal) and principal.is_token and token is not None and token.workspace_id != workspace_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="workspace not found")
     membership = session.scalar(
         select(WorkspaceMembership).where(
