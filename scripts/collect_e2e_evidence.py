@@ -78,7 +78,10 @@ def redacted_env_summary(env_file: Path, environ: Mapping[str, str]) -> dict[str
     ]
     summary: dict[str, str | None] = {}
     for key in keys:
-        value = environ.get(key, file_values.get(key))
+        # Match the README/Makefile launch path: GNU make includes `.env`, and
+        # file assignments override inherited shell variables. Evidence should
+        # summarize the values the stack used, not a caller's stale environment.
+        value = file_values.get(key, environ.get(key))
         summary[key] = redact_value(key, value)
     return summary
 
@@ -87,12 +90,28 @@ def configured_urls(env_file: Path, environ: Mapping[str, str]) -> dict[str, str
     file_values = parse_env_file(env_file)
 
     def pick(name: str, default: str) -> str:
-        return environ.get(name) or file_values.get(name) or default
+        return file_values.get(name) or environ.get(name) or default
 
     api_port = pick("SOURCEBRIEF_API_PORT", pick("CONTEXTSMITH_API_PORT", "18000"))
     web_port = pick("SOURCEBRIEF_WEB_PORT", pick("CONTEXTSMITH_WEB_PORT", "13000"))
-    api_url = environ.get("SOURCEBRIEF_API_URL") or environ.get("API_URL") or f"http://localhost:{api_port}"
-    web_url = environ.get("SOURCEBRIEF_WEB_URL") or environ.get("WEB_URL") or f"http://localhost:{web_port}"
+    file_has_api_port = "SOURCEBRIEF_API_PORT" in file_values or "CONTEXTSMITH_API_PORT" in file_values
+    file_has_web_port = "SOURCEBRIEF_WEB_PORT" in file_values or "CONTEXTSMITH_WEB_PORT" in file_values
+    api_url = (
+        file_values.get("SOURCEBRIEF_API_URL")
+        or file_values.get("API_URL")
+        or (f"http://localhost:{api_port}" if file_has_api_port else None)
+        or environ.get("SOURCEBRIEF_API_URL")
+        or environ.get("API_URL")
+        or f"http://localhost:{api_port}"
+    )
+    web_url = (
+        file_values.get("SOURCEBRIEF_WEB_URL")
+        or file_values.get("WEB_URL")
+        or (f"http://localhost:{web_port}" if file_has_web_port else None)
+        or environ.get("SOURCEBRIEF_WEB_URL")
+        or environ.get("WEB_URL")
+        or f"http://localhost:{web_port}"
+    )
     return {"api_url": api_url.rstrip("/"), "web_url": web_url.rstrip("/"), "api_port": api_port, "web_port": web_port}
 
 
@@ -178,7 +197,13 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = Path(args.output_dir) if args.output_dir else Path("artifacts") / "e2e" / run_id
     env_file = Path(args.env_file)
     urls = configured_urls(env_file, os.environ)
-    compose_project = args.compose_project_name or os.environ.get("COMPOSE_PROJECT_NAME") or parse_env_file(env_file).get("COMPOSE_PROJECT_NAME") or f"sourcebrief_e2e_{run_id}"
+    env_values = parse_env_file(env_file)
+    compose_project = (
+        args.compose_project_name
+        or env_values.get("COMPOSE_PROJECT_NAME")
+        or os.environ.get("COMPOSE_PROJECT_NAME")
+        or f"sourcebrief_e2e_{run_id}"
+    )
 
     commands: list[dict[str, Any]] = []
     if not args.skip_docker:

@@ -19,6 +19,16 @@ const adminPassword = process.env.SOURCEBRIEF_ADMIN_PASSWORD ?? repoEnv.SOURCEBR
 
 test.skip(!adminEmail || !adminPassword, 'SourceBrief admin credentials are required for the first-source browser smoke.');
 
+test('login form signs in with configured admin credentials', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(adminEmail ?? '');
+  await page.getByLabel('Password').fill(adminPassword ?? '');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+
+  await expect(page.locator('.notice').filter({ hasText: /Signed in as/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible();
+});
+
 async function login(page: import('@playwright/test').Page) {
   const apiBaseUrl = process.env.SOURCEBRIEF_API_URL ?? 'http://localhost:18000';
   const response = await page.request.post(`${apiBaseUrl}/auth/login`, { data: { email: adminEmail, password: adminPassword } });

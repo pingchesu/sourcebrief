@@ -32,6 +32,15 @@ docker compose down --remove-orphans --volumes
 - If `SOURCEBRIEF_WEB_PORT` changes, update `SOURCEBRIEF_CORS_ORIGINS` to include the browser origin, for example `http://localhost:13100,http://127.0.0.1:13100`.
 - The default Compose file publishes Postgres and Redis to `127.0.0.1` only. On remote or shared hosts, keep those internal data services loopback-bound unless you intentionally add a local Compose override and matching firewall policy for development access.
 
+Run the quickstart doctor after editing `.env` to catch missing host tools and remote-browser configuration mistakes before rebuilding containers:
+
+```bash
+python3 scripts/check_quickstart_prereqs.py
+SOURCEBRIEF_HOST=<sourcebrief-host-or-ip>
+python3 scripts/check_quickstart_prereqs.py \
+  --remote-browser-origin "http://${SOURCEBRIEF_HOST}:${SOURCEBRIEF_WEB_PORT:-13000}"
+```
+
 ## Remote/self-host port exposure
 
 The alpha stack intentionally separates browser/API exposure from data-service exposure:
@@ -39,6 +48,8 @@ The alpha stack intentionally separates browser/API exposure from data-service e
 - API and web ports may be reachable from other machines when the host firewall and Docker networking allow it.
 - Postgres and Redis are internal services for the API/workers and bind to loopback by default.
 - For remote/self-host evaluation, expose only the API/web ports you need and keep DB/Redis off the LAN/public interface.
+- If users open the web UI from another machine, `NEXT_PUBLIC_API_BASE_URL` must be the browser-visible API origin, such as `http://10.10.70.17:${SOURCEBRIEF_API_PORT:-18000}`, and `SOURCEBRIEF_CORS_ORIGINS` must include the browser-visible web origin.
+- API `/readyz` and web `/api/health` can both pass while browser login still fails from another machine if the frontend was built with `NEXT_PUBLIC_API_BASE_URL=http://localhost:...`; run the remote-browser quickstart doctor or a browser login smoke before declaring remote/self-host setup healthy.
 - If you need host-side database inspection, connect from the Docker host via `localhost:${SOURCEBRIEF_POSTGRES_PORT:-55432}` or run `docker compose exec -T postgres ...`.
 - If you intentionally need remote DB/Redis access in a disposable development environment, add an explicit untracked override such as `docker-compose.override.yml`; do not rely on the shared default compose file to expose those services.
 

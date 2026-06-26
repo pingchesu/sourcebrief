@@ -36,6 +36,31 @@ def test_env_summary_redacts_secret_keys_and_uses_configured_ports(tmp_path):
     assert summary["SOURCEBRIEF_DEV_AUTH"] == "true"
 
 
+def test_evidence_uses_env_file_before_shell_environment(tmp_path):
+    module = load_module()
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "SOURCEBRIEF_API_PORT=18123\n"
+        "SOURCEBRIEF_WEB_PORT=13123\n"
+        "SOURCEBRIEF_DEV_AUTH=false\n",
+        encoding="utf-8",
+    )
+    environ = {
+        "SOURCEBRIEF_API_PORT": "18999",
+        "SOURCEBRIEF_WEB_PORT": "13999",
+        "SOURCEBRIEF_DEV_AUTH": "true",
+        "SOURCEBRIEF_API_URL": "http://localhost:18999",
+    }
+
+    urls = module.configured_urls(env_file, environ)
+    summary = module.redacted_env_summary(env_file, environ)
+
+    assert urls["api_url"] == "http://localhost:18123"
+    assert urls["web_url"] == "http://localhost:13123"
+    assert summary["SOURCEBRIEF_API_PORT"] == "18123"
+    assert summary["SOURCEBRIEF_DEV_AUTH"] == "false"
+
+
 def test_bundle_writer_creates_redacted_manifest_without_live_checks(tmp_path, monkeypatch):
     module = load_module()
     output = tmp_path / "bundle"

@@ -11,7 +11,7 @@ export default defineConfig({
     // can include request payloads and storage state.
     trace: 'off',
   },
-  webServer: {
+  webServer: process.env.SOURCEBRIEF_SKIP_PLAYWRIGHT_WEBSERVER ? undefined : {
     command: 'npm run dev -- --hostname 0.0.0.0 --port 3105',
     url: 'http://localhost:3105/api/health',
     reuseExistingServer: !process.env.CI,

@@ -17,11 +17,13 @@ WEB_URL ?= http://localhost:$(SOURCEBRIEF_WEB_PORT)
 DATABASE_URL ?= $(if $(SOURCEBRIEF_DATABASE_URL),$(SOURCEBRIEF_DATABASE_URL),$(if $(CONTEXTSMITH_DATABASE_URL),$(CONTEXTSMITH_DATABASE_URL),postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(SOURCEBRIEF_POSTGRES_PORT)/$(POSTGRES_DB)))
 export PYTHONPATH := apps/api:packages/shared:packages/worker
 
-.PHONY: help venv web-deps lint typecheck test test-integration compose-up compose-down compose-ps compose-logs migrate migrate-compose qa-smoke alpha-eval collect-e2e-evidence release-gate verify clean prepare-qa-fixtures
+.PHONY: help quickstart-doctor quickstart-ready print-api-url print-web-url venv web-deps lint typecheck test test-integration compose-up compose-down compose-ps compose-logs migrate migrate-compose qa-smoke alpha-eval collect-e2e-evidence release-gate verify clean prepare-qa-fixtures
 
 help:
 	@printf 'SourceBrief common commands\n\n'
 	@printf '  make compose-up             Build/start API, workers, web, Postgres, and Redis\n'
+	@printf '  make quickstart-doctor      Check quickstart prerequisites and remote browser config\n'
+	@printf '  make quickstart-ready       Wait for API and web health using .env ports\n'
 	@printf '  make compose-down           Stop local services and remove orphan containers\n'
 	@printf '  make compose-ps             Show local service status\n'
 	@printf '  make compose-logs           Tail API, worker, and frontend logs\n'
@@ -35,6 +37,19 @@ help:
 	@printf '  make collect-e2e-evidence   Write a redacted launch evidence bundle under artifacts/e2e/\n'
 	@printf '  make verify                 Full local acceptance/release gate\n'
 	@printf '  make clean                  Remove local Python/tool caches\n'
+
+quickstart-doctor:
+	python3 scripts/check_quickstart_prereqs.py
+
+quickstart-ready:
+	python3 scripts/wait_for_http.py http://localhost:$(SOURCEBRIEF_API_PORT)/readyz 120
+	python3 scripts/wait_for_http.py http://localhost:$(SOURCEBRIEF_WEB_PORT)/api/health 120
+
+print-api-url:
+	@printf 'http://localhost:%s\n' '$(SOURCEBRIEF_API_PORT)'
+
+print-web-url:
+	@printf 'http://localhost:%s\n' '$(SOURCEBRIEF_WEB_PORT)'
 
 venv:
 	uv venv --python 3.11 --allow-existing $(VENV)

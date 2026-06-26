@@ -142,6 +142,8 @@ This starts the real local stack and opens the web console.
 - npm
 - git
 
+On a clean Linux host, install `uv` with `curl -LsSf https://astral.sh/uv/install.sh | sh`, add `$HOME/.local/bin` to `PATH`, and run `uv python install 3.11` if Python 3.11 is not already available. The project venv uses `uv venv --python 3.11`; the host `python3` may be newer.
+
 ### Start the stack
 
 ```bash
@@ -152,15 +154,18 @@ cp .env.example .env
 # Edit SOURCEBRIEF_ADMIN_PASSWORD before the first startup.
 # Keep SOURCEBRIEF_DEV_AUTH=false unless you explicitly want local header auth for CLI experiments.
 
+python3 scripts/check_quickstart_prereqs.py
+
 make compose-up
-until curl -fsS http://localhost:18000/readyz; do sleep 2; done
-until curl -fsS http://localhost:13000/api/health; do sleep 2; done
+make quickstart-ready
 ```
+
+If you will open the web console from another machine, set `NEXT_PUBLIC_API_BASE_URL` to the browser-visible API URL and add the web origin to `SOURCEBRIEF_CORS_ORIGINS` before `make compose-up`; changing the API base later requires `docker compose up -d --build`. The [Quick start](docs/QUICKSTART.md#remote-browser--self-host-setup) includes the exact remote/self-host snippet.
 
 Open the web console:
 
-```text
-http://localhost:13000/login
+```bash
+printf '%s/login\n' "$(make -s print-web-url)"
 ```
 
 Sign in with the admin email and password from `.env`:

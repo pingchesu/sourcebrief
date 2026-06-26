@@ -9,7 +9,7 @@ Use this convention for README-driven E2E, release signoff, and issue #71 child 
 Use a unique Compose project name on shared or remote hosts so one launch test cannot collide with another checkout that is also named `sourcebrief`:
 
 ```bash
-export RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+export RUN_ID="$(date -u +%Y%m%d%H%M%S)"
 export PORT_SUFFIX="$(python -c 'import random; print(random.randint(10, 99))')"
 export COMPOSE_PROJECT_NAME="sourcebrief_e2e_${RUN_ID}"
 export SOURCEBRIEF_API_PORT="18${PORT_SUFFIX}"
