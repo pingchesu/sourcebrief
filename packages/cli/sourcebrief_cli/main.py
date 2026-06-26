@@ -549,6 +549,7 @@ def cmd_agent_context(client: SourceBriefClient, args: argparse.Namespace) -> An
         "top_k": args.top_k,
         "resource_ids": _resource_ids(args.resource_id),
         "include_code_symbols": args.include_code_symbols,
+        "include_answer": getattr(args, "include_answer", True),
         "max_chars": args.max_chars,
     }
     if resource_ref := _resource_ref(args):
@@ -600,6 +601,17 @@ def _pick_answer_lines(context: str, *, limit: int = 3) -> list[str]:
 def _human_answer_brief(data: dict[str, Any]) -> dict[str, Any]:
     citations = data.get("citations") or []
     warnings = data.get("coverage_warnings") or []
+    api_answer = data.get("answer") if isinstance(data.get("answer"), dict) else None
+    if api_answer and api_answer.get("text"):
+        return {
+            "query": data.get("query"),
+            "answer": api_answer.get("text"),
+            "citations_used": api_answer.get("citations_used") or [],
+            "confidence": api_answer.get("confidence", "medium"),
+            "missing_evidence": api_answer.get("caveats") or warnings,
+            "suggested_follow_up_reads": [call.get("arguments", {}) for call in data.get("suggested_tool_calls", [])[:2]],
+            "raw_packet_hint": "Run with --json for the full agent-context packet.",
+        }
     answer_lines = _pick_answer_lines(str(data.get("context") or ""))
     if answer_lines:
         answer = " ".join(answer_lines)
@@ -1091,7 +1103,8 @@ def build_parser() -> argparse.ArgumentParser:
     agent.add_argument("--top-k", type=int, default=8)
     agent.add_argument("--max-chars", type=int, default=12000)
     agent.add_argument("--no-code-symbols", dest="include_code_symbols", action="store_false")
-    agent.set_defaults(func=cmd_agent_context, include_code_symbols=True)
+    agent.add_argument("--no-answer", dest="include_answer", action="store_false", help="return raw context without synthesized answer metadata")
+    agent.set_defaults(func=cmd_agent_context, include_code_symbols=True, include_answer=True)
 
     mcp = sub.add_parser("mcp-context", help="call the central MCP context tool")
     mcp.add_argument("--workspace-id")

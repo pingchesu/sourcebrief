@@ -147,6 +147,9 @@ def test_agent_context_reports_unindexed_resource_coverage_warning() -> None:
     assert body["resource_coverage"][0]["resource_id"] == resource_id
     assert body["resource_coverage"][0]["queryable"] is False
     assert body["resource_coverage"][0]["coverage_status"] == "not_queryable"
+    assert body["answer"]["confidence"] == "none"
+    assert "Caveat:" in body["answer"]["text"]
+    assert body["answer"]["caveats"]
     assert body["coverage_warnings"]
     assert "no current snapshot" in " ".join(body["coverage_warnings"])
 

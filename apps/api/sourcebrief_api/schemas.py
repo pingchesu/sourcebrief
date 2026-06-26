@@ -1231,6 +1231,7 @@ class AgentContextRequest(BaseModel):
     top_k: int = Field(default=8, ge=1, le=50)
     runtime: str | None = Field(default=None, pattern=r"^(api|hermes|claude|codex|cursor)$")
     include_code_symbols: bool = True
+    include_answer: bool = True
     max_chars: int = Field(default=12000, ge=1000, le=50000)
     context_pack_key: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9._-]{0,62}$")
     context_pack_version: int | str | None = "current"
@@ -1253,12 +1254,21 @@ class AgentContextCitation(BaseModel):
     score_components: dict = Field(default_factory=dict)
 
 
+class AgentContextAnswer(BaseModel):
+    mode: str = "extractive_synthesis"
+    text: str
+    citations_used: list[dict[str, Any]] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+    confidence: str = Field(default="medium", pattern=r"^(none|low|medium)$")
+
+
 class AgentContextResponse(BaseModel):
     query: str
     profile: str
     runtime: str
     instruction: str
     context: str
+    answer: AgentContextAnswer | None = None
     citations: list[AgentContextCitation]
     symbols: list[CodeSymbolHit] = Field(default_factory=list)
     suggested_tool_calls: list[dict] = Field(default_factory=list)

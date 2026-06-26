@@ -141,6 +141,7 @@ from sourcebrief_api.schemas import (
     AgentCardSummaryAcknowledgeRequest,
     AgentCardSummaryListResponse,
     AgentCardSummaryRead,
+    AgentContextAnswer,
     AgentContextCitation,
     AgentContextRequest,
     AgentContextResponse,
@@ -7175,6 +7176,98 @@ def _agent_context_suggested_tool_calls(citations: list[AgentContextCitation], q
     return calls
 
 
+def _agent_answer_snippets(context_parts: list[str], *, limit: int = 3) -> list[tuple[int, str]]:
+    snippets: list[tuple[int, str]] = []
+    for citation_index, part in enumerate(context_parts, start=1):
+        lines = []
+        for raw_line in part.splitlines()[1:]:
+            line = raw_line.strip().strip("` ")
+            if not line or line.startswith(("|", "---")):
+                continue
+            if line.startswith("#"):
+                line = line.lstrip("# ").strip()
+                if not line:
+                    continue
+            if re.match(r"^[{}();,]+$", line):
+                continue
+            lines.append(line)
+        text = " ".join(lines)
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            continue
+        sentence = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0].strip()
+        if len(sentence) < 24:
+            sentence = text[:240].strip()
+        if len(sentence) > 280:
+            sentence = sentence[:277].rstrip() + "..."
+        if sentence:
+            snippets.append((citation_index, sentence))
+        if len(snippets) >= limit:
+            break
+    return snippets
+
+
+def _agent_answer_caveats(resource_coverage: list[dict[str, Any]], coverage_warnings: list[str]) -> list[str]:
+    caveats: list[str] = []
+    for warning in coverage_warnings:
+        if warning and warning not in caveats:
+            caveats.append(warning)
+    for entry in resource_coverage:
+        status = entry.get("coverage_status")
+        if status and status != "full":
+            name = entry.get("name") or entry.get("resource_id")
+            caveat = f"{name}: coverage_status={status}; evidence may be partial."
+            if caveat not in caveats:
+                caveats.append(caveat)
+    return caveats[:5]
+
+
+def _synthesize_agent_answer(
+    *,
+    query: str,
+    context_parts: list[str],
+    citations: list[AgentContextCitation],
+    resource_coverage: list[dict[str, Any]],
+    coverage_warnings: list[str],
+) -> AgentContextAnswer:
+    caveats = _agent_answer_caveats(resource_coverage, coverage_warnings)
+    if not citations:
+        text = f"No grounded answer is available from the selected SourceBrief evidence for: {query}"
+        if caveats:
+            text += " Caveat: " + " ".join(caveats[:2])
+        return AgentContextAnswer(
+            text=text,
+            citations_used=[],
+            caveats=caveats,
+            confidence="none",
+        )
+    snippets = _agent_answer_snippets(context_parts)
+    if snippets:
+        claims = [f"{snippet} [{idx}]" for idx, snippet in snippets]
+        text = f"Based on the cited SourceBrief context for `{query}`: " + " ".join(claims)
+    else:
+        text = "SourceBrief found cited context for this question; inspect the cited sections before making claims."
+    if caveats:
+        text += " Caveat: " + " ".join(caveats[:2])
+    citations_used = [
+        {
+            "label": f"[{idx}]",
+            "resource_id": str(citation.resource_id),
+            "snapshot_id": str(citation.snapshot_id),
+            "path": citation.path or citation.title or str(citation.resource_id),
+            "content_hash": citation.content_hash,
+            "score": citation.score,
+        }
+        for idx, citation in enumerate(citations[: max(1, len(snippets) or 3)], start=1)
+    ]
+    return AgentContextAnswer(
+        text=text,
+        citations_used=citations_used,
+        caveats=caveats,
+        confidence="low" if caveats else "medium",
+    )
+
+
 def _runtime_safe_index_failure(error_message: str | None) -> str:
     if not error_message:
         return "latest index failed; inspect Index activity with read scope for details"
@@ -7400,6 +7493,17 @@ def _build_pack_agent_context_response(
         runtime=actual_runtime,
         instruction=" ".join(instruction_parts),
         context="\n\n".join(context_parts),
+        answer=(
+            _synthesize_agent_answer(
+                query=payload.query,
+                context_parts=context_parts,
+                citations=citations,
+                resource_coverage=resource_coverage,
+                coverage_warnings=coverage_warnings,
+            )
+            if payload.include_answer
+            else None
+        ),
         citations=citations,
         symbols=[],
         suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query, include_code_tools=can_read_code),
@@ -7557,6 +7661,17 @@ def _build_agent_context_response(
         runtime=actual_runtime,
         instruction=" ".join(instruction_parts),
         context="\n\n".join(context_parts),
+        answer=(
+            _synthesize_agent_answer(
+                query=payload.query,
+                context_parts=context_parts,
+                citations=citations,
+                resource_coverage=resource_coverage,
+                coverage_warnings=coverage_warnings,
+            )
+            if payload.include_answer
+            else None
+        ),
         citations=citations,
         symbols=symbols,
         suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query, include_code_tools=can_read_code),
@@ -9050,7 +9165,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
     return [
         {
             "name": "sourcebrief.ask",
-            "description": "Golden-path alias for get_agent_context: ask a project question and receive cited context plus suggested next tool calls. Code symbols are returned only when the caller has code:read; context-only tokens receive cited context plus an omission warning.",
+            "description": "Golden-path answer: ask a project question and receive a synthesized cited answer, cited context, and suggested next tool calls. Code symbols are returned only when the caller has code:read; context-only tokens receive cited context plus an omission warning. Set include_answer=false to get the raw context packet without synthesis.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -9064,6 +9179,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
                     "context_pack_version": {"type": "integer", "minimum": 1},
                     "max_chars": {"type": "integer", "minimum": 1000, "maximum": 50000},
                     "include_code_symbols": {"type": "boolean"},
+                    "include_answer": {"type": "boolean"},
                 },
                 "required": ["query"],
             },
@@ -9125,7 +9241,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "sourcebrief.get_agent_context",
-            "description": "Return permission-scoped cited context for a SourceBrief project. Code symbols require code:read and are omitted with a structured warning for context-only tokens.",
+            "description": "Return permission-scoped cited context for a SourceBrief project. By default the packet includes an extractive cited answer; set include_answer=false for raw context-only behavior. Code symbols require code:read and are omitted with a structured warning for context-only tokens.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -9139,6 +9255,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
                     "context_pack_version": {"type": "integer", "minimum": 1},
                     "max_chars": {"type": "integer", "minimum": 1000, "maximum": 50000},
                     "include_code_symbols": {"type": "boolean"},
+                    "include_answer": {"type": "boolean"},
                 },
                 "required": ["query"],
             },

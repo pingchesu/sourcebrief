@@ -134,6 +134,9 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
     assert "Hermes specialist agent" in body["instruction"]
     assert "falconagent" in body["context"]
     assert body["citations"][0]["resource_id"] == resource_id
+    assert body["answer"]["mode"] == "extractive_synthesis"
+    assert "falconagent" in body["answer"]["text"]
+    assert body["answer"]["citations_used"][0]["content_hash"] == body["citations"][0]["content_hash"]
     assert "graph_score" in body["citations"][0]
     assert any(symbol["name"] == "runtime_symbol" for symbol in body["symbols"])
 
@@ -166,6 +169,15 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
     assert default_runtime.status_code == 200, default_runtime.text
     assert default_runtime.json()["runtime"] == "codex"
     assert "repo-owner-safe" in default_runtime.json()["instruction"]
+
+    raw_context = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "runtime_symbol", "resource_ids": [resource_id], "top_k": 5, "include_answer": False},
+        headers=headers,
+    )
+    assert raw_context.status_code == 200, raw_context.text
+    assert raw_context.json()["answer"] is None
+    assert "falconagent" in raw_context.json()["context"]
 
     null_patch = client.patch(
         f"/workspaces/{workspace_id}/projects/{project_id}/agent-profile",
@@ -217,6 +229,24 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
     result = call.json()["result"]
     assert result["structuredContent"]["runtime"] == "codex"
     assert "falconagent" in result["structuredContent"]["context"]
+
+    ask_call = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "sourcebrief.ask",
+                "arguments": {"query": "falconagent", "runtime": "codex", "resource_ids": [resource_id]},
+            },
+        },
+        headers=headers,
+    )
+    assert ask_call.status_code == 200, ask_call.text
+    ask_body = ask_call.json()["result"]["structuredContent"]
+    assert "falconagent" in ask_body["answer"]["text"]
+    assert ask_body["answer"]["citations_used"]
 
 
 def test_context_only_token_omits_code_symbols_but_read_code_token_gets_them() -> None:

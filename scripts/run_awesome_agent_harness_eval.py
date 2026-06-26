@@ -617,7 +617,11 @@ def build_grade_report(manifest: dict[str, Any], eval_responses: list[dict[str, 
         citation_support: str | bool
         human_demo: str | bool
         retrieval_quality: str | bool
-        answer_text = str(context.get("answer") or context.get("summary") or "").strip()
+        answer_payload = context.get("answer")
+        if isinstance(answer_payload, dict):
+            answer_text = str(answer_payload.get("text") or "").strip()
+        else:
+            answer_text = str(answer_payload or context.get("summary") or "").strip()
         quality_notes: list[str] = []
         if negative:
             retrieval_quality = "not_applicable"

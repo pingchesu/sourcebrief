@@ -72,6 +72,22 @@ class FakeClient:
                 "runtime": body["runtime"],
                 "instruction": "Use citations.",
                 "context": "[1] resource=res-1 snapshot=snap-1 path=runbooks/payment-retry.md ordinal=1 score=0.9\nRetry payment jobs with exponential backoff. Escalate after three failures.",
+                "answer": {
+                    "mode": "extractive_synthesis",
+                    "text": "Based on cited context: Retry payment jobs with exponential backoff. [1]",
+                    "citations_used": [
+                        {
+                            "label": "[1]",
+                            "resource_id": "res-1",
+                            "snapshot_id": "snap-1",
+                            "path": "runbooks/payment-retry.md",
+                            "content_hash": "hash-1",
+                            "score": 0.91,
+                        }
+                    ],
+                    "caveats": [],
+                    "confidence": "medium",
+                },
                 "citations": [
                     {
                         "resource_id": "res-1",
@@ -327,6 +343,7 @@ def test_cli_use_status_and_ask_defaults(monkeypatch, capsys, tmp_path):
             "top_k": 8,
             "resource_ids": ["res-1"],
             "include_code_symbols": True,
+            "include_answer": True,
             "max_chars": 12000,
         },
         None,
