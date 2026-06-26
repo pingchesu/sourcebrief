@@ -58,3 +58,41 @@ def test_qa_smoke_uses_configured_urls_for_requests():
     assert 'requests.get("http://localhost:13000' not in text
     assert 'requests.request(method, f"http://localhost:18000' not in text
     assert 'requests.post("http://localhost:18000' not in text
+
+
+def test_qa_smoke_asserts_golden_mcp_tools_first():
+    module = load_qa_smoke()
+    module.assert_golden_mcp_tool_order(
+        {
+            "result": {
+                "tools": [
+                    {"name": "sourcebrief.ask"},
+                    {"name": "sourcebrief.discover"},
+                    {"name": "sourcebrief.lookup"},
+                    {"name": "sourcebrief.get_agent_context"},
+                    {"name": "sourcebrief.read_section"},
+                ]
+            }
+        }
+    )
+
+
+def test_qa_smoke_rejects_legacy_context_tool_first():
+    module = load_qa_smoke()
+    try:
+        module.assert_golden_mcp_tool_order(
+            {
+                "result": {
+                    "tools": [
+                        {"name": "sourcebrief.get_agent_context"},
+                        {"name": "sourcebrief.ask"},
+                        {"name": "sourcebrief.discover"},
+                        {"name": "sourcebrief.lookup"},
+                    ]
+                }
+            }
+        )
+    except SystemExit as exc:
+        assert exc.code == 1
+    else:  # pragma: no cover - makes failure message clearer
+        raise AssertionError("legacy MCP tool ordering should fail QA smoke")
