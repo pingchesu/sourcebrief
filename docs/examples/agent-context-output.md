@@ -1,6 +1,6 @@
 # Example agent-context output
 
-> Captured from a real local SourceBrief run for the product walkthrough. Internal IDs and token values are normalized or omitted in this rendered example; the source response was produced by the live API, Postgres, Redis, workers, and indexed resources.
+> Captured from a real local SourceBrief run for the product walkthrough. Internal IDs and token values are normalized or omitted in this rendered example; the source response was produced by the live API, Postgres, Redis, workers, and indexed resources. The rendered Concepts citation is refreshed to match the current `Source -> Snapshot -> Evidence -> Review -> Runtime` terminology.
 
 ## Request
 
@@ -30,7 +30,7 @@ SourceBrief uses Resource/resource_id for backend schemas, API paths, token scop
 C2 makes SourceBrief a source-aware Skill Pack Compiler, not only a Context Pack pointer exporter. The goal is to ingest a Git repo, folder bundle, or document collection; publish a Context Pack; compile an installable Skill Pack; and let an agent use citation-backed task playbooks and references.
 
 [3] path=docs/CONCEPTS.md passage=1 score=0.2506
-SourceBrief’s core workflow is Source -> Snapshot -> Resource Map -> Context Pack -> Runtime context / Skill Pack. A source is something you connect, a snapshot is the exact indexed version, a Resource Map explains what was found, and a Context Pack is a reviewed pinned bundle of evidence.
+SourceBrief’s core workflow is Source -> Snapshot -> Evidence -> Review -> Runtime. A source is something you connect, a snapshot is the exact indexed version, Evidence gives agents inspectable handles, Review captures freshness/coverage/context-pack decisions, and Runtime exposes those citations through Workbench, CLI, HTTP API, and MCP tools.
 ```
 
 ## Citation summary

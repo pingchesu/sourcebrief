@@ -15,15 +15,17 @@ Do not add mock screenshots, invented JSON, fake IDs, or hand-written "sample" o
 
 ## Committed visual proof
 
-| Artifact | What it proves | Source |
-| --- | --- | --- |
-| Product walkthrough GIF | Command Center -> Sources -> Workbench citation loop. | [`assets/sourcebrief-product-walkthrough.gif`](assets/sourcebrief-product-walkthrough.gif), [`WALKTHROUGH.md`](WALKTHROUGH.md) |
-| Command Center screenshot | Project readiness entry point. | [`assets/screenshots/sourcebrief-command-center.png`](assets/screenshots/sourcebrief-command-center.png) |
-| Sources screenshot | Connected sources, indexing state, freshness/review surface. | [`assets/screenshots/sourcebrief-sources.png`](assets/screenshots/sourcebrief-sources.png) |
-| Workbench citations screenshot | Human-visible cited context packet. | [`assets/screenshots/sourcebrief-workbench-citations.png`](assets/screenshots/sourcebrief-workbench-citations.png) |
-| Mental model diagram | Source -> snapshot -> evidence -> runtime flow. | [`assets/sourcebrief-mental-model.svg`](assets/sourcebrief-mental-model.svg) |
-| Agent workflow diagram | Agent asks SourceBrief before local edit/test. | [`assets/sourcebrief-agent-workflow.svg`](assets/sourcebrief-agent-workflow.svg) |
-| Trust boundary diagram | Read-only evidence service vs local runtime mutation boundaries. | [`assets/sourcebrief-trust-boundary.svg`](assets/sourcebrief-trust-boundary.svg) |
+Visual artifacts below are real captured product proof, not mockups. When recapturing for a launch signoff, pair them with a redacted [E2E evidence bundle](E2E_EVIDENCE.md) that records the current commit, stack mode, `COMPOSE_PROJECT_NAME`, configured ports, capture date, redaction policy, and exact UI/command path.
+
+| Artifact | What it proves | Source | Capture status |
+| --- | --- | --- | --- |
+| Product walkthrough GIF | Command Center -> Sources -> Workbench citation loop. | [`assets/sourcebrief-product-walkthrough.gif`](assets/sourcebrief-product-walkthrough.gif), [`WALKTHROUGH.md`](WALKTHROUGH.md) | Recaptured from the current live screenshot set after the first-source fix. |
+| Command Center screenshot | Project readiness entry point. | [`assets/screenshots/sourcebrief-command-center.png`](assets/screenshots/sourcebrief-command-center.png) | Recaptured from a live local stack after the first-source fix; bundle with current commit for launch signoff. |
+| Sources screenshot | Connected sources, indexing state, freshness/review surface. | [`assets/screenshots/sourcebrief-sources.png`](assets/screenshots/sourcebrief-sources.png) | Recaptured from a live local stack after the first-source fix; shows a successful Markdown source/index run. |
+| Workbench citations screenshot | Human-visible cited context packet. | [`assets/screenshots/sourcebrief-workbench-citations.png`](assets/screenshots/sourcebrief-workbench-citations.png) | Recaptured from a live local stack as a citation-only crop so raw resource/snapshot IDs are not exposed. |
+| Mental model diagram | Source -> snapshot -> evidence -> runtime flow. | [`assets/sourcebrief-mental-model.svg`](assets/sourcebrief-mental-model.svg) | Generated diagram; keep aligned with current Concepts wording. |
+| Agent workflow diagram | Agent asks SourceBrief before local edit/test. | [`assets/sourcebrief-agent-workflow.svg`](assets/sourcebrief-agent-workflow.svg) | Generated diagram; keep aligned with runtime docs. |
+| Trust boundary diagram | Read-only evidence service vs local runtime mutation boundaries. | [`assets/sourcebrief-trust-boundary.svg`](assets/sourcebrief-trust-boundary.svg) | Generated diagram; keep aligned with security boundaries. |
 
 ## Committed runtime output proof
 
@@ -33,6 +35,20 @@ Do not add mock screenshots, invented JSON, fake IDs, or hand-written "sample" o
 | Agent-context output | Real local walkthrough query returned cited context from indexed resources. | [`examples/agent-context-output.md`](examples/agent-context-output.md), [`WALKTHROUGH.md`](WALKTHROUGH.md) |
 
 Internal UUIDs and token values are normalized or omitted in committed examples. That keeps the artifact readable and safe while preserving the response shape, citation policy, and runtime contract.
+
+## Durable E2E evidence bundles
+
+Use [`docs/E2E_EVIDENCE.md`](E2E_EVIDENCE.md) and `make collect-e2e-evidence` for launch or README-driven E2E signoff. The generated bundle lives under ignored `artifacts/e2e/<timestamp>/` and records:
+
+- exact Git branch, SHA, and dirty state;
+- sanitized `.env` summary;
+- `COMPOSE_PROJECT_NAME` and configured ports/URLs;
+- `docker compose ps` output;
+- API/web health checks using configured URLs, not hard-coded defaults;
+- command transcripts with exit codes when passed through `--command`;
+- optional redacted files such as `artifacts/alpha-eval-report.json`.
+
+This convention is the release evidence path; issue comments and terminal excerpts are supporting notes, not the durable bundle.
 
 ## Automated proof paths
 

@@ -17,6 +17,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | Doc | Status | What it proves |
 | --- | --- | --- |
 | [Proof artifacts](PROOF_ARTIFACTS.md) | Proof manifest | Which screenshots, outputs, and tests are real; which proof gaps remain. |
+| [E2E evidence bundles](E2E_EVIDENCE.md) | Release evidence convention | How to capture redacted launch evidence with commit, ports, Compose project, health, command outputs, and artifacts. |
 | [5-minute demo](DEMO.md) | Deterministic local demo | Tiny source -> indexed snapshot -> cited agent context -> MCP-shaped response. |
 | [Demo runtime output](examples/demo-runtime-output.md) | Captured output | Normalized output from a real local demo run. |
 | [Captured agent-context output](examples/agent-context-output.md) | Captured output | Normalized response from the product walkthrough run. |
