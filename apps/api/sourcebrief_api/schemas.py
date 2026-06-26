@@ -1256,10 +1256,13 @@ class AgentContextCitation(BaseModel):
 
 class AgentContextAnswer(BaseModel):
     mode: str = "extractive_synthesis"
+    outcome: str = Field(default="answered", pattern=r"^(answered|insufficient_evidence|unsupported_by_sources)$")
     text: str
     citations_used: list[dict[str, Any]] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
     confidence: str = Field(default="medium", pattern=r"^(none|low|medium)$")
+    abstention_reason: str | None = None
+    unsupported_claim_terms: list[str] = Field(default_factory=list)
 
 
 class AgentContextResponse(BaseModel):

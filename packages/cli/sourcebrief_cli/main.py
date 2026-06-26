@@ -606,6 +606,9 @@ def _human_answer_brief(data: dict[str, Any]) -> dict[str, Any]:
         return {
             "query": data.get("query"),
             "answer": api_answer.get("text"),
+            "outcome": api_answer.get("outcome", "answered"),
+            "abstention_reason": api_answer.get("abstention_reason"),
+            "unsupported_claim_terms": api_answer.get("unsupported_claim_terms") or [],
             "citations_used": api_answer.get("citations_used") or [],
             "confidence": api_answer.get("confidence", "medium"),
             "missing_evidence": api_answer.get("caveats") or warnings,
@@ -1201,6 +1204,12 @@ def _print_default(command: str | None, data: Any) -> None:
         if command == "ask" and "answer" in data:
             print(f"Question: {data.get('query')}")
             print(f"Answer: {data.get('answer')}")
+            if data.get("outcome"):
+                print(f"Outcome: {data.get('outcome')}")
+            if data.get("abstention_reason"):
+                print(f"Abstention reason: {data.get('abstention_reason')}")
+            if data.get("unsupported_claim_terms"):
+                print("Unsupported claim terms: " + ", ".join(str(term) for term in data.get("unsupported_claim_terms", [])))
             print(f"Confidence: {data.get('confidence')}")
             citations = data.get("citations_used") or []
             if citations:

@@ -433,6 +433,8 @@ def test_cli_saved_api_url_is_used_but_not_silently_overwritten(monkeypatch, cap
     assert cli_main(["ask", "demo", "--resource", "Payment retry runbook"]) == 0
     ask_out = capsys.readouterr().out
     assert "Answer:" in ask_out
+    assert "Outcome: answered" in ask_out
+    assert "Confidence:" in ask_out
     assert "Citations:" in ask_out
     body = FakeClient.instances[-1].calls[0][2]
     assert body is not None

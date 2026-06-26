@@ -179,6 +179,23 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
     assert raw_context.json()["answer"] is None
     assert "falconagent" in raw_context.json()["context"]
 
+    unsupported_claim = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={
+            "query": "Does falconagent include a signed SOC 2 Type II audit report and name the auditor?",
+            "resource_ids": [resource_id],
+            "top_k": 5,
+        },
+        headers=headers,
+    )
+    assert unsupported_claim.status_code == 200, unsupported_claim.text
+    unsupported_answer = unsupported_claim.json()["answer"]
+    assert unsupported_answer["outcome"] == "unsupported_by_sources"
+    assert unsupported_answer["confidence"] == "none"
+    assert "SOC 2" in " ".join(unsupported_answer["unsupported_claim_terms"])
+    assert unsupported_answer["abstention_reason"]
+    assert unsupported_answer["citations_used"]
+
     null_patch = client.patch(
         f"/workspaces/{workspace_id}/projects/{project_id}/agent-profile",
         json={"name": None},
