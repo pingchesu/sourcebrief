@@ -173,6 +173,33 @@ def test_viewer_session_cannot_write_resources(monkeypatch: pytest.MonkeyPatch) 
     assert denied.status_code == 403
 
 
+def test_admin_session_in_one_workspace_cannot_write_viewer_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
+    require_real_services()
+    client = TestClient(app)
+    email, admin_a_token, _, _ = login_admin(client, monkeypatch, "auth-cross-role-a")
+    _, admin_b_token, workspace_b_id, project_b_id = login_admin(client, monkeypatch, "auth-cross-role-b")
+
+    added = client.post(
+        f"/workspaces/{workspace_b_id}/members",
+        headers={"Authorization": f"Bearer {admin_b_token}"},
+        json={"email": email, "role": "viewer"},
+    )
+    assert added.status_code == 201, added.text
+
+    readable = client.get(f"/workspaces/{workspace_b_id}/projects", headers={"Authorization": f"Bearer {admin_a_token}"})
+    assert readable.status_code == 200, readable.text
+
+    denied_resource = client.post(
+        f"/workspaces/{workspace_b_id}/projects/{project_b_id}/resources",
+        headers={"Authorization": f"Bearer {admin_a_token}"},
+        json={"type": "markdown", "name": "Cross role write", "uri": "cross-role-write", "source_config": {"content": "no"}},
+    )
+    assert denied_resource.status_code == 403
+
+    denied_audit = client.get(f"/workspaces/{workspace_b_id}/audit-events", headers={"Authorization": f"Bearer {admin_a_token}"})
+    assert denied_audit.status_code == 403
+
+
 def test_api_token_cannot_read_account_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     require_real_services()
     client = TestClient(app)

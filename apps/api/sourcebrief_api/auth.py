@@ -12,6 +12,7 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sourcebrief_api.constants import ALLOWED_TOKEN_SCOPES
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_session
 from sourcebrief_shared.models import ApiToken, User, WorkspaceMembership
@@ -20,6 +21,14 @@ DEV_ALL_SCOPES = {"*"}
 TOKEN_PREFIX = "cs_"
 PASSWORD_ALGORITHM = "pbkdf2_sha256"
 PASSWORD_ITERATIONS = 390_000
+
+
+def session_scopes_for_role(role: str) -> set[str]:
+    if role in {"owner", "admin"}:
+        return set(ALLOWED_TOKEN_SCOPES)
+    if role == "member":
+        return set(ALLOWED_TOKEN_SCOPES - {"token:admin"})
+    return {"project:read", "project:query", "resource:read", "review:read", "code:read"}
 
 
 def hash_password(password: str) -> str:
@@ -144,8 +153,8 @@ def require_principal(
     return Principal(user=get_or_create_user(session, x_user_email))
 
 
-def require_scope(principal: Principal, scope: str) -> None:
-    scopes = principal.scopes
+def require_scope(principal: Principal, scope: str, membership: WorkspaceMembership | None = None) -> None:
+    scopes = session_scopes_for_role(membership.role) if principal.is_session and membership is not None else principal.scopes
     if "*" in scopes or scope in scopes:
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"missing scope: {scope}")

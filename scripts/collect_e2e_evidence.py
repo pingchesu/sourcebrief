@@ -14,6 +14,10 @@ from urllib.request import urlopen
 
 SECRET_KEY_RE = re.compile(r"(TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY|SESSION)", re.IGNORECASE)
 SECRET_VALUE_RE = re.compile(r"(cs_[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._-]+)")
+SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?P<prefix>[\"']?(?P<key>[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY|SESSION)[A-Z0-9_]*)[\"']?\s*[:=]\s*)(?P<quote>[\"']?)(?P<value>[^\s,;\"']+)(?P=quote)",
+    re.IGNORECASE,
+)
 DEFAULT_SECRET = "***REDACTED***"
 
 
@@ -32,12 +36,29 @@ def parse_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+def redact_text(value: str) -> str:
+    def replace_assignment(match: re.Match[str]) -> str:
+        return f"{match.group('prefix')}{match.group('quote')}{DEFAULT_SECRET}{match.group('quote')}"
+
+    return SECRET_VALUE_RE.sub(DEFAULT_SECRET, SECRET_ASSIGNMENT_RE.sub(replace_assignment, value))
+
+
 def redact_value(key: str, value: str | None) -> str | None:
     if value is None:
         return None
     if SECRET_KEY_RE.search(key):
         return DEFAULT_SECRET
-    return SECRET_VALUE_RE.sub(DEFAULT_SECRET, value)
+    return redact_text(value)
+
+
+def redact_manifest(value: Any, key: str = "") -> Any:
+    if isinstance(value, dict):
+        return {item_key: redact_manifest(item_value, str(item_key)) for item_key, item_value in value.items()}
+    if isinstance(value, list):
+        return [redact_manifest(item, key) for item in value]
+    if isinstance(value, str):
+        return redact_value(key, value)
+    return value
 
 
 def redacted_env_summary(env_file: Path, environ: Mapping[str, str]) -> dict[str, str | None]:
@@ -177,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         label, raw_path = item.split("=", 1)
         path = Path(raw_path)
         content = path.read_text(encoding="utf-8") if path.exists() else ""
-        included_files.append({"label": label, "path": raw_path, "exists": path.exists(), "content": redact_value(label, content)})
+        included_files.append({"label": label, "path": raw_path, "exists": path.exists(), "content": redact_text(content)})
 
     manifest = {
         "schema_version": 1,
@@ -192,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         "commands": commands,
         "included_files": included_files,
     }
+    manifest = redact_manifest(manifest)
     write_bundle(output_dir, manifest)
     print(json.dumps({"status": "written", "output_dir": str(output_dir), "manifest": str(output_dir / "manifest.json")}, sort_keys=True))
     return 0

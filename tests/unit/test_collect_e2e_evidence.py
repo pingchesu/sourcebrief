@@ -40,7 +40,13 @@ def test_bundle_writer_creates_redacted_manifest_without_live_checks(tmp_path, m
     module = load_module()
     output = tmp_path / "bundle"
     env_file = tmp_path / ".env"
-    env_file.write_text("COMPOSE_PROJECT_NAME=sourcebrief_e2e_test\nSOURCEBRIEF_API_PORT=18123\n", encoding="utf-8")
+    env_file.write_text(
+        "COMPOSE_PROJECT_NAME=sourcebrief_e2e_test\n"
+        "SOURCEBRIEF_API_PORT=18123\n"
+        "SOURCEBRIEF_ADMIN_PASSWORD=super-secret\n"
+        "SOURCEBRIEF_TOKEN=plain-token\n",
+        encoding="utf-8",
+    )
     monkeypatch.chdir(tmp_path)
 
     exit_code = module.main(
@@ -51,15 +57,23 @@ def test_bundle_writer_creates_redacted_manifest_without_live_checks(tmp_path, m
             str(env_file),
             "--skip-docker",
             "--skip-health",
+            "--command",
+            "printf 'SOURCEBRIEF_ADMIN_PASSWORD=super-secret\\nSOURCEBRIEF_TOKEN=plain-token\\nAuthorization: Bearer abc.def.ghi\\n'",
             "--include-file",
             f"sample={env_file}",
         ]
     )
 
     assert exit_code == 0
-    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    manifest_text = (output / "manifest.json").read_text(encoding="utf-8")
+    readme_text = (output / "README.md").read_text(encoding="utf-8")
+    manifest = json.loads(manifest_text)
     assert manifest["compose"]["project_name"] == "sourcebrief_e2e_test"
     assert manifest["urls"]["api_url"] == "http://localhost:18123"
     assert manifest["health_checks"] == []
-    assert manifest["commands"] == []
-    assert (output / "README.md").exists()
+    assert manifest["commands"][0]["exit_code"] == 0
+    for forbidden in ["super-secret", "plain-token", "Bearer abc.def.ghi"]:
+        assert forbidden not in manifest_text
+        assert forbidden not in readme_text
+    assert "***REDACTED***" in manifest_text
+    assert "***REDACTED***" in readme_text

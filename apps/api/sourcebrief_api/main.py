@@ -48,6 +48,7 @@ from sourcebrief_api.auth import (
     require_principal,
     require_scope,
     require_workspace_member,
+    session_scopes_for_role,
     token_allows_project,
     token_allows_resource,
     verify_password,
@@ -1480,9 +1481,18 @@ def _require_project_access(session: Session, workspace_id: UUID, project_id: UU
     return project
 
 
-def _require_project_member(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal) -> Project:
-    """Resolve a project and require explicit project membership plus token project scope for mutations."""
-    require_workspace_member(session, workspace_id, principal)
+def _require_project_member(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    *,
+    required_scopes: set[str] | None = None,
+) -> Project:
+    """Resolve a project and require explicit project membership plus token/project scope for mutations."""
+    membership = require_workspace_member(session, workspace_id, principal)
+    for required_scope in required_scopes or set():
+        require_scope(principal, required_scope, membership)
     if not token_allows_project(principal, project_id):
         raise HTTPException(status_code=404, detail="project not found")
     project = _resolve_project(session, workspace_id, project_id)
@@ -2092,11 +2102,7 @@ def _current_user_response(session: Session, principal: Principal) -> CurrentUse
 
 
 def _session_scopes_for_role(role: str) -> list[str]:
-    if role in {"owner", "admin"}:
-        return sorted(ALLOWED_TOKEN_SCOPES)
-    if role == "member":
-        return sorted(ALLOWED_TOKEN_SCOPES - {"token:admin"})
-    return sorted({"project:read", "project:query", "resource:read", "review:read", "code:read"})
+    return sorted(session_scopes_for_role(role))
 
 
 def _revoke_user_sessions(session: Session, workspace_id: UUID, user_id: UUID) -> None:
@@ -2646,7 +2652,7 @@ def update_agent_profile(
 ) -> AgentProfileRead:
     user = principal.user
     require_scope(principal, "token:admin")
-    project = _require_project_member(session, workspace_id, project_id, principal)
+    project = _require_project_member(session, workspace_id, project_id, principal, required_scopes={"token:admin"})
     profile = _ensure_agent_profile(session, workspace_id, project, user.id)
     fields = payload.model_dump(exclude_unset=True)
     nullable_forbidden = {"name", "default_runtime", "tool_policy"}
@@ -2701,7 +2707,7 @@ def regenerate_agent_files(
     session: Session = Depends(get_session),
 ) -> AgentFilesResponse:
     require_scope(principal, "resource:refresh")
-    project = _require_project_member(session, workspace_id, project_id, principal)
+    project = _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:refresh"})
     profile = _ensure_agent_profile(session, workspace_id, project, principal.user.id)
     resources = [resource for resource in _current_project_resources(session, workspace_id, project_id) if token_allows_resource(principal, resource.id)]
     session.add(
@@ -2851,7 +2857,7 @@ def update_git_env(
     session: Session = Depends(get_session),
 ) -> GitResourceEnvRead:
     require_scope(principal, "resource:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     if resource.type.lower() != "git":
         raise HTTPException(status_code=422, detail="git env can only be configured for git resources")
@@ -2900,7 +2906,7 @@ def create_resource(
     require_scope(principal, "resource:write")
     if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
         raise HTTPException(status_code=403, detail="resource-scoped tokens cannot create new resources")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     source_config = _validate_source_config(payload.type, payload.uri, payload.source_config)
     resource_uri = sanitize_remote_url(source_config["url"]) if payload.type.lower() in URL_RESOURCE_TYPES | {"git"} else payload.uri
     resource = Resource(
@@ -3087,7 +3093,7 @@ def upload_folder_bundle(
     require_scope(principal, "resource:refresh")
     if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
         raise HTTPException(status_code=403, detail="resource-scoped tokens cannot create new resources")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:refresh", "resource:write"})
     if update_frequency != "manual":
         raise HTTPException(status_code=422, detail="folder bundle uploads are manual-only in A2; re-upload a new zip to update")
     if source_family_id is not None:
@@ -3637,7 +3643,7 @@ def _resolve_context_artifact(session: Session, workspace_id: UUID, project_id: 
 
 def _require_review_write(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal) -> None:
     require_scope(principal, "review:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"review:write"})
 
 
 
@@ -4366,13 +4372,13 @@ def _repo_agent_resource_allowed(session: Session, agent: RepoAgent, principal: 
 
 def _require_repo_agent_read(session: Session, agent: RepoAgent, principal: Principal) -> Resource | None:
     require_scope(principal, "resource:read")
-    _require_project_member(session, agent.workspace_id, agent.project_id, principal)
+    _require_project_member(session, agent.workspace_id, agent.project_id, principal, required_scopes={"resource:read"})
     return _repo_agent_resource_allowed(session, agent, principal)
 
 
 def _require_repo_agent_write(session: Session, agent: RepoAgent, principal: Principal) -> Resource | None:
     require_scope(principal, "resource:write")
-    _require_project_member(session, agent.workspace_id, agent.project_id, principal)
+    _require_project_member(session, agent.workspace_id, agent.project_id, principal, required_scopes={"resource:write"})
     if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
         raise HTTPException(status_code=403, detail="resource-scoped tokens cannot mutate repo agents")
     return _repo_agent_resource_allowed(session, agent, principal)
@@ -4421,7 +4427,7 @@ def list_repo_agents(
     session: Session = Depends(get_session),
 ) -> list[RepoAgentRead]:
     require_scope(principal, "resource:read")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:read"})
     agents = list(session.scalars(select(RepoAgent).where(RepoAgent.workspace_id == workspace_id, RepoAgent.project_id == project_id).order_by(RepoAgent.created_at.desc())))
     visible = []
     for agent in agents:
@@ -4445,7 +4451,7 @@ def create_repo_agent(
     require_scope(principal, "resource:write")
     if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
         raise HTTPException(status_code=403, detail="resource-scoped tokens cannot create repo agents")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     if resource.type.lower() != "git":
         raise HTTPException(status_code=422, detail="Repo Agent V0 requires a Git resource")
@@ -4667,7 +4673,7 @@ def compile_resource_map_artifact(
     session: Session = Depends(get_session),
 ) -> ContextArtifactRead:
     require_scope(principal, "resource:refresh")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:refresh"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     if resource.type not in {"folder_bundle", "git"}:
         raise HTTPException(status_code=422, detail="Resource Map compile is only available for manifest-backed folder bundle or Git sources")
@@ -4866,7 +4872,7 @@ def refresh_resource(
 ) -> IndexRun:
     user = principal.user
     require_scope(principal, "resource:refresh")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:refresh"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     if resource.type.lower() in FOLDER_BUNDLE_RESOURCE_TYPES:
         raise HTTPException(status_code=422, detail="folder bundle resources are updated by uploading a new zip, not by refresh")
@@ -4921,7 +4927,7 @@ def enqueue_scheduled_refreshes(
     session: Session = Depends(get_session),
 ) -> DueRefreshResponse:
     require_scope(principal, "resource:refresh")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:refresh"})
     allowed_resource_ids = principal.api_token.allowed_resource_ids if principal.api_token is not None else None
     if allowed_resource_ids is not None:
         allowed = list(allowed_resource_ids)
@@ -4959,7 +4965,7 @@ def list_audit_events(
     session: Session = Depends(get_session),
 ) -> list[AuditEventRead]:
     require_scope(principal, "token:admin")
-    require_workspace_member(session, workspace_id, principal)
+    _require_workspace_admin(session, workspace_id, principal)
     events = list(
         session.scalars(
             select(AuditEvent)
@@ -5018,7 +5024,7 @@ def update_resource(
 ) -> Resource:
     user = principal.user
     require_scope(principal, "resource:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     fields = payload.model_dump(exclude_unset=True)
     if resource.archived_at is not None and fields.get("retrieval_enabled") is True:
@@ -5070,7 +5076,7 @@ def delete_resource(
 ) -> None:
     user = principal.user
     require_scope(principal, "resource:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     now = datetime.now(UTC)
     previous = {
@@ -5117,7 +5123,7 @@ def archive_resource(
 ) -> Resource:
     user = principal.user
     require_scope(principal, "resource:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     now = datetime.now(UTC)
     previous = {
@@ -5162,7 +5168,7 @@ def restore_resource(
 ) -> Resource:
     user = principal.user
     require_scope(principal, "resource:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal, include_deleted=True)
     if resource.deleted_at is None and resource.archived_at is None and resource.status not in {"deleted", "archived"}:
         raise HTTPException(status_code=409, detail="resource is not archived or deleted")
@@ -5212,7 +5218,7 @@ def purge_resource(
 ) -> PurgeResourceResponse:
     user = principal.user
     require_scope(principal, "resource:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal, include_deleted=True)
     if resource.deleted_at is None and resource.status != "deleted":
         raise HTTPException(status_code=409, detail="resource must be soft-deleted before purge")
@@ -5265,7 +5271,7 @@ def review_resource(
 ) -> Resource:
     user = principal.user
     require_scope(principal, "review:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"review:write"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     if resource.archived_at is not None and payload.retrieval_enabled is True:
         raise HTTPException(status_code=409, detail="archived resources cannot be re-enabled")
@@ -5663,7 +5669,7 @@ def _require_graph_merge_read(session: Session, merge: GraphMerge, principal: Pr
 
 def _require_graph_merge_write(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal) -> None:
     require_scope(principal, "resource:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
         raise HTTPException(status_code=403, detail="resource-scoped tokens cannot compile graph merges")
 
@@ -5987,7 +5993,7 @@ def compile_resource_graph_version(
     session: Session = Depends(get_session),
 ) -> GraphCompileResponse:
     require_scope(principal, "resource:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
     try:
         result = compile_graph_version(session, resource, actor_id=principal.user.id, requested_graph_key=payload.graph_key, title=payload.title)
@@ -6591,7 +6597,7 @@ def remote_generate_patch(
     require_scope(principal, "project:query")
     require_scope(principal, "code:read")
     require_scope(principal, "patch:generate")
-    project = _require_project_member(session, workspace_id, project_id, principal)
+    project = _require_project_member(session, workspace_id, project_id, principal, required_scopes={"code:read", "patch:generate", "project:query"})
     _ = project
     profile = _patch_policy_profile(session, workspace_id, project_id)
     _require_patch_generation_enabled(profile)
@@ -6716,7 +6722,7 @@ def remote_open_pr(
     session: Session = Depends(get_session),
 ) -> PrRequestRead:
     require_scope(principal, "pr:write")
-    project = _require_project_member(session, workspace_id, project_id, principal)
+    project = _require_project_member(session, workspace_id, project_id, principal, required_scopes={"pr:write"})
     _ = project
     profile = _patch_policy_profile(session, workspace_id, project_id)
     _require_pr_workflow_enabled(profile)
@@ -7658,7 +7664,7 @@ def run_agent_card_summary_audit(
     require_scope(principal, "review:read")
     if not dry_run:
         require_scope(principal, "review:write")
-        _require_project_member(session, workspace_id, project_id, principal)
+        _require_project_member(session, workspace_id, project_id, principal, required_scopes={"review:read", "review:write"})
     else:
         _require_project_access(session, workspace_id, project_id, principal)
     effective_resource_ids = _effective_resource_ids(principal, resource_ids)
@@ -7687,7 +7693,7 @@ def acknowledge_agent_card_summary(
     session: Session = Depends(get_session),
 ) -> AgentCardSummaryRead:
     require_scope(principal, "review:write")
-    _require_project_member(session, workspace_id, project_id, principal)
+    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"review:write"})
     summary = session.scalar(
         select(AgentCardSummary).where(
             AgentCardSummary.id == summary_id,

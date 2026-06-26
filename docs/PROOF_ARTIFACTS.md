@@ -27,6 +27,12 @@ Visual artifacts below are real captured product proof, not mockups. When recapt
 | Agent workflow diagram | Agent asks SourceBrief before local edit/test. | [`assets/sourcebrief-agent-workflow.svg`](assets/sourcebrief-agent-workflow.svg) | Generated diagram; keep aligned with runtime docs. |
 | Trust boundary diagram | Read-only evidence service vs local runtime mutation boundaries. | [`assets/sourcebrief-trust-boundary.svg`](assets/sourcebrief-trust-boundary.svg) | Generated diagram; keep aligned with security boundaries. |
 
+### Visual proof metadata
+
+| Artifact set | Commit/PR | Stack/auth mode | Capture date | UI/command path | Redaction/currentness policy |
+| --- | --- | --- | --- | --- | --- |
+| Product walkthrough GIF + three screenshots | PR #104 / `6fd0df6` | Local Docker Compose stack, dev-auth demo session, configured local API/web URLs | 2026-06-26 | Command Center `/` -> Sources `/sources` -> Workbench citation card `/workbench` | Citation screenshot is cropped to the human evidence card and excludes raw resource/snapshot IDs; GIF is rebuilt only from the committed screenshots; launch signoff must pair recaptures with a fresh redacted bundle from `make collect-e2e-evidence`. |
+
 ## Committed runtime output proof
 
 | Artifact | What it proves | Source |
