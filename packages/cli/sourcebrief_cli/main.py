@@ -285,17 +285,29 @@ def cmd_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
             except SourceBriefCliError as exc:
                 checks.append(_check_result("mcp_context", "failed", query=args.query, error=str(exc)))
     else:
+        next_step = "run `sourcebrief use --workspace-id ... --project-id ...` or rerun doctor with --workspace-id ... --project-id ..."
         checks.append(
             _check_result(
                 "project",
                 "warning",
-                message="workspace/project not selected; run `sourcebrief use --workspace-id ... --project-id ...` or pass IDs",
+                message=f"workspace/project not selected; {next_step}",
             )
         )
+        if args.query:
+            checks.append(
+                _check_result(
+                    "mcp_context",
+                    "incomplete",
+                    query=args.query,
+                    message="MCP smoke was not run: workspace/project not selected.",
+                    next_step=next_step,
+                )
+            )
 
     failed = [check for check in checks if check["status"] == "failed"]
+    incomplete = [check for check in checks if check["status"] == "incomplete"]
     warnings = [check for check in checks if check["status"] == "warning"]
-    return {"status": "failed" if failed else "warning" if warnings else "passed", "checks": checks}
+    return {"status": "failed" if failed else "incomplete" if incomplete else "warning" if warnings else "passed", "checks": checks}
 
 
 def cmd_workspace_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
@@ -1238,7 +1250,7 @@ def main(argv: list[str] | None = None) -> int:
     except (SourceBriefCliError, runtime_apply.RuntimeApplyError) as exc:
         print(f"sourcebrief: error: {exc}", file=sys.stderr)
         return 1
-    exit_code = 1 if args.command == "doctor" and isinstance(data, dict) and data.get("status") == "failed" else 0
+    exit_code = 1 if args.command == "doctor" and isinstance(data, dict) and data.get("status") in {"failed", "incomplete"} else 0
     if args.json:
         _print_json(data)
     else:

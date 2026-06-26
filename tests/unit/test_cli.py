@@ -944,6 +944,31 @@ def test_doctor_uses_selected_defaults_and_optional_mcp_context(monkeypatch, cap
     assert any(call[1] == "/mcp/ws-1/proj-1" for call in client.calls)
 
 
+def test_doctor_query_without_scope_is_incomplete_and_nonzero(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "missing-config.json"))
+
+    assert cli_main(["--json", "doctor", "--query", "hello runtime"]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["status"] == "incomplete"
+    assert [check["name"] for check in data["checks"]] == ["api", "auth_mode", "project", "mcp_context"]
+    assert data["checks"][-1]["status"] == "incomplete"
+    assert data["checks"][-1]["message"] == "MCP smoke was not run: workspace/project not selected."
+    assert "sourcebrief use --workspace-id" in data["checks"][-1]["next_step"]
+    assert not any(call[1].startswith("/mcp/") for call in FakeClient.instances[-1].calls)
+
+
+def test_doctor_without_query_can_warn_zero_when_scope_missing(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "missing-config.json"))
+
+    assert cli_main(["--json", "doctor"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["status"] == "warning"
+    assert [check["name"] for check in data["checks"]] == ["api", "auth_mode", "project"]
+    assert data["checks"][-1]["status"] == "warning"
+
+
 def test_doctor_returns_nonzero_on_mcp_tool_error(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     config_path = tmp_path / "sourcebrief-config.json"
