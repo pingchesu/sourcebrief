@@ -7222,6 +7222,63 @@ def _agent_answer_caveats(resource_coverage: list[dict[str, Any]], coverage_warn
     return caveats[:5]
 
 
+_NEGATED_EVIDENCE_MARKERS = (
+    "not documented",
+    "not provide",
+    "not include",
+    "not guarantee",
+    "does not document",
+    "does not provide",
+    "does not include",
+    "no audit report",
+    "no auditor",
+    "no sla",
+    "no uptime",
+    "no fedramp",
+    "no threat model",
+    "without evidence",
+    "without a cited",
+    "not supported",
+)
+
+
+_UNSUPPORTED_CLAIM_FAMILIES: tuple[tuple[str, tuple[str, ...], tuple[tuple[str, ...], ...]], ...] = (
+    ("SOC 2 audit report/auditor", ("soc 2", "soc2", "type ii", "auditor", "audit report"), (("soc 2 type ii", "soc 2 audit report", "soc 2 report", "signed soc 2"), ("auditor is", "auditor:", "auditor named", "auditor was", "audited by"))),
+    ("HIPAA compliance/deployment checklist", ("hipaa", "covered entity", "covered-entity", "compliance", "deployment checklist"), (("hipaa compliance", "hipaa compliant"), ("covered-entity deployment checklist", "covered entity deployment checklist"))),
+    ("hosted cloud service SLA/uptime dashboard", ("hosted", "cloud service", "sla", "uptime", "dashboard"), (("hosted cloud service",), ("sla", "service level agreement"), ("uptime dashboard",))),
+    ("FedRAMP authorization/sponsoring agency", ("fedramp", "authorization", "sponsoring agency", "agency"), (("fedramp authorization", "fedramp authorized"), ("sponsoring agency", "agency sponsor"))),
+    ("production Kubernetes multi-tenant isolation/threat model", ("kubernetes", "k8s", "multi-tenant", "multitenant", "tenant isolation", "threat model"), (("production kubernetes", "production k8s"), ("multi-tenant isolation", "multitenant isolation", "tenant isolation"), ("threat model",))),
+)
+
+
+def _agent_unsupported_claim_terms(query: str, context_parts: list[str]) -> list[str]:
+    query_text = query.lower()
+    context_text = "\n".join(context_parts).lower()
+    unsupported: list[str] = []
+    for label, query_terms, required_groups in _UNSUPPORTED_CLAIM_FAMILIES:
+        if not any(term in query_text for term in query_terms):
+            continue
+        negated = any(marker in context_text for marker in _NEGATED_EVIDENCE_MARKERS)
+        supported = not negated and all(any(term in context_text for term in group) for group in required_groups)
+        if not supported:
+            unsupported.append(label)
+    return unsupported
+
+
+def _agent_answer_citations_used(citations: list[AgentContextCitation], *, count: int) -> list[dict[str, Any]]:
+    return [
+        {
+            "label": f"[{idx}]",
+            "resource_id": str(citation.resource_id),
+            "snapshot_id": str(citation.snapshot_id),
+            "path": citation.path or citation.title or str(citation.resource_id),
+            "content_hash": citation.content_hash,
+            "score": citation.score,
+        }
+        for idx, citation in enumerate(citations[: max(1, count)], start=1)
+    ]
+
+
 def _synthesize_agent_answer(
     *,
     query: str,
@@ -7231,15 +7288,35 @@ def _synthesize_agent_answer(
     coverage_warnings: list[str],
 ) -> AgentContextAnswer:
     caveats = _agent_answer_caveats(resource_coverage, coverage_warnings)
+    unsupported_terms = _agent_unsupported_claim_terms(query, context_parts)
+    if unsupported_terms:
+        reason = "Retrieved SourceBrief evidence does not directly support the requested high-assurance claim."
+        text = (
+            "Insufficient evidence: the cited SourceBrief context does not support the requested claim "
+            f"about {', '.join(unsupported_terms)}. Do not answer this as true unless a cited source explicitly provides that evidence."
+        )
+        if caveats:
+            text += " Caveat: " + " ".join(caveats[:2])
+        return AgentContextAnswer(
+            outcome="unsupported_by_sources",
+            text=text,
+            citations_used=_agent_answer_citations_used(citations, count=min(len(citations), 3)),
+            caveats=caveats,
+            confidence="none",
+            abstention_reason=reason,
+            unsupported_claim_terms=unsupported_terms,
+        )
     if not citations:
         text = f"No grounded answer is available from the selected SourceBrief evidence for: {query}"
         if caveats:
             text += " Caveat: " + " ".join(caveats[:2])
         return AgentContextAnswer(
+            outcome="insufficient_evidence",
             text=text,
             citations_used=[],
             caveats=caveats,
             confidence="none",
+            abstention_reason="No cited SourceBrief evidence was retrieved for this question.",
         )
     snippets = _agent_answer_snippets(context_parts)
     if snippets:
@@ -7249,17 +7326,7 @@ def _synthesize_agent_answer(
         text = "SourceBrief found cited context for this question; inspect the cited sections before making claims."
     if caveats:
         text += " Caveat: " + " ".join(caveats[:2])
-    citations_used = [
-        {
-            "label": f"[{idx}]",
-            "resource_id": str(citation.resource_id),
-            "snapshot_id": str(citation.snapshot_id),
-            "path": citation.path or citation.title or str(citation.resource_id),
-            "content_hash": citation.content_hash,
-            "score": citation.score,
-        }
-        for idx, citation in enumerate(citations[: max(1, len(snippets) or 3)], start=1)
-    ]
+    citations_used = _agent_answer_citations_used(citations, count=len(snippets) or 3)
     return AgentContextAnswer(
         text=text,
         citations_used=citations_used,

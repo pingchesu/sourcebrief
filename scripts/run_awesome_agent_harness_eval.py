@@ -618,17 +618,29 @@ def build_grade_report(manifest: dict[str, Any], eval_responses: list[dict[str, 
         human_demo: str | bool
         retrieval_quality: str | bool
         answer_payload = context.get("answer")
+        answer_outcome = ""
         if isinstance(answer_payload, dict):
             answer_text = str(answer_payload.get("text") or "").strip()
+            answer_outcome = str(answer_payload.get("outcome") or "").strip()
         else:
             answer_text = str(answer_payload or context.get("summary") or "").strip()
+        abstained_correctly: str | bool = "not_applicable"
         quality_notes: list[str] = []
         if negative:
             retrieval_quality = "not_applicable"
-            citation_support = "partial" if citation_count else True
-            human_demo = "partial" if citation_count else True
-            if citation_count:
-                quality_notes.append("negative/control question returned citations; human must verify no unsupported claim is made")
+            abstained_correctly = answer_outcome in {"insufficient_evidence", "unsupported_by_sources"}
+            if abstained_correctly:
+                citation_support = True
+                human_demo = True
+                if citation_count:
+                    quality_notes.append("negative/control question returned near-miss citations with explicit insufficient-evidence abstention")
+            else:
+                citation_support = "partial" if citation_count else True
+                human_demo = "partial" if citation_count else True
+                if citation_count:
+                    quality_notes.append("negative/control question returned citations; human must verify no unsupported claim is made")
+                else:
+                    quality_notes.append("negative/control question did not expose an explicit abstention outcome")
         else:
             retrieval_quality = True if citation_count >= int(question.get("min_citations", 1)) and mechanical_ok else ("partial" if citation_count else "fail")
             citation_support = True if citation_count else "fail"
@@ -645,6 +657,7 @@ def build_grade_report(manifest: dict[str, Any], eval_responses: list[dict[str, 
             "wrong_repo_check": True if wrong_repo_ok else "fail",
             "partial_corpus_caveat": partial_corpus,
             "human_answer_demo": human_demo,
+            "abstained_correctly": abstained_correctly,
         }
         if any(value == "fail" or value is False for value in checks.values()):
             grade = "FAIL"
@@ -690,6 +703,7 @@ def build_grade_report(manifest: dict[str, Any], eval_responses: list[dict[str, 
             "mechanical_api_success_rate": rate("mechanical_api_success"),
             "retrieval_quality_pass_rate": rate("retrieval_quality"),
             "human_answer_demo_pass_rate": rate("human_answer_demo"),
+            "abstention_pass_rate": rate("abstained_correctly"),
             "wrong_repo_failures": wrong_repo_failures,
             "unsupported_claim_failures": unsupported_claim_failures,
             "verdict": verdict,

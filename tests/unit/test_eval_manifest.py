@@ -142,6 +142,7 @@ def test_eval_report_aggregate_must_match_per_result_grades_and_checks() -> None
         "mechanical_api_success_rate": 1.0,
         "retrieval_quality_pass_rate": 1.0,
         "human_answer_demo_pass_rate": 1.0,
+        "abstention_pass_rate": 1.0,
         "wrong_repo_failures": 0,
         "unsupported_claim_failures": 0,
         "verdict": "PASS",
@@ -149,6 +150,16 @@ def test_eval_report_aggregate_must_match_per_result_grades_and_checks() -> None
 
     with pytest.raises(EvalManifestError, match="report.aggregate"):
         validate_grade_report(report, manifest=manifest)
+
+
+def test_eval_report_failed_abstention_blocks_pass_verdict() -> None:
+    report = load_json_file(SAMPLE_REPORT)
+    report["aggregate"]["abstention_pass_rate"] = 0.0
+    for result in report["results"]:
+        result["checks"]["abstained_correctly"] = False if result["id"] == "negative-compliance-001" else "not_applicable"
+
+    with pytest.raises(EvalManifestError, match="verdict"):
+        validate_grade_report(report)
 
 
 def test_eval_report_manifest_digest_mismatch_fails() -> None:

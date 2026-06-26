@@ -7,6 +7,7 @@
     "mechanical_api_success_rate": 1.0,
     "retrieval_quality_pass_rate": 1.0,
     "human_answer_demo_pass_rate": 1.0,
+    "abstention_pass_rate": 1.0,
     "wrong_repo_failures": 0,
     "unsupported_claim_failures": 0,
     "verdict": "PASS"
@@ -22,7 +23,8 @@
         "citation_support": true,
         "wrong_repo_check": true,
         "partial_corpus_caveat": true,
-        "human_answer_demo": "not_applicable"
+        "human_answer_demo": "not_applicable",
+        "abstained_correctly": "not_applicable"
       },
       "linked_child_issue_ids": [],
       "raw_output_ref": "question-runs/repo-symbol-001.redacted.json"
@@ -37,7 +39,8 @@
         "citation_support": true,
         "wrong_repo_check": true,
         "partial_corpus_caveat": true,
-        "human_answer_demo": true
+        "human_answer_demo": true,
+        "abstained_correctly": true
       },
       "linked_child_issue_ids": [],
       "raw_output_ref": "question-runs/negative-compliance-001.redacted.json"

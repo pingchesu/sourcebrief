@@ -216,7 +216,7 @@ def api_eval_payloads(manifest: dict[str, Any], *, max_questions: int = MAX_API_
 def _validate_report_aggregate(aggregate: Any) -> dict[str, Any]:
     if not isinstance(aggregate, dict):
         raise EvalManifestError("report.aggregate must be an object")
-    for key in ("mechanical_api_success_rate", "retrieval_quality_pass_rate", "human_answer_demo_pass_rate"):
+    for key in ("mechanical_api_success_rate", "retrieval_quality_pass_rate", "human_answer_demo_pass_rate", "abstention_pass_rate"):
         if key not in aggregate:
             raise EvalManifestError(f"report.aggregate.{key} is required")
         _optional_number(aggregate, key, context="report.aggregate", minimum=0, maximum=1)
@@ -258,6 +258,7 @@ def _assert_report_aggregate_matches_results(
         "mechanical_api_success_rate": "mechanical_api_success",
         "retrieval_quality_pass_rate": "retrieval_quality",
         "human_answer_demo_pass_rate": "human_answer_demo",
+        "abstention_pass_rate": "abstained_correctly",
     }
     for aggregate_key, check_key in rate_checks.items():
         expected_rate = _derived_check_rate(results, check_key)
@@ -268,6 +269,7 @@ def _assert_report_aggregate_matches_results(
             )
     wrong_repo_failures = sum(1 for result in results if _check_failed(result["checks"]["wrong_repo_check"]))
     unsupported_claim_failures = sum(1 for result in results if _check_failed(result["checks"]["citation_support"]))
+    abstention_failures = sum(1 for result in results if _check_failed(result["checks"].get("abstained_correctly", "not_applicable")))
     if aggregate["wrong_repo_failures"] != wrong_repo_failures:
         raise EvalManifestError(
             f"report.aggregate.wrong_repo_failures does not match per-result checks: "
@@ -279,7 +281,7 @@ def _assert_report_aggregate_matches_results(
             f"expected {unsupported_claim_failures}, got {aggregate['unsupported_claim_failures']}"
         )
     expected_verdict = "PASS"
-    if grade_counts["FAIL"] or wrong_repo_failures or unsupported_claim_failures:
+    if grade_counts["FAIL"] or wrong_repo_failures or unsupported_claim_failures or abstention_failures:
         expected_verdict = "BLOCK"
     elif grade_counts["PARTIAL"]:
         expected_verdict = "RISK"
@@ -332,6 +334,7 @@ def validate_grade_report(
             "wrong_repo_check",
             "partial_corpus_caveat",
             "human_answer_demo",
+            "abstained_correctly",
         ):
             if key not in checks:
                 raise EvalManifestError(f"{context}.checks.{key} is required")
