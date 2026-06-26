@@ -1,0 +1,837 @@
+{
+  "schema_version": "sourcebrief.eval-question-bank.v1",
+  "name": "Awesome Agent Harness top 5 real-corpus 50-question bank",
+  "source_list_url": "https://github.com/Picrew/awesome-agent-harness#harness-architecture--orchestration",
+  "selection_note": "Top 5 entries observed in the Harness Architecture & Orchestration table, sorted by stars as rendered in the README.",
+  "repos": [
+    {
+      "key": "superpowers",
+      "name": "Superpowers",
+      "url": "https://github.com/obra/superpowers",
+      "rendered_stars": 234407
+    },
+    {
+      "key": "ecc",
+      "name": "ECC",
+      "url": "https://github.com/affaan-m/ECC",
+      "rendered_stars": 218942
+    },
+    {
+      "key": "matt_pocock_skills",
+      "name": "Matt Pocock Skills",
+      "url": "https://github.com/mattpocock/skills",
+      "rendered_stars": 138527
+    },
+    {
+      "key": "gstack",
+      "name": "gstack",
+      "url": "https://github.com/garrytan/gstack",
+      "rendered_stars": 112044
+    },
+    {
+      "key": "deerflow",
+      "name": "DeerFlow",
+      "url": "https://github.com/bytedance/deer-flow",
+      "rendered_stars": 101740
+    }
+  ],
+  "question_defaults": {
+    "min_citations": 1,
+    "top_k": 8,
+    "max_chars": 8000,
+    "include_code_symbols": true,
+    "expected_result": "pass"
+  },
+  "questions": [
+    {
+      "id": "superpowers-architecture-001",
+      "target_repo": "superpowers",
+      "category": "architecture",
+      "customer_job": "understand orchestration model",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What is the core Superpowers workflow model, and how do skills, plans, and execution checkpoints fit together?",
+      "expected_evidence_type": "README or skill/workflow docs explaining the overall methodology",
+      "should_cite": "files or sections that define the workflow model",
+      "bad_answer_criteria": [
+        "Only describes generic AI agents without Superpowers-specific workflow evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "superpowers-skills-002",
+      "target_repo": "superpowers",
+      "category": "tool-plugin-skill-contracts",
+      "customer_job": "extend the harness with skills",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "How are Superpowers skills structured, discovered, and invoked during agent work?",
+      "expected_evidence_type": "skill directory conventions or docs",
+      "should_cite": "skill files, README, or installation docs",
+      "bad_answer_criteria": [
+        "Invents a plugin API not present in repo",
+        "No citation"
+      ]
+    },
+    {
+      "id": "superpowers-planning-003",
+      "target_repo": "superpowers",
+      "category": "planning-state",
+      "customer_job": "see how plans become implementation work",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What does Superpowers require before implementation starts, and how is planning validated?",
+      "expected_evidence_type": "planning workflow docs or mandatory process docs",
+      "should_cite": "planning workflow and validation instructions",
+      "bad_answer_criteria": [
+        "Skips the planning gate",
+        "No citation"
+      ]
+    },
+    {
+      "id": "superpowers-tdd-004",
+      "target_repo": "superpowers",
+      "category": "failure-modes",
+      "customer_job": "evaluate engineering discipline",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What testing or TDD expectations does Superpowers impose on implementation work?",
+      "expected_evidence_type": "TDD or test workflow skill docs",
+      "should_cite": "test/TDD skills or workflow docs",
+      "bad_answer_criteria": [
+        "Claims tests are optional without evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "superpowers-review-005",
+      "target_repo": "superpowers",
+      "category": "governance-review",
+      "customer_job": "understand review loop",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "How does Superpowers handle code review or adversarial review before work is considered done?",
+      "expected_evidence_type": "review workflow docs",
+      "should_cite": "review skills or workflow docs",
+      "bad_answer_criteria": [
+        "Only mentions GitHub reviews generically",
+        "No citation"
+      ]
+    },
+    {
+      "id": "superpowers-subagents-006",
+      "target_repo": "superpowers",
+      "category": "orchestration-model",
+      "customer_job": "assess subagent usage",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "When and why should a Superpowers user delegate work to subagents?",
+      "expected_evidence_type": "subagent/delegation guidance",
+      "should_cite": "delegation or subagent docs",
+      "bad_answer_criteria": [
+        "No Superpowers-specific delegation guidance",
+        "No citation"
+      ]
+    },
+    {
+      "id": "superpowers-install-007",
+      "target_repo": "superpowers",
+      "category": "install-runtime-flow",
+      "customer_job": "install and operate it",
+      "difficulty": "easy",
+      "demo_type": "human-answer-demo",
+      "query": "What is the documented installation or setup flow for Superpowers?",
+      "expected_evidence_type": "installation docs",
+      "should_cite": "README or install docs",
+      "bad_answer_criteria": [
+        "Invents package manager commands not shown",
+        "No citation"
+      ]
+    },
+    {
+      "id": "superpowers-memory-008",
+      "target_repo": "superpowers",
+      "category": "state-memory-session",
+      "customer_job": "understand durable context",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What forms of memory, context, or persistent project knowledge does Superpowers ask agents to maintain?",
+      "expected_evidence_type": "memory/context skill docs",
+      "should_cite": "memory or context docs",
+      "bad_answer_criteria": [
+        "Confuses repository docs with runtime database memory",
+        "No citation"
+      ]
+    },
+    {
+      "id": "superpowers-security-009",
+      "target_repo": "superpowers",
+      "category": "comparison-security-governance",
+      "customer_job": "assess operational risk",
+      "difficulty": "hard",
+      "demo_type": "retrieval-quality",
+      "query": "Compare the safety, permission, or governance assumptions documented by Superpowers and ECC. Where do they overlap, and where does one repo provide more concrete operational guardrails?",
+      "expected_evidence_type": "governance/safety/process docs from both Superpowers and ECC",
+      "should_cite": "at least one relevant source from each repo",
+      "bad_answer_criteria": [
+        "Only discusses one of the two repos",
+        "Asserts formal security guarantees without evidence",
+        "No citation from either repo"
+      ],
+      "target_repos": [
+        "superpowers",
+        "ecc"
+      ]
+    },
+    {
+      "id": "superpowers-negative-010",
+      "target_repo": "superpowers",
+      "category": "negative-control",
+      "customer_job": "avoid unsupported compliance claims",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "query": "Does Superpowers include a signed SOC 2 Type II audit report and name the auditor?",
+      "expected_evidence_type": "explicit compliance report if present; otherwise abstain",
+      "should_cite": "compliance docs only if present",
+      "expected_result": "expected_unanswerable",
+      "min_citations": 0,
+      "include_code_symbols": false,
+      "bad_answer_criteria": [
+        "Asserts SOC 2 compliance without a cited audit report",
+        "Names an auditor without citation"
+      ]
+    },
+    {
+      "id": "ecc-architecture-011",
+      "target_repo": "ecc",
+      "category": "architecture",
+      "customer_job": "understand orchestration model",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What is ECC's overall operator or harness architecture, and what major components does it combine?",
+      "expected_evidence_type": "README or architecture docs",
+      "should_cite": "component overview docs",
+      "bad_answer_criteria": [
+        "Only restates the repo name",
+        "No citation"
+      ]
+    },
+    {
+      "id": "ecc-hooks-012",
+      "target_repo": "ecc",
+      "category": "tool-plugin-skill-contracts",
+      "customer_job": "understand hook contracts",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "How does ECC use hooks, and what lifecycle events or checks do those hooks support?",
+      "expected_evidence_type": "hook docs/configuration",
+      "should_cite": "hook configuration or docs",
+      "bad_answer_criteria": [
+        "Invents hook names not in evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "ecc-skills-013",
+      "target_repo": "ecc",
+      "category": "tool-plugin-skill-contracts",
+      "customer_job": "extend with skills",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "How are skills represented in ECC, and how should an operator add or use them?",
+      "expected_evidence_type": "skills docs or directories",
+      "should_cite": "skills folder/readme",
+      "bad_answer_criteria": [
+        "Claims a binary plugin API without evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "ecc-memory-014",
+      "target_repo": "ecc",
+      "category": "state-memory-session",
+      "customer_job": "optimize context",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What memory or context optimization techniques does ECC document?",
+      "expected_evidence_type": "memory/context docs",
+      "should_cite": "memory optimization docs",
+      "bad_answer_criteria": [
+        "No ECC-specific evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "ecc-security-015",
+      "target_repo": "ecc",
+      "category": "security-governance",
+      "customer_job": "assess scanner coverage",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What security scanning or validation workflows does ECC provide, and where are they configured?",
+      "expected_evidence_type": "security scanner docs/config",
+      "should_cite": "security/validation files",
+      "bad_answer_criteria": [
+        "Asserts complete security coverage without evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "ecc-validation-016",
+      "target_repo": "ecc",
+      "category": "failure-modes",
+      "customer_job": "verify work before completion",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What validation steps does ECC require before agent work is accepted?",
+      "expected_evidence_type": "validation workflow docs",
+      "should_cite": "validation instructions",
+      "bad_answer_criteria": [
+        "Only says 'run tests' with no ECC evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "ecc-install-017",
+      "target_repo": "ecc",
+      "category": "install-runtime-flow",
+      "customer_job": "set up ECC",
+      "difficulty": "easy",
+      "demo_type": "human-answer-demo",
+      "query": "What is the documented setup or installation flow for ECC?",
+      "expected_evidence_type": "installation docs",
+      "should_cite": "README/setup docs",
+      "bad_answer_criteria": [
+        "Invents install commands not present",
+        "No citation"
+      ]
+    },
+    {
+      "id": "ecc-cross-harness-018",
+      "target_repo": "ecc",
+      "category": "comparison-orchestration-model",
+      "customer_job": "use across agents",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "Compare ECC and Superpowers on cross-harness or subagent orchestration. Which repo is more explicit about multi-agent compatibility versus process discipline?",
+      "expected_evidence_type": "cross-harness, delegation, or orchestration guidance from both repos",
+      "should_cite": "evidence from ECC and Superpowers",
+      "bad_answer_criteria": [
+        "Only cites one repo",
+        "Assumes support for a harness not documented",
+        "No citation"
+      ],
+      "target_repos": [
+        "ecc",
+        "superpowers"
+      ]
+    },
+    {
+      "id": "ecc-extension-019",
+      "target_repo": "ecc",
+      "category": "extension-points",
+      "customer_job": "customize ECC",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What are ECC's main extension points for adding new checks, skills, hooks, or workflows?",
+      "expected_evidence_type": "extension/config docs",
+      "should_cite": "config or extension docs",
+      "bad_answer_criteria": [
+        "No extension point evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "ecc-negative-020",
+      "target_repo": "ecc",
+      "category": "negative-control",
+      "customer_job": "avoid unsupported compliance claims",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "query": "Does ECC guarantee HIPAA compliance and list a covered-entity deployment checklist?",
+      "expected_evidence_type": "explicit compliance docs if present; otherwise abstain",
+      "should_cite": "compliance docs only if present",
+      "expected_result": "expected_unanswerable",
+      "min_citations": 0,
+      "include_code_symbols": false,
+      "bad_answer_criteria": [
+        "Claims HIPAA compliance without evidence",
+        "Provides a checklist not present in the repo"
+      ]
+    },
+    {
+      "id": "mps-architecture-021",
+      "target_repo": "matt_pocock_skills",
+      "category": "architecture",
+      "customer_job": "understand repository purpose",
+      "difficulty": "easy",
+      "demo_type": "human-answer-demo",
+      "query": "What is the organizing principle of Matt Pocock's skills repository, and which kinds of agent work does it cover?",
+      "expected_evidence_type": "README or skill index",
+      "should_cite": "README or top-level skill docs",
+      "bad_answer_criteria": [
+        "Treats it as an executable framework instead of a skills collection",
+        "No citation"
+      ]
+    },
+    {
+      "id": "mps-adr-022",
+      "target_repo": "matt_pocock_skills",
+      "category": "tool-plugin-skill-contracts",
+      "customer_job": "use ADR skill",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "How does the repository recommend writing or using ADRs with coding agents?",
+      "expected_evidence_type": "ADR skill docs",
+      "should_cite": "ADR-related skill files",
+      "bad_answer_criteria": [
+        "No ADR-specific evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "mps-specs-023",
+      "target_repo": "matt_pocock_skills",
+      "category": "planning-state",
+      "customer_job": "turn requirements into specs",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What guidance does the repository give for creating specs or shared language before coding?",
+      "expected_evidence_type": "spec/shared-language skills",
+      "should_cite": "spec or shared-language files",
+      "bad_answer_criteria": [
+        "Omits the pre-coding alignment step",
+        "No citation"
+      ]
+    },
+    {
+      "id": "mps-testing-024",
+      "target_repo": "matt_pocock_skills",
+      "category": "failure-modes",
+      "customer_job": "improve tests with agents",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What testing-related skills are included, and what behavior do they ask the agent to follow?",
+      "expected_evidence_type": "testing skill files",
+      "should_cite": "test skill docs",
+      "bad_answer_criteria": [
+        "Only mentions tests generically",
+        "No citation"
+      ]
+    },
+    {
+      "id": "mps-review-025",
+      "target_repo": "matt_pocock_skills",
+      "category": "governance-review",
+      "customer_job": "review agent output",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "How does the skills repo approach code review or feedback loops for agent-written code?",
+      "expected_evidence_type": "review skill docs",
+      "should_cite": "review-related skill files",
+      "bad_answer_criteria": [
+        "No review-specific evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "mps-install-026",
+      "target_repo": "matt_pocock_skills",
+      "category": "install-runtime-flow",
+      "customer_job": "install/use skills",
+      "difficulty": "easy",
+      "demo_type": "human-answer-demo",
+      "query": "How are these skills intended to be installed or copied into an agent environment?",
+      "expected_evidence_type": "installation/use docs",
+      "should_cite": "README/install docs",
+      "bad_answer_criteria": [
+        "Invents a package registry workflow without evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "mps-extension-027",
+      "target_repo": "matt_pocock_skills",
+      "category": "extension-points",
+      "customer_job": "author new skills",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What pattern should someone follow to author or adapt a new skill in this repository?",
+      "expected_evidence_type": "skill examples/authoring docs",
+      "should_cite": "representative skill files",
+      "bad_answer_criteria": [
+        "No skill structure evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "mps-scope-028",
+      "target_repo": "matt_pocock_skills",
+      "category": "comparison-sandbox-execution-boundaries",
+      "customer_job": "understand boundaries",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "Compare Matt Pocock Skills and gstack on execution boundaries: are they primarily process-guidance skill collections, or do they document executable runtime/sandbox enforcement?",
+      "expected_evidence_type": "skill content, README/setup docs, or runtime boundary evidence from both repos",
+      "should_cite": "files from both skill collections that show guidance versus executable enforcement",
+      "bad_answer_criteria": [
+        "Claims sandbox enforcement without evidence",
+        "Only discusses one repo",
+        "No citation"
+      ],
+      "target_repos": [
+        "matt_pocock_skills",
+        "gstack"
+      ]
+    },
+    {
+      "id": "mps-memory-029",
+      "target_repo": "matt_pocock_skills",
+      "category": "state-memory-session",
+      "customer_job": "maintain shared project language",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "How does the repository encourage agents and teams to preserve shared language, decisions, or project context?",
+      "expected_evidence_type": "shared-language/spec/ADR docs",
+      "should_cite": "shared language or ADR files",
+      "bad_answer_criteria": [
+        "No project-context evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "mps-negative-030",
+      "target_repo": "matt_pocock_skills",
+      "category": "negative-control",
+      "customer_job": "avoid unsupported runtime claims",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "query": "Does Matt Pocock's skills repo provide a hosted cloud service with an SLA and uptime dashboard?",
+      "expected_evidence_type": "service/SLA docs if present; otherwise abstain",
+      "should_cite": "service docs only if present",
+      "expected_result": "expected_unanswerable",
+      "min_citations": 0,
+      "include_code_symbols": false,
+      "bad_answer_criteria": [
+        "Claims a hosted service or SLA without evidence",
+        "Invents an uptime dashboard"
+      ]
+    },
+    {
+      "id": "gstack-architecture-031",
+      "target_repo": "gstack",
+      "category": "architecture",
+      "customer_job": "understand skill stack",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What is gstack's overall skill-stack architecture, and what workflow stages does it cover?",
+      "expected_evidence_type": "README or architecture docs",
+      "should_cite": "top-level docs and skill folders",
+      "bad_answer_criteria": [
+        "No gstack-specific workflow stages",
+        "No citation"
+      ]
+    },
+    {
+      "id": "gstack-product-032",
+      "target_repo": "gstack",
+      "category": "planning-state",
+      "customer_job": "turn product ideas into work",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "How does gstack guide product planning before implementation?",
+      "expected_evidence_type": "product/planning skills",
+      "should_cite": "planning skill files",
+      "bad_answer_criteria": [
+        "Skips product planning evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "gstack-architecture-decisions-033",
+      "target_repo": "gstack",
+      "category": "architecture",
+      "customer_job": "make architecture choices",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What does gstack say about architecture decisions or technical design before coding?",
+      "expected_evidence_type": "architecture/design skills",
+      "should_cite": "architecture/design files",
+      "bad_answer_criteria": [
+        "No architecture decision evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "gstack-qa-034",
+      "target_repo": "gstack",
+      "category": "failure-modes",
+      "customer_job": "ensure quality",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What QA or verification practices does gstack prescribe?",
+      "expected_evidence_type": "QA/test/review skills",
+      "should_cite": "QA or test skill files",
+      "bad_answer_criteria": [
+        "No QA-specific evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "gstack-release-035",
+      "target_repo": "gstack",
+      "category": "install-runtime-flow",
+      "customer_job": "ship changes",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "How does gstack support release or launch workflows?",
+      "expected_evidence_type": "release/launch skill docs",
+      "should_cite": "release-related docs",
+      "bad_answer_criteria": [
+        "Invents CI/CD pipeline not in repo",
+        "No citation"
+      ]
+    },
+    {
+      "id": "gstack-cross-agent-036",
+      "target_repo": "gstack",
+      "category": "comparison-orchestration-model",
+      "customer_job": "use with multiple agents",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "Compare how gstack and Matt Pocock Skills position themselves for use with Claude Code or other coding agents. Which one is more opinionated about end-to-end workflow stages?",
+      "expected_evidence_type": "README/agent-specific setup docs and representative skill files from both repos",
+      "should_cite": "evidence from gstack and Matt Pocock Skills",
+      "bad_answer_criteria": [
+        "Assumes unsupported agents",
+        "Only cites one repo",
+        "No citation"
+      ],
+      "target_repos": [
+        "gstack",
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "id": "gstack-extension-037",
+      "target_repo": "gstack",
+      "category": "extension-points",
+      "customer_job": "customize skills",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What is the easiest way to customize or extend gstack's skills for a team's workflow?",
+      "expected_evidence_type": "skill examples or customization docs",
+      "should_cite": "skill files or README",
+      "bad_answer_criteria": [
+        "No customization evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "gstack-security-038",
+      "target_repo": "gstack",
+      "category": "security-governance",
+      "customer_job": "understand governance posture",
+      "difficulty": "hard",
+      "demo_type": "retrieval-quality",
+      "query": "What governance or safety expectations does gstack document for agent-driven product work?",
+      "expected_evidence_type": "governance/security/process docs",
+      "should_cite": "safety/governance docs if present",
+      "bad_answer_criteria": [
+        "Claims formal security controls without evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "gstack-memory-039",
+      "target_repo": "gstack",
+      "category": "state-memory-session",
+      "customer_job": "preserve product context",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "How does gstack preserve product context, plans, or decisions across agent sessions?",
+      "expected_evidence_type": "planning/context docs",
+      "should_cite": "planning docs or skill files",
+      "bad_answer_criteria": [
+        "No context persistence evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "gstack-negative-040",
+      "target_repo": "gstack",
+      "category": "negative-control",
+      "customer_job": "avoid unsupported enterprise claims",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "query": "Does gstack document FedRAMP authorization and the sponsoring agency?",
+      "expected_evidence_type": "FedRAMP docs if present; otherwise abstain",
+      "should_cite": "compliance docs only if present",
+      "expected_result": "expected_unanswerable",
+      "min_citations": 0,
+      "include_code_symbols": false,
+      "bad_answer_criteria": [
+        "Claims FedRAMP authorization without evidence",
+        "Names an agency without citation"
+      ]
+    },
+    {
+      "id": "deerflow-architecture-041",
+      "target_repo": "deerflow",
+      "category": "architecture",
+      "customer_job": "understand system architecture",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What is DeerFlow's overall architecture and which major components collaborate to run research workflows?",
+      "expected_evidence_type": "README/architecture docs/code entrypoints",
+      "should_cite": "architecture docs or key modules",
+      "bad_answer_criteria": [
+        "No DeerFlow-specific components",
+        "No citation"
+      ]
+    },
+    {
+      "id": "deerflow-orchestration-042",
+      "target_repo": "deerflow",
+      "category": "orchestration-model",
+      "customer_job": "understand workflow execution",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "How does DeerFlow orchestrate multi-step research or agent workflows?",
+      "expected_evidence_type": "workflow/graph/orchestration code or docs",
+      "should_cite": "orchestration modules or docs",
+      "bad_answer_criteria": [
+        "Only describes generic research agents",
+        "No citation"
+      ]
+    },
+    {
+      "id": "deerflow-tools-043",
+      "target_repo": "deerflow",
+      "category": "tool-plugin-skill-contracts",
+      "customer_job": "understand tool contracts",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What tools or external services does DeerFlow expose to agents, and where are those tools configured?",
+      "expected_evidence_type": "tool modules/config docs",
+      "should_cite": "tool definitions or configs",
+      "bad_answer_criteria": [
+        "Invents tools without evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "deerflow-state-044",
+      "target_repo": "deerflow",
+      "category": "state-memory-session",
+      "customer_job": "understand workflow state",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "How does DeerFlow represent state, messages, or intermediate research results across workflow steps?",
+      "expected_evidence_type": "state/schema/workflow code",
+      "should_cite": "state models or workflow modules",
+      "bad_answer_criteria": [
+        "No state representation evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "deerflow-runtime-045",
+      "target_repo": "deerflow",
+      "category": "install-runtime-flow",
+      "customer_job": "run locally",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "What is the documented install and local runtime flow for DeerFlow?",
+      "expected_evidence_type": "installation/runtime docs",
+      "should_cite": "README/setup docs",
+      "bad_answer_criteria": [
+        "Invents setup commands not in repo",
+        "No citation"
+      ]
+    },
+    {
+      "id": "deerflow-config-046",
+      "target_repo": "deerflow",
+      "category": "extension-points",
+      "customer_job": "customize runtime",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "Which configuration files or environment variables control DeerFlow behavior?",
+      "expected_evidence_type": "config docs/examples",
+      "should_cite": "configuration files or docs",
+      "bad_answer_criteria": [
+        "No configuration evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "deerflow-security-047",
+      "target_repo": "deerflow",
+      "category": "security-governance",
+      "customer_job": "assess risk",
+      "difficulty": "hard",
+      "demo_type": "retrieval-quality",
+      "query": "What security, sandboxing, or external-call boundaries does DeerFlow document?",
+      "expected_evidence_type": "security docs/config/tool boundary code",
+      "should_cite": "security docs or tool boundary code",
+      "bad_answer_criteria": [
+        "Claims strong sandboxing without evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "deerflow-failure-048",
+      "target_repo": "deerflow",
+      "category": "failure-modes",
+      "customer_job": "operate failures",
+      "difficulty": "medium",
+      "demo_type": "retrieval-quality",
+      "query": "What failure modes or troubleshooting paths are documented for DeerFlow runs?",
+      "expected_evidence_type": "troubleshooting docs/logging/error handling",
+      "should_cite": "troubleshooting docs or error handling modules",
+      "bad_answer_criteria": [
+        "No troubleshooting evidence",
+        "No citation"
+      ]
+    },
+    {
+      "id": "deerflow-api-049",
+      "target_repo": "deerflow",
+      "category": "comparison-install-runtime-flow",
+      "customer_job": "integrate with DeerFlow",
+      "difficulty": "medium",
+      "demo_type": "human-answer-demo",
+      "query": "Compare DeerFlow with Matt Pocock Skills on product/runtime surface: which one exposes an API, server, or UI boundary, and which one is mainly reusable process guidance?",
+      "expected_evidence_type": "DeerFlow server/API/UI docs or modules plus Matt Pocock Skills README/skill evidence",
+      "should_cite": "at least one relevant source from DeerFlow and one from Matt Pocock Skills",
+      "bad_answer_criteria": [
+        "Invents an API boundary without evidence",
+        "Treats both repos as the same kind of product",
+        "Only cites one repo"
+      ],
+      "target_repos": [
+        "deerflow",
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "id": "deerflow-negative-050",
+      "target_repo": "deerflow",
+      "category": "negative-control",
+      "customer_job": "avoid unsupported deployment claims",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "query": "Does DeerFlow promise production Kubernetes multi-tenant isolation with a published threat model?",
+      "expected_evidence_type": "threat model/isolation docs if present; otherwise abstain",
+      "should_cite": "security/threat model docs only if present",
+      "expected_result": "expected_unanswerable",
+      "min_citations": 0,
+      "include_code_symbols": false,
+      "bad_answer_criteria": [
+        "Claims Kubernetes multi-tenant isolation without evidence",
+        "Invents a threat model"
+      ]
+    }
+  ]
+}
