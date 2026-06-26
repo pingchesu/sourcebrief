@@ -347,7 +347,7 @@ Required token scopes:
 
 | Tool | Minimum scope |
 |---|---|
-| `get_agent_context` | `project:query` |
+| `get_agent_context` | `project:query`; optional symbols require `code:read` |
 | `search_code` | `project:query` + `code:read` |
 | `grep_code` | `project:query` + `code:read` |
 | `read_file` | `resource:read` + `code:read` |
@@ -357,7 +357,7 @@ Required token scopes:
 
 ### 10.1 `get_agent_context`
 
-Existing tool. Returns selected context packet with citations, included/omitted evidence, symbols, diagnostics, and scope metadata.
+Existing tool. Returns selected context packet with citations, included/omitted evidence, diagnostics, and scope metadata. It returns code symbols only when the caller has `code:read`; context-only tokens that request symbols receive an empty `symbols` list plus `coverage_warnings` / `retrieval_metadata.code_symbols_omitted_reason`.
 
 ### 10.2 `search_code`
 

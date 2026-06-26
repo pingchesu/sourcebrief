@@ -199,7 +199,7 @@ Narrowest context-only token for a known project/resource:
 project:query,resource:read
 ```
 
-Do not use the narrowest token for generated agent packs or remote-code drilldown. Agent pack download needs `project:read`; `search_code`, `grep_code`, `read_file`, and `find_symbol` need `code:read`.
+Do not use the narrowest token for generated agent packs or remote-code drilldown. Agent pack download needs `project:read`; `sourcebrief.ask` / `sourcebrief.get_agent_context` omit code symbols unless the token has `code:read`; `search_code`, `grep_code`, `read_file`, and `find_symbol` require `code:read`.
 
 Token creation requires user/session authentication with `token:admin`; API tokens cannot mint child tokens. In local dev, the CLI can mint a token when `SOURCEBRIEF_DEV_AUTH=true` is enabled. In shared deployments, use a user-authenticated admin/session flow to mint scoped runtime tokens.
 

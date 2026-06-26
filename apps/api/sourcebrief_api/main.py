@@ -6315,6 +6315,7 @@ def code_search_project(
     infer call edges or behavior with an LLM.
     """
     require_scope(principal, "project:query")
+    require_scope(principal, "code:read")
     resource_ids = _effective_resource_ids(principal, payload.resource_ids)
     _require_project_access(session, workspace_id, project_id, principal)
     resource_clause = ""
@@ -7129,7 +7130,12 @@ def _resolve_runtime_pack_version(
     return version
 
 
-def _agent_context_suggested_tool_calls(citations: list[AgentContextCitation], query: str) -> list[dict[str, Any]]:
+def _principal_has_scope(principal: Principal, scope: str) -> bool:
+    scopes = principal.scopes
+    return "*" in scopes or scope in scopes
+
+
+def _agent_context_suggested_tool_calls(citations: list[AgentContextCitation], query: str, *, include_code_tools: bool = True) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = [
         {
             "name": "sourcebrief.search",
@@ -7158,13 +7164,14 @@ def _agent_context_suggested_tool_calls(citations: list[AgentContextCitation], q
                     },
                 },
             )
-        calls.append(
-            {
-                "name": "sourcebrief.read_file",
-                "reason": "Inspect the cited file from the indexed source snapshot when code detail is needed.",
-                "arguments": {"resource_id": str(first.resource_id), "path": first.path or "<path>", "start_line": 1, "end_line": 120},
-            }
-        )
+        if include_code_tools:
+            calls.append(
+                {
+                    "name": "sourcebrief.read_file",
+                    "reason": "Inspect the cited file from the indexed source snapshot when code detail is needed.",
+                    "arguments": {"resource_id": str(first.resource_id), "path": first.path or "<path>", "start_line": 1, "end_line": 120},
+                }
+            )
     return calls
 
 
@@ -7386,6 +7393,7 @@ def _build_pack_agent_context_response(
         instruction_parts.append("Coverage warning: " + " ".join(coverage_warnings))
     if profile and profile.system_prompt:
         instruction_parts.append(profile.system_prompt)
+    can_read_code = _principal_has_scope(principal, "code:read")
     return AgentContextResponse(
         query=payload.query,
         profile="context_pack",
@@ -7394,7 +7402,7 @@ def _build_pack_agent_context_response(
         context="\n\n".join(context_parts),
         citations=citations,
         symbols=[],
-        suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query),
+        suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query, include_code_tools=can_read_code),
         token_budget_hint=max(1, payload.max_chars // 4),
         resource_coverage=resource_coverage,
         coverage_warnings=coverage_warnings,
@@ -7500,7 +7508,9 @@ def _build_agent_context_response(
             )
         )
     symbols: list[CodeSymbolHit] = []
-    if payload.include_code_symbols:
+    can_read_code = _principal_has_scope(principal, "code:read")
+    code_symbol_warning: str | None = None
+    if payload.include_code_symbols and can_read_code:
         symbol_response = code_search_project(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -7509,6 +7519,8 @@ def _build_agent_context_response(
             session=session,
         )
         symbols = symbol_response.symbols
+    elif payload.include_code_symbols:
+        code_symbol_warning = "code symbols omitted: missing required scope code:read"
     profile = session.scalar(
         select(AgentProfile).where(
             AgentProfile.workspace_id == workspace_id,
@@ -7524,6 +7536,8 @@ def _build_agent_context_response(
         citations=citations,
         principal=principal,
     )
+    if code_symbol_warning:
+        coverage_warnings = [*coverage_warnings, code_symbol_warning]
     instruction_parts = [COMMON_AGENT_INSTRUCTION, RUNTIME_INSTRUCTIONS[actual_runtime]]
     if coverage_warnings:
         instruction_parts.append("Coverage warning: " + " ".join(coverage_warnings))
@@ -7545,11 +7559,16 @@ def _build_agent_context_response(
         context="\n\n".join(context_parts),
         citations=citations,
         symbols=symbols,
-        suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query),
+        suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query, include_code_tools=can_read_code),
         token_budget_hint=max(1, payload.max_chars // 4),
         resource_coverage=resource_coverage,
         coverage_warnings=coverage_warnings,
-        retrieval_metadata=_agent_context_retrieval_metadata(used_candidates, payload.resource_ids),
+        retrieval_metadata={
+            **_agent_context_retrieval_metadata(used_candidates, payload.resource_ids),
+            "code_symbols_requested": payload.include_code_symbols,
+            "code_symbols_returned": len(symbols),
+            "code_symbols_omitted_reason": "missing_scope:code:read" if code_symbol_warning else None,
+        },
     )
 
 
@@ -9031,7 +9050,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
     return [
         {
             "name": "sourcebrief.ask",
-            "description": "Golden-path alias for get_agent_context: ask a project question and receive cited context plus suggested next tool calls.",
+            "description": "Golden-path alias for get_agent_context: ask a project question and receive cited context plus suggested next tool calls. Code symbols are returned only when the caller has code:read; context-only tokens receive cited context plus an omission warning.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -9106,7 +9125,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "sourcebrief.get_agent_context",
-            "description": "Return permission-scoped cited context for a SourceBrief project.",
+            "description": "Return permission-scoped cited context for a SourceBrief project. Code symbols require code:read and are omitted with a structured warning for context-only tokens.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
