@@ -30,6 +30,16 @@ npm --version
 git --version
 ```
 
+If `uv` is missing on a clean Linux host, install it and make Python 3.11 available to the project venv:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+uv python install 3.11
+```
+
+It is okay if the host `python3 --version` is newer than 3.11, such as Ubuntu 24.04's Python 3.12, as long as `uv venv --python 3.11` can provision the project interpreter.
+
 ## 1. Clone and configure
 
 ```bash
@@ -37,6 +47,12 @@ git clone https://github.com/pingchesu/sourcebrief.git
 cd sourcebrief
 
 cp .env.example .env
+```
+
+Run the quickstart doctor before starting the stack. It uses only Python's standard library and prints remediation commands for missing prerequisites:
+
+```bash
+python3 scripts/check_quickstart_prereqs.py
 ```
 
 Before the first startup, edit `.env` and replace the example admin password:
@@ -54,22 +70,57 @@ SOURCEBRIEF_DEV_AUTH=false
 
 If you change ports or `NEXT_PUBLIC_API_BASE_URL`, rebuild the frontend with `docker compose up -d --build`; the browser-visible API URL is compiled into the Next.js client.
 
+### Remote browser / self-host setup
+
+If you open SourceBrief from a browser on another machine, do this before the first `make compose-up`. In a browser, `localhost` means the viewer's machine, not the SourceBrief host.
+
+```bash
+SOURCEBRIEF_HOST=<sourcebrief-hostname-or-ip>
+
+# Optional if the default ports are already used on a shared host.
+SOURCEBRIEF_API_PORT=18000
+SOURCEBRIEF_WEB_PORT=13000
+
+cat >> .env <<EOF
+SOURCEBRIEF_API_PORT=${SOURCEBRIEF_API_PORT}
+SOURCEBRIEF_WEB_PORT=${SOURCEBRIEF_WEB_PORT}
+NEXT_PUBLIC_API_BASE_URL=http://${SOURCEBRIEF_HOST}:${SOURCEBRIEF_API_PORT}
+SOURCEBRIEF_CORS_ORIGINS=http://${SOURCEBRIEF_HOST}:${SOURCEBRIEF_WEB_PORT},http://localhost:${SOURCEBRIEF_WEB_PORT},http://127.0.0.1:${SOURCEBRIEF_WEB_PORT}
+EOF
+
+python3 scripts/check_quickstart_prereqs.py \
+  --remote-browser-origin "http://${SOURCEBRIEF_HOST}:${SOURCEBRIEF_WEB_PORT}"
+```
+
+If you change `NEXT_PUBLIC_API_BASE_URL` after the frontend has already been built, rebuild it:
+
+```bash
+docker compose up -d --build
+```
+
+Alternative: use an SSH tunnel and keep the default `localhost` URLs:
+
+```bash
+ssh -L 13000:localhost:13000 -L 18000:localhost:18000 <user>@<sourcebrief-host>
+```
+
 ## 2. Start the local stack
 
 ```bash
 make compose-up
-until curl -fsS http://localhost:18000/readyz; do sleep 2; done
-until curl -fsS http://localhost:13000/api/health; do sleep 2; done
+make quickstart-ready
 ```
+
+`make quickstart-ready` reads `.env` through the project Makefile, so custom `SOURCEBRIEF_API_PORT` / `SOURCEBRIEF_WEB_PORT` values are used automatically.
 
 This starts:
 
 | Service | URL / port |
 | --- | --- |
-| API | `http://localhost:18000` |
-| Web | `http://localhost:13000` |
-| PostgreSQL | `127.0.0.1:55432` host bind, Compose-internal `postgres:5432` |
-| Redis | `127.0.0.1:6380` host bind, Compose-internal `redis:6379` |
+| API | `http://localhost:${SOURCEBRIEF_API_PORT:-18000}` |
+| Web | `http://localhost:${SOURCEBRIEF_WEB_PORT:-13000}` |
+| PostgreSQL | `127.0.0.1:${SOURCEBRIEF_POSTGRES_PORT:-55432}` host bind, Compose-internal `postgres:5432` |
+| Redis | `127.0.0.1:${SOURCEBRIEF_REDIS_PORT:-6380}` host bind, Compose-internal `redis:6379` |
 
 The API container runs migrations automatically in Compose through `SOURCEBRIEF_AUTO_MIGRATE=true`.
 Postgres and Redis are intentionally published on loopback only so remote or shared hosts do not expose internal data services by default. If you need remote DB/queue access for a disposable development environment, add an explicit Compose override and keep that choice out of shared/self-host defaults.
@@ -87,7 +138,7 @@ If you changed `.env` after starting the stack, restart it:
 ```bash
 make compose-down
 make compose-up
-until curl -fsS http://localhost:18000/readyz; do sleep 2; done
+make quickstart-ready
 ```
 
 Then run the deterministic CLI demo. It creates an isolated workspace/project, adds a tiny runbook, indexes it, saves workspace/project defaults locally, and ends with a cited human answer:
@@ -95,7 +146,7 @@ Then run the deterministic CLI demo. It creates an isolated workspace/project, a
 ```bash
 make venv
 export PATH="$PWD/.venv/bin:$PATH"
-export SOURCEBRIEF_API_URL=http://localhost:18000
+export SOURCEBRIEF_API_URL="$(make -s print-api-url)"
 export SOURCEBRIEF_EMAIL=demo@example.com
 
 sourcebrief quickstart-demo
@@ -141,10 +192,16 @@ sourcebrief quickstart-demo
 
 ## 4. Open the web console
 
-Open:
+Open the web URL reported by the Makefile, plus `/login`:
+
+```bash
+printf '%s/login\n' "$(make -s print-web-url)"
+```
+
+For the remote browser path above, open:
 
 ```text
-http://localhost:13000/login
+http://${SOURCEBRIEF_HOST}:${SOURCEBRIEF_WEB_PORT:-13000}/login
 ```
 
 Sign in with the admin account from `.env`:
