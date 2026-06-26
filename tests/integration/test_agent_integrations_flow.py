@@ -92,6 +92,25 @@ def ingest(resource_id: str, workspace_id: str, project_id: str) -> None:
     run_index(run_id)
 
 
+def create_runtime_token(
+    client: TestClient,
+    workspace_id: str,
+    project_id: str,
+    resource_id: str,
+    headers: dict[str, str],
+    *,
+    scopes: list[str],
+    name: str,
+) -> dict[str, str]:
+    response = client.post(
+        f"/workspaces/{workspace_id}/api-tokens",
+        json={"name": name, "scopes": scopes, "allowed_project_ids": [project_id], "allowed_resource_ids": [resource_id]},
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    return {"Authorization": f"Bearer {response.json()['token']}"}
+
+
 def test_agent_context_api_and_mcp_tool_call() -> None:
     require_real_services()
     client = TestClient(app)
@@ -198,6 +217,99 @@ def test_agent_context_api_and_mcp_tool_call() -> None:
     result = call.json()["result"]
     assert result["structuredContent"]["runtime"] == "codex"
     assert "falconagent" in result["structuredContent"]["context"]
+
+
+def test_context_only_token_omits_code_symbols_but_read_code_token_gets_them() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "m81-symbol-scope")
+    resource_id = add_doc(client, workspace_id, project_id, headers)
+    ingest(resource_id, workspace_id, project_id)
+
+    context_only_headers = create_runtime_token(
+        client,
+        workspace_id,
+        project_id,
+        resource_id,
+        headers,
+        scopes=["project:query", "resource:read"],
+        name="context only runtime",
+    )
+    context_only = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "runtime_symbol", "resource_ids": [resource_id], "include_code_symbols": True},
+        headers=context_only_headers,
+    )
+    assert context_only.status_code == 200, context_only.text
+    context_only_body = context_only.json()
+    assert context_only_body["symbols"] == []
+    assert "code symbols omitted: missing required scope code:read" in context_only_body["coverage_warnings"]
+    assert context_only_body["retrieval_metadata"]["code_symbols_omitted_reason"] == "missing_scope:code:read"
+    context_only_tool_names = [call["name"] for call in context_only_body["suggested_tool_calls"]]
+    assert "sourcebrief.read_section" in context_only_tool_names
+    assert "sourcebrief.read_file" not in context_only_tool_names
+
+    mcp_call = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={
+            "jsonrpc": "2.0",
+            "id": 81,
+            "method": "tools/call",
+            "params": {
+                "name": "sourcebrief.ask",
+                "arguments": {"query": "runtime_symbol", "resource_ids": [resource_id], "include_code_symbols": True},
+            },
+        },
+        headers=context_only_headers,
+    )
+    assert mcp_call.status_code == 200, mcp_call.text
+    mcp_body = mcp_call.json()["result"]["structuredContent"]
+    assert mcp_body["symbols"] == []
+    assert mcp_body["retrieval_metadata"]["code_symbols_omitted_reason"] == "missing_scope:code:read"
+    mcp_tool_names = [call["name"] for call in mcp_body["suggested_tool_calls"]]
+    assert "sourcebrief.read_section" in mcp_tool_names
+    assert "sourcebrief.read_file" not in mcp_tool_names
+
+    code_search_denied = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/code-search",
+        json={"query": "runtime_symbol", "resource_ids": [resource_id]},
+        headers=context_only_headers,
+    )
+    assert code_search_denied.status_code == 403
+    assert "missing scope: code:read" in code_search_denied.text
+
+    read_code_headers = create_runtime_token(
+        client,
+        workspace_id,
+        project_id,
+        resource_id,
+        headers,
+        scopes=["project:query", "resource:read", "code:read"],
+        name="read code runtime",
+    )
+    read_code = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/agent-context",
+        json={"query": "runtime_symbol", "resource_ids": [resource_id], "include_code_symbols": True},
+        headers=read_code_headers,
+    )
+    assert read_code.status_code == 200, read_code.text
+    read_code_body = read_code.json()
+    assert any(symbol["name"] == "runtime_symbol" for symbol in read_code_body["symbols"])
+    assert read_code_body["retrieval_metadata"]["code_symbols_omitted_reason"] is None
+
+    remote_symbol = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={
+            "jsonrpc": "2.0",
+            "id": 82,
+            "method": "tools/call",
+            "params": {"name": "sourcebrief.find_symbol", "arguments": {"name": "runtime_symbol", "resource_ids": [resource_id]}},
+        },
+        headers=context_only_headers,
+    )
+    assert remote_symbol.status_code == 200, remote_symbol.text
+    assert remote_symbol.json()["result"]["isError"] is True
+    assert remote_symbol.json()["result"]["structuredContent"]["status_code"] == 403
 
 
 def test_runtime_install_plan_is_redacted_live_and_permission_scoped() -> None:
