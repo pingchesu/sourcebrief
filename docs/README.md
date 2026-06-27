@@ -22,6 +22,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Demo runtime output](examples/demo-runtime-output.md) | Captured output | Normalized output from a real local demo run. |
 | [Captured agent-context output](examples/agent-context-output.md) | Captured output | Normalized response from the product walkthrough run. |
 | [Awesome Agent Harness 50-question example](../examples/awesome-agent-harness-50q/README.md) | Real corpus eval example | Five public repos, 50 questions, bounded import notes, and final RISK verdict. |
+| [Use SourceBrief with a local agent](../examples/use-sourcebrief-with-local-agent/README.md) | Product-led runtime example | Current MCP/runtime setup path plus target project skill-pack install flow. |
 
 ## Runtime and operations
 
@@ -76,7 +77,9 @@ These are active planning docs for productization work that is not fully closed 
 - [CLI ergonomics golden path](followups/CLI_ERGONOMICS_GOLDEN_PATH.md)
 - [Runtime setup / doctor](followups/RUNTIME_SETUP_DOCTOR.md)
 - [MCP tool UX simplification](followups/MCP_TOOL_UX_SIMPLIFICATION.md)
-- [Deep docs proof and IA cleanup](followups/DOCS_DEEP_PROOF_CLEANUP.md)
+- [RPC code access layer beside MCP](followups/RPC_CODE_ACCESS_LAYER.md)
+- [Project skill-pack local install flow](followups/PROJECT_SKILL_PACK_LOCAL_INSTALL.md)
+- [Docs deep proof cleanup](followups/DOCS_DEEP_PROOF_CLEANUP.md)
 
 ## Archive: implementation history
 
