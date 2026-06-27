@@ -23,7 +23,9 @@ integration makes it agent infrastructure:
 
 This page is the practical runtime guide: MCP setup, scoped tokens, remote-code
 safety, generated skills, Context Pack Skill Exports, and the workflow agents
-should follow before editing or reviewing code.
+should follow before editing or reviewing code. For agents, MCP plus skills are
+the primary path. The CLI is the control plane and fallback path for setup,
+resource lifecycle automation, validation, and CI.
 
 ## The mental model
 

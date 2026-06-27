@@ -6,7 +6,7 @@ This is the short path for a new user. It explains what SourceBrief is good at, 
 
 SourceBrief is a cited context layer for coding agents.
 
-Agents are most useful when they can inspect project evidence before acting. SourceBrief turns repos, runbooks, docs, URLs, uploads, and folder bundles into indexed snapshots that can be queried from the UI, CLI, HTTP API, or MCP.
+Agents are most useful when they can inspect project evidence before acting. SourceBrief turns repos, runbooks, docs, URLs, uploads, and folder bundles into indexed snapshots that agents should primarily query through MCP, with CLI and HTTP available for setup, automation, and fallback workflows.
 
 The product advantage is not "another chat UI". It is evidence discipline:
 
@@ -18,6 +18,29 @@ The product advantage is not "another chat UI". It is evidence discipline:
 | Keep context current | Resource status, refresh runs, coverage warnings, and review artifacts show what was indexed and what may be stale. |
 | Use multiple agents | Hermes, Claude Code, Codex, Cursor, and MCP clients can use the same project evidence contract. |
 | Stay safe | SourceBrief is read-oriented evidence infrastructure; edits/tests/deploys happen in the coding agent's normal checkout and workflows. |
+
+## What each surface is for
+
+SourceBrief is not trying to be "just a CLI tool." The product is an agent evidence layer with several surfaces:
+
+| Surface | Primary user | Purpose |
+| --- | --- | --- |
+| Web UI / Workbench | Humans | Inspect sources, indexing state, citations, coverage, and product proof visually. |
+| MCP tools | Agents | Primary runtime path for cited answers, lookup, `read_section`, code search/grep, symbols, graphs, and drilldown. |
+| Generated skills / agent packs | Agents and runtime owners | Teach the agent when and how to use SourceBrief, preserve citation discipline, and avoid confusing remote indexed snapshots with local editable checkouts. |
+| CLI | Humans, CI, and agent fallback | Bootstrap/login, create/update resources, run demos, generate runtime plans, validate setup, and automate lifecycle operations when MCP is not available. |
+| HTTP API | Integrators | Stable programmatic control plane behind the UI, CLI, MCP, and custom automation. |
+
+The intended agent path is therefore:
+
+```text
+skill/agent instruction tells the agent to ask SourceBrief
+        -> agent uses MCP tools for cited evidence and drilldown
+        -> CLI is used only for setup, resource lifecycle automation, or fallback when MCP is unavailable
+        -> agent edits/tests in the real checkout, not inside SourceBrief
+```
+
+CLI completeness matters because it gives operators and CI a reliable control plane, and it gives agents an explicit fallback procedure. It is not the core product surface for agent reasoning; MCP plus skills are.
 
 ## 1. Install and start locally
 
@@ -59,6 +82,8 @@ printf '%s/login\n' "$(make -s print-web-url)"
 Sign in with the admin email/password from `.env`.
 
 ## 2. Install the CLI in the project venv
+
+Install the CLI for bootstrap, demos, resource lifecycle operations, and fallback automation. For an integrated coding agent, configure MCP and skills after the project has useful indexed resources.
 
 ```bash
 make venv
@@ -174,6 +199,8 @@ sourcebrief resource restore --resource-id "$RESOURCE_ID"
 
 ## 5. Ask questions
 
+For humans, `sourcebrief ask` is a convenient proof path. For agents, prefer MCP tools from the configured runtime. The CLI answer path is still useful as a fallback when you are debugging runtime setup or running automation outside an MCP-capable agent.
+
 Human-readable CLI answer:
 
 ```bash
@@ -197,7 +224,7 @@ MCP-capable agents should start broad, then drill down:
 
 ## 6. Connect an agent runtime
 
-Use the short guided path first:
+This is the important agent path. Use the short guided path first:
 
 ```bash
 sourcebrief runtime setup hermes \

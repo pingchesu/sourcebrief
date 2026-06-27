@@ -50,7 +50,7 @@ PROJECT_ID=$(sourcebrief --json project create \
   | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
 
-The CLI is automation-oriented and currently uses IDs. The web UI is the easier human path when choosing existing workspaces and projects by name.
+The CLI is automation-oriented and supports name-first workspace/project selection for normal use, while IDs remain advanced/debug escape hatches. For agent runtimes, MCP plus generated skills are the primary path; CLI commands are useful for bootstrap, validation, resource lifecycle automation, and fallback debugging.
 
 ## 3. Add and index the source
 

@@ -62,7 +62,7 @@ connect sources
     -> build chunks, embeddings, code symbols, and graphs
     -> review freshness, coverage, and low-value context
     -> publish pinned Context Packs when a workflow needs reviewed evidence
-    -> serve cited evidence through Workbench, HTTP, CLI, or MCP
+    -> serve cited evidence through MCP for agents, Workbench for humans, and CLI/HTTP for setup and automation
 ```
 
 | Layer | What it means |
@@ -71,7 +71,7 @@ connect sources
 | Snapshots | Exact indexed versions with commit, content hash, path, and timestamp provenance. |
 | Evidence index | Chunks, retained sections, embeddings, code symbols, graph nodes/edges, and citation locators. |
 | Review artifacts | Resource Maps, freshness, coverage, Context Packs, and Skill Exports for repeatable workflows. |
-| Runtime access | Workbench, HTTP API, CLI, and project-scoped MCP tools for agents. |
+| Runtime access | Project-scoped MCP tools for agents, Workbench for humans, and CLI/HTTP for setup, CI, and fallback automation. |
 
 A SourceBrief project is a context boundary for a product, service, or repo group. Put multiple repos, runbooks, architecture notes, URLs, uploads, and zip/folder bundles into one project, then let agents ask one authorized endpoint for evidence across the resources they are allowed to see.
 
@@ -89,7 +89,7 @@ coding agent gets an issue
     -> explains the change with citations instead of vibes
 ```
 
-Start broad with `sourcebrief.ask` or `sourcebrief.discover`. Use `sourcebrief.lookup` for docs/code/symbol discovery. Drill down with `sourcebrief.search`, `sourcebrief.read_section`, `sourcebrief.search_code`, `sourcebrief.grep_code`, `sourcebrief.read_file`, `sourcebrief.find_symbol`, and graph tools when the task needs exact evidence. Use SourceBrief to know where to look and what to trust; use the coding agent's normal tools to edit, test, commit, and open PRs.
+Start broad with MCP tools such as `sourcebrief.ask` or `sourcebrief.discover`. Use `sourcebrief.lookup` for docs/code/symbol discovery. Drill down with `sourcebrief.search`, `sourcebrief.read_section`, `sourcebrief.search_code`, `sourcebrief.grep_code`, `sourcebrief.read_file`, `sourcebrief.find_symbol`, and graph tools when the task needs exact evidence. Generated skills and agent packs teach this workflow to the runtime. The CLI is still important, but as the human/CI control plane and fallback path for setup, resource lifecycle, and validation—not as the main agent reasoning surface. Use SourceBrief to know where to look and what to trust; use the coding agent's normal tools to edit, test, commit, and open PRs.
 
 For runtime setup, prompts, token scopes, remote-code safety, generated skills, and exact MCP tool guidance, read [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md).
 
