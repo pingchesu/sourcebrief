@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -1043,6 +1043,8 @@ class RemoteSearchCodeRequest(BaseModel):
 
     query: str = Field(min_length=1)
     resource_ids: list[UUID] | None = None
+    resource_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    resource_refs: list[str] | None = Field(default=None, max_length=20)
     top_k: int = Field(default=10, ge=1, le=50)
     cursor: str | None = None
 
@@ -1065,8 +1067,12 @@ class RemoteSearchCodeResponse(BaseModel):
 
 
 class RemoteGrepCodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     pattern: str = Field(min_length=1)
     resource_ids: list[UUID] | None = None
+    resource_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    resource_refs: list[str] | None = Field(default=None, max_length=20)
     path_glob: str | None = None
     max_matches: int = Field(default=50, ge=1, le=100)
     cursor: str | None = None
@@ -1093,7 +1099,10 @@ class RemoteGrepCodeResponse(BaseModel):
 
 
 class RemoteReadFileRequest(BaseModel):
-    resource_id: UUID
+    model_config = ConfigDict(extra="forbid")
+
+    resource_id: UUID | None = None
+    resource_ref: str | None = Field(default=None, min_length=1, max_length=200)
     path: str = Field(min_length=1)
     start_line: int = Field(default=1, ge=1)
     end_line: int | None = Field(default=None, ge=1)
@@ -1112,10 +1121,56 @@ class RemoteReadFileResponse(BaseModel):
 
 
 class RemoteFindSymbolRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1)
     kind: str | None = None
     resource_ids: list[UUID] | None = None
+    resource_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    resource_refs: list[str] | None = Field(default=None, max_length=20)
     top_k: int = Field(default=20, ge=1, le=100)
+
+
+class RemoteCodeRpcCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | int | None = None
+    method: Literal["sourcebrief.code.search", "sourcebrief.code.grep", "sourcebrief.code.read_batch", "sourcebrief.code.lookup_plan"]
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class RemoteCodeRpcRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    calls: list[RemoteCodeRpcCall] = Field(min_length=1, max_length=20)
+    fail_fast: bool = False
+
+
+class RemoteCodeRpcCallResult(BaseModel):
+    id: str | int | None = None
+    method: str
+    status: Literal["ok", "partial", "error"]
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+    telemetry: dict[str, Any] = Field(default_factory=dict)
+
+
+class RemoteCodeRpcResponse(BaseModel):
+    workspace_id: UUID
+    project_id: UUID
+    status: Literal["ok", "partial", "error"]
+    results: list[RemoteCodeRpcCallResult]
+    telemetry: dict[str, Any] = Field(default_factory=dict)
+
+
+class RemoteCodeRpcSpecResponse(BaseModel):
+    schema_version: str
+    transport: str
+    endpoints: dict[str, str]
+    methods: dict[str, dict[str, Any]]
+    auth: dict[str, Any]
+    budgets: dict[str, Any]
+    failure_modes: dict[str, Any]
 
 
 class RemoteFindSymbolResponse(BaseModel):

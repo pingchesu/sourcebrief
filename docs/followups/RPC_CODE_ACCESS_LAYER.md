@@ -1,6 +1,6 @@
 # RPC code access layer beside MCP
 
-Status: Proposed follow-up for issue #134
+Status: Implemented first read-only batch/RPC surface for issue #134
 Owner: SourceBrief runtime/retrieval
 Decision: keep MCP as the agent entry point; add a lower-level HTTP/JSON-RPC batch surface for high-throughput code access.
 
@@ -34,17 +34,20 @@ MCP tools may call the RPC layer server-side. Advanced agents/SDKs may request t
 - Do not create source-control write, test execution, PR, or deploy capabilities in this layer.
 - Do not ask the model to invent endpoint schemas from prose.
 
-## Proposed routes
+## Implemented routes
 
-Use normal HTTP endpoints first, with an optional JSON-RPC envelope for clients that want batch RPC semantics.
+SourceBrief now exposes the JSON/RPC-style batch route beside the existing single-operation `remote-code/*` HTTP endpoints.
 
-### REST-style routes
+### HTTP routes
 
 ```http
-POST /workspaces/{workspace_id}/projects/{project_id}/code/search:batch
-POST /workspaces/{workspace_id}/projects/{project_id}/code/grep:batch
-POST /workspaces/{workspace_id}/projects/{project_id}/code/read:batch
 POST /workspaces/{workspace_id}/projects/{project_id}/code/rpc
+GET  /workspaces/{workspace_id}/projects/{project_id}/code/rpc/spec
+
+POST /workspaces/{workspace_id}/projects/{project_id}/remote-code/search_code  # legacy/single call
+POST /workspaces/{workspace_id}/projects/{project_id}/remote-code/grep_code    # legacy/single call
+POST /workspaces/{workspace_id}/projects/{project_id}/remote-code/read_file    # legacy/single call
+POST /workspaces/{workspace_id}/projects/{project_id}/remote-code/find_symbol  # legacy/single call
 ```
 
 ### JSON-RPC methods
@@ -56,89 +59,60 @@ sourcebrief.code.read_batch
 sourcebrief.code.lookup_plan
 ```
 
-`code/rpc` accepts either one JSON-RPC request or a JSON-RPC batch array. Batch calls are evaluated under one caller principal and one request-level budget envelope.
+`code/rpc` accepts a `calls` array. Batch calls are evaluated under one caller principal and each call returns its own `ok`/`error` result. The batch-level status is `ok`, `partial`, or `error`.
+
+MCP also exposes `sourcebrief.get_rpc_spec`, which returns the exact route/method/auth/budget/failure-mode contract so agents do not invent payloads from prose.
 
 ## Request schema sketch
 
 ```json
 {
-  "resource_ref": "sourcebrief",
-  "resource_ids": null,
-  "context_pack_key": null,
-  "context_pack_version": null,
-  "query": "class SkillExport",
-  "pattern": "SkillExport",
-  "path_glob": "apps/api/**/*.py",
-  "regex": false,
-  "max_matches": 50,
-  "cursor": null,
-  "budget": {
-    "max_files_scanned": 2000,
-    "max_bytes_scanned": 20000000,
-    "deadline_ms": 3000
-  },
-  "include": {
-    "snippets": true,
-    "symbols": true,
-    "telemetry": true
-  }
+  "calls": [
+    {
+      "id": "plan",
+      "method": "sourcebrief.code.lookup_plan",
+      "params": {"query": "SkillExport", "resource_ref": "sourcebrief"}
+    },
+    {
+      "id": "grep",
+      "method": "sourcebrief.code.grep",
+      "params": {"pattern": "SkillExport", "resource_ref": "sourcebrief", "path_glob": "apps/api/**", "max_matches": 20}
+    },
+    {
+      "id": "read",
+      "method": "sourcebrief.code.read_batch",
+      "params": {"files": [{"resource_ref": "sourcebrief", "path": "apps/api/sourcebrief_api/main.py", "start_line": 1, "end_line": 80}]}
+    }
+  ],
+  "fail_fast": false
 }
 ```
 
 Rules:
 
-- `resource_ref` is allowed only when it resolves to exactly one authorized resource.
-- `resource_ids` may list multiple authorized resources for cross-repo comparisons.
-- `context_pack_key/version` narrows the search to the pack intersection; it must not widen access.
+- `resource_ref` is the preferred user-facing locator and is allowed only when it resolves to exactly one authorized resource.
+- `resource_ids` may list multiple authorized resources for cross-repo comparisons and remain an advanced/debug escape hatch.
 - `path_glob` is strongly recommended for grep. Broad grep without it may return fail-soft warnings and retry guidance.
-- `budget` is explicit and echoed back in the response.
+- Budgets are fixed server-side for now and returned by `GET /code/rpc/spec` / MCP `sourcebrief.get_rpc_spec`.
 
 ## Response schema sketch
 
 ```json
 {
-  "status": "ok|partial|budget_exceeded|stale_snapshot|not_queryable|forbidden",
+  "workspace_id": "...",
+  "project_id": "...",
+  "status": "ok|partial|error",
   "results": [
     {
-      "resource_id": "res_xxx",
-      "resource_ref": "sourcebrief",
-      "snapshot_id": "snap_xxx",
-      "indexed_commit": "abc123",
-      "path": "apps/api/sourcebrief_api/main.py",
-      "start_line": 1261,
-      "end_line": 1278,
-      "snippet": "class SkillExport(...)",
-      "symbol_keys": ["python:SkillExport"],
-      "citation": {
-        "locator": "read_file(resource_ref='sourcebrief', path='apps/api/sourcebrief_api/main.py', start_line=1261, end_line=1278)",
-        "content_hash": "sha256:..."
-      }
+      "id": "grep",
+      "method": "sourcebrief.code.grep",
+      "status": "ok",
+      "result": {"matches": []},
+      "error": null,
+      "telemetry": {"elapsed_ms": 184.0}
     }
   ],
-  "warnings": [
-    {
-      "code": "budget_exceeded",
-      "message": "remote code scan exceeded max_bytes_scanned",
-      "retry_guidance": [
-        "Call sourcebrief.ask or lookup(search_in='docs') first, then grep cited directories.",
-        "Retry with path_glob such as 'apps/api/**' or an exact cited path."
-      ]
-    }
-  ],
-  "page": {
-    "next_cursor": "opaque-cursor-or-null"
-  },
-  "telemetry": {
-    "elapsed_ms": 184,
-    "files_scanned": 132,
-    "bytes_scanned": 1849233,
-    "cache_hit": false,
-    "budget": {
-      "max_files_scanned": 2000,
-      "max_bytes_scanned": 20000000,
-      "deadline_ms": 3000
-    }
-  }
+  "telemetry": {"elapsed_ms": 210.0, "call_count": 1, "error_count": 0}
 }
 ```
 
@@ -146,7 +120,7 @@ Rules:
 
 MCP remains the primary agent-facing surface.
 
-Add or extend MCP guidance with:
+MCP guidance now includes:
 
 - `sourcebrief.get_runtime_help` — returns MCP vs CLI vs RPC usage guidance for a runtime.
 - `sourcebrief.get_rpc_spec` — returns the exact machine-readable RPC schema, auth requirements, budget defaults, and examples.
@@ -184,23 +158,23 @@ Every RPC response and backing MCP call should make these visible in logs/teleme
 
 ## Migration path
 
-1. Keep current MCP tools and fail-soft behavior.
-2. Add internal service functions shared by MCP and HTTP RPC.
-3. Add read-only REST batch endpoints behind existing auth/scopes.
-4. Add JSON-RPC envelope if SDK/client demand exists.
-5. Add MCP `get_rpc_spec` and `get_runtime_help` only after the RPC schema is stable.
+1. Keep current MCP tools and fail-soft behavior. ✅
+2. Add internal service functions shared by MCP and HTTP RPC. ✅
+3. Add read-only JSON/RPC batch endpoint behind existing auth/scopes. ✅
+4. Add MCP `get_rpc_spec` so models do not invent payloads. ✅
+5. Keep REST `search:batch`/`grep:batch`/`read:batch` wrappers as optional future SDK ergonomics if clients dislike the RPC envelope.
 6. Add benchmark/QA smoke comparing MCP broad grep and RPC batch grep on the same indexed fixture.
 
 ## Acceptance criteria
 
-- [ ] Architecture doc lands and links from docs index.
-- [ ] Endpoint schemas have Pydantic/request-response tests.
-- [ ] Scope tests prove token/resource/project narrowing is identical to MCP.
-- [ ] Broad grep budget tests prove partial/fail-soft response and retry guidance.
-- [ ] Batch read/search tests prove cursor/telemetry fields.
-- [ ] MCP `get_rpc_spec` returns exact schema and does not require the model to invent payloads.
-- [ ] QA smoke or integration gate exercises one real indexed repo snapshot through RPC and MCP.
+- [x] Architecture doc lands and links from docs index.
+- [x] Endpoint schemas have Pydantic/request-response tests.
+- [x] Scope tests prove token/resource/project narrowing is identical to MCP.
+- [x] Broad grep budget tests prove partial/fail-soft response and retry guidance.
+- [x] Batch read/search tests prove telemetry fields. Cursor remains reserved because existing single-operation remote-code responses do not page yet.
+- [x] MCP `get_rpc_spec` returns exact schema and does not require the model to invent payloads.
+- [x] Integration gate exercises one real indexed repo snapshot through RPC and MCP.
 
 ## README timing decision
 
-Do not refactor the public README around RPC until at least the API schema, auth behavior, and one real example are implemented. For now, README should mention MCP as the default runtime path and link to this follow-up/spec as planned high-throughput code access.
+Keep the public README centered on MCP as the default runtime path. RPC is now implemented enough to document under runtime/code-access docs, but it should not become the primary README story until an SDK/client asks for it or benchmark evidence shows it materially improves a launch workflow.

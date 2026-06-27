@@ -199,6 +199,56 @@ def test_remote_code_http_and_mcp_flow(tmp_path) -> None:
     assert not mcp_read_result.get("isError"), mcp_read_result
     assert "reconcile_cart" in mcp_read_result["structuredContent"]["content"]
 
+    rpc_spec = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/code/rpc/spec", headers=headers)
+    assert rpc_spec.status_code == 200, rpc_spec.text
+    spec = rpc_spec.json()
+    assert spec["schema_version"] == "sourcebrief.remote-code-rpc.v1"
+    assert "sourcebrief.code.read_batch" in spec["methods"]
+    assert spec["auth"]["resource_resolution"].startswith("Prefer resource_ref")
+
+    mcp_rpc_spec = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        json={"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "sourcebrief.get_rpc_spec", "arguments": {}}},
+        headers=headers,
+    )
+    assert mcp_rpc_spec.status_code == 200, mcp_rpc_spec.text
+    assert "sourcebrief.code.grep" in mcp_rpc_spec.json()["result"]["structuredContent"]["methods"]
+
+    rpc = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/code/rpc",
+        json={
+            "calls": [
+                {"id": "plan", "method": "sourcebrief.code.lookup_plan", "params": {"query": "checkoutrepo42", "resource_ref": "Remote Code Repo"}},
+                {"id": "grep", "method": "sourcebrief.code.grep", "params": {"pattern": "checkoutrepo42", "resource_ref": "Remote Code Repo", "path_glob": "src/*.py"}},
+                {"id": "read", "method": "sourcebrief.code.read_batch", "params": {"files": [{"resource_ref": "Remote Code Repo", "path": "src/checkout.py", "start_line": 1, "end_line": 7}]}},
+            ]
+        },
+        headers=headers,
+    )
+    assert rpc.status_code == 200, rpc.text
+    rpc_body = rpc.json()
+    assert rpc_body["status"] == "ok"
+    assert [item["id"] for item in rpc_body["results"]] == ["plan", "grep", "read"]
+    assert rpc_body["results"][1]["result"]["matches"][0]["path"] == "src/checkout.py"
+    assert "reconcile_cart" in rpc_body["results"][2]["result"]["files"][0]["content"]
+    assert "/tmp" not in str(rpc_body)
+
+    rpc_partial = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/code/rpc",
+        json={
+            "calls": [
+                {"id": "ok", "method": "sourcebrief.code.grep", "params": {"pattern": "checkoutrepo42", "resource_ref": "Remote Code Repo", "path_glob": "README.md"}},
+                {"id": "bad", "method": "sourcebrief.code.read_batch", "params": {"files": [{"resource_ref": "Remote Code Repo", "path": "../secret"}]}},
+            ]
+        },
+        headers=headers,
+    )
+    assert rpc_partial.status_code == 200, rpc_partial.text
+    partial_body = rpc_partial.json()
+    assert partial_body["status"] == "partial"
+    assert partial_body["results"][1]["status"] == "error"
+    assert partial_body["results"][1]["error"]["status_code"] == 422
+
 
 def test_lookup_all_fails_soft_when_code_scan_budget_exceeded(tmp_path, monkeypatch) -> None:
     require_real_services()
