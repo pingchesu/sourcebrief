@@ -1466,6 +1466,20 @@ def _git_env_read(resource: Resource) -> GitResourceEnvRead:
     )
 
 
+_ENV_VAR_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
+
+
+def _validate_auth_token_env(value: object) -> str | None:
+    if value is None:
+        return None
+    env_name = str(value).strip()
+    if not env_name:
+        return None
+    if not _ENV_VAR_NAME_RE.match(env_name):
+        raise HTTPException(status_code=422, detail="auth_token_env must be an environment variable name, not a raw token value")
+    return env_name
+
+
 def _require_project_access(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal) -> Project:
     """Resolve a project and enforce visibility/membership plus token project scope."""
     require_workspace_member(session, workspace_id, principal)
@@ -1543,6 +1557,11 @@ def _validate_source_config(resource_type: str, uri: str, source_config: dict) -
                 allow_local=os.getenv("SOURCEBRIEF_ALLOW_LOCAL_GIT", os.getenv("CONTEXTSMITH_ALLOW_LOCAL_GIT", "false")).lower() == "true",
             )
             config["url"] = target if _is_local else sanitize_remote_url(target)
+            auth_token_env = _validate_auth_token_env(config.get("auth_token_env"))
+            if auth_token_env is None:
+                config.pop("auth_token_env", None)
+            else:
+                config["auth_token_env"] = auth_token_env
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     if rtype in UPLOAD_RESOURCE_TYPES:

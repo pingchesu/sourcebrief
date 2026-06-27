@@ -467,6 +467,34 @@ def test_agent_files_and_git_env_surface_repo_agent_outputs() -> None:
     assert env_list.status_code == 200, env_list.text
     assert env_list.json()[0]["branch"] == "main"
 
+    private_repo = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={
+            "type": "git",
+            "name": "Private Runtime Repo",
+            "uri": "https://github.com/owner/private-runtime.git",
+            "source_config": {"url": "https://github.com/owner/private-runtime.git", "branch": "main", "auth_token_env": "GITHUB_TOKEN_FOR_SOURCEBRIEF"},
+        },
+        headers=headers,
+    )
+    assert private_repo.status_code == 201, private_repo.text
+    private_repo_id = private_repo.json()["id"]
+    env_list = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/git-env", headers=headers)
+    assert any(row["resource_id"] == private_repo_id and row["auth_token_env"] == "GITHUB_TOKEN_FOR_SOURCEBRIEF" for row in env_list.json())
+
+    invalid_private_repo = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        json={
+            "type": "git",
+            "name": "Raw Token Repo",
+            "uri": "https://github.com/owner/raw-token.git",
+            "source_config": {"url": "https://github.com/owner/raw-token.git", "auth_token_env": "ghp_raw-token-value"},
+        },
+        headers=headers,
+    )
+    assert invalid_private_repo.status_code == 422
+    assert "environment variable name" in invalid_private_repo.text
+
     patched = client.patch(
         f"/workspaces/{workspace_id}/projects/{project_id}/resources/{repo_id}/git-env",
         json={"branch": "develop", "auth_token_env": "GITHUB_TOKEN_FOR_SOURCEBRIEF", "update_frequency": "weekly"},

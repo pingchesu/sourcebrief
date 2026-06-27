@@ -74,6 +74,79 @@ test('first-source form submits, refreshes, and shows next value actions', async
   await expect(page.getByRole('link', { name: 'Ask in Workbench' })).toBeVisible();
 });
 
+test('git connect supports public and private env-var flows before refresh', async ({ page }) => {
+  const workspaceId = 'workspace-private-git';
+  const projectId = 'project-private-git';
+  const createdResources: Array<Record<string, unknown>> = [];
+  await page.addInitScript(({ workspaceId, projectId }) => {
+    window.localStorage.setItem('sourcebrief.platform.settings.v2', JSON.stringify({ apiBaseUrl: '', workspaceId, projectId }));
+    window.sessionStorage.setItem('sourcebrief.platform.session.v2', 'test-session');
+  }, { workspaceId, projectId });
+  await page.route('**/*', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname;
+    if (path === '/auth/me') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ user: { id: 'user-1', email: 'admin@example.test', role: 'admin' }, default_workspace_id: workspaceId, default_project_id: projectId, workspaces: [{ id: workspaceId, name: 'Test workspace' }], projects_by_workspace: { [workspaceId]: [{ id: projectId, name: 'Test project' }] }, memberships: [] }) });
+    if (path === '/provider-health') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', embedding: { namespace: 'test', dev_quality: true, status: 'ok', provider: 'test', model: 'test' } }) });
+    if (path === `/workspaces/${workspaceId}/agents`) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    if (path === `/workspaces/${workspaceId}/projects/${projectId}/agent-profile`) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'agent-1', name: 'Test agent', description: '', default_runtime: 'hermes', resource_count: createdResources.length, current_snapshot_count: 0, graph_node_count: 0, graph_edge_count: 0 }) });
+    if (path === `/workspaces/${workspaceId}/projects/${projectId}/resources` && request.method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(createdResources) });
+    if (path === `/workspaces/${workspaceId}/projects/${projectId}/resource-review`) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ resources: [] }) });
+    if (path === `/workspaces/${workspaceId}/projects/${projectId}/resource-usage`) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ resources: [] }) });
+    if (path === `/workspaces/${workspaceId}/members` || path === `/workspaces/${workspaceId}/audit-events`) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    if (path === `/workspaces/${workspaceId}/projects/${projectId}/git-env`) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(createdResources.filter((item) => item.type === 'git').map((item) => ({ resource_id: item.id, name: item.name, uri: item.uri, branch: (item.source_config as Record<string, unknown>).branch ?? null, auth_token_env: (item.source_config as Record<string, unknown>).auth_token_env ?? null, clone_timeout: null, max_file_bytes: null, max_repo_files: null, max_repo_bytes: null, update_frequency: item.update_frequency, next_refresh_at: null }))) });
+    if (path === `/workspaces/${workspaceId}/projects/${projectId}/resources` && request.method() === 'POST') {
+      const body = request.postDataJSON();
+      const resource = { id: `resource-${createdResources.length + 1}`, workspace_id: workspaceId, project_id: projectId, type: body.type, name: body.name, uri: body.uri, status: 'active', retrieval_enabled: true, update_frequency: body.update_frequency, current_snapshot_id: null, review_status: 'unreviewed', review_note: null, source_config: body.source_config, queryable: false, coverage_status: 'not_indexed', coverage_warnings: [], index_diagnostics: {}, source_family_label: null, version_label: null, last_refresh_finished_at: null };
+      createdResources.push(resource);
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(resource) });
+    }
+    if (/\/workspaces\/[^/]+\/projects\/[^/]+\/resources\/[^/]+\/refresh$/.test(path)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'queued' }) });
+    if (/\/workspaces\/[^/]+\/projects\/[^/]+\/resources\/[^/]+\/snapshots$/.test(path) || /\/workspaces\/[^/]+\/projects\/[^/]+\/resources\/[^/]+\/index-runs$/.test(path)) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    if (/\/workspaces\/[^/]+\/projects\/[^/]+\/resources\/[^/]+\/graph$/.test(path)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ node_count: 0, edge_count: 0 }) });
+    return route.continue();
+  });
+
+  const privateStamp = Date.now();
+  await page.goto('/sources');
+  await page.getByRole('button', { name: 'Connect source' }).first().click();
+  const form = page.getByRole('form', { name: 'Connect source form' });
+  await expect(form.getByText(/environment variable name only/)).toBeVisible();
+  await form.getByRole('textbox', { name: 'Name', exact: true }).fill(`Private Git ${privateStamp}`);
+  await form.getByLabel('Git URL').fill(`https://github.com/example/private-${privateStamp}.git`);
+  await form.getByLabel('Branch').fill('main');
+  await form.getByPlaceholder('GITHUB_TOKEN_FOR_SOURCEBRIEF').fill('GITHUB_TOKEN_FOR_SOURCEBRIEF');
+
+  const events: string[] = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === 'POST' && /\/workspaces\/[^/]+\/projects\/[^/]+\/resources$/.test(pathname)) events.push('resource');
+    if (request.method() === 'POST' && /\/resources\/[^/]+\/refresh$/.test(pathname)) events.push('refresh');
+  });
+  const privateResourceRequest = page.waitForRequest((request) => request.method() === 'POST' && /\/workspaces\/[^/]+\/projects\/[^/]+\/resources$/.test(new URL(request.url()).pathname));
+  const privateRefreshRequest = page.waitForRequest((request) => request.method() === 'POST' && /\/resources\/[^/]+\/refresh$/.test(new URL(request.url()).pathname));
+  await form.getByRole('button', { name: 'Connect source' }).click();
+  const privateCreate = await privateResourceRequest;
+  expect(privateCreate.postDataJSON().source_config.auth_token_env).toBe('GITHUB_TOKEN_FOR_SOURCEBRIEF');
+  await privateRefreshRequest;
+  expect(events.slice(-2)).toEqual(['resource', 'refresh']);
+  await expect(page.getByText('Source connected.')).toBeVisible();
+  await expect(page.getByRole('form', { name: 'Git environment form' }).getByLabel('Git auth token env var')).toHaveValue('GITHUB_TOKEN_FOR_SOURCEBRIEF');
+
+  const publicStamp = Date.now();
+  await form.getByRole('textbox', { name: 'Name', exact: true }).fill(`Public Git ${publicStamp}`);
+  await form.getByLabel('Git URL').fill(`https://github.com/example/public-${publicStamp}.git`);
+  await form.getByLabel('Branch').fill('main');
+  await form.getByPlaceholder('GITHUB_TOKEN_FOR_SOURCEBRIEF').fill('');
+  await expect(form.getByPlaceholder('GITHUB_TOKEN_FOR_SOURCEBRIEF')).toHaveValue('');
+  const publicResourceRequest = page.waitForRequest((request) => request.method() === 'POST' && /\/workspaces\/[^/]+\/projects\/[^/]+\/resources$/.test(new URL(request.url()).pathname));
+  const publicRefreshRequest = page.waitForRequest((request) => request.method() === 'POST' && /\/resources\/[^/]+\/refresh$/.test(new URL(request.url()).pathname));
+  await form.getByRole('button', { name: 'Connect source' }).click();
+  const publicCreate = await publicResourceRequest;
+  expect(publicCreate.postDataJSON().source_config.auth_token_env).toBeUndefined();
+  await publicRefreshRequest;
+});
+
 test('first-source form shows actionable backend errors and preserves input', async ({ page }) => {
   await login(page);
   await fillSampleMarkdown(page);
@@ -98,4 +171,5 @@ test('settings routes source creation to the canonical Sources page', async ({ p
   await expect(page.getByRole('heading', { name: 'Source lifecycle moved to Sources' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open Sources' })).toHaveAttribute('href', '/sources');
   await expect(page.getByRole('button', { name: 'Add source' })).toHaveCount(0);
+  await expect(page.getByText(/named connections/i)).toHaveCount(0);
 });

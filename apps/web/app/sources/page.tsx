@@ -9,7 +9,7 @@ import { freshnessLabel, isActive, isIndexFailed, isVisible, lifecycleStages, re
 import type { AgentContextResponse, ContextArtifact, ContextPackSummary, ContextPackVersion, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, SectionImpact, SkillExport, SnapshotSections, ReviewItem } from '../../lib/types';
 
 type ResourceType = 'git' | 'url' | 'markdown' | 'upload' | 'folder_bundle';
-type GitDraft = { branch: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
+type GitDraft = { branch: string; auth_token_env: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
 
 const SAMPLE_MARKDOWN = `# SourceBrief sample runbook
 
@@ -36,6 +36,7 @@ function defaultName(type: ResourceType) {
 function toGitDraft(env: GitResourceEnv | null): GitDraft {
   return {
     branch: env?.branch ?? '',
+    auth_token_env: env?.auth_token_env ?? '',
     clone_timeout: env?.clone_timeout?.toString() ?? '',
     max_file_bytes: env?.max_file_bytes?.toString() ?? '',
     max_repo_files: env?.max_repo_files?.toString() ?? '',
@@ -95,6 +96,7 @@ export default function SourcesPage() {
   const [name, setName] = useState(defaultName('git'));
   const [uri, setUri] = useState(defaultUri('git'));
   const [branch, setBranch] = useState('main');
+  const [authTokenEnv, setAuthTokenEnv] = useState('');
   const [frequency, setFrequency] = useState('daily');
   const [content, setContent] = useState('');
   const [filename, setFilename] = useState('notes.txt');
@@ -275,6 +277,8 @@ export default function SourcesPage() {
     setUri(defaultUri(next));
     setName(defaultName(next));
     setContent(next === 'markdown' ? SAMPLE_MARKDOWN : '');
+    setBranch(next === 'git' ? 'main' : branch);
+    setAuthTokenEnv('');
     setFilename(next === 'upload' ? 'notes.txt' : filename);
     setSupersedesResourceId(null);
     setFrequency(next === 'folder_bundle' ? 'manual' : 'daily');
@@ -286,6 +290,8 @@ export default function SourcesPage() {
     setName('SourceBrief sample runbook');
     setUri('doc://sourcebrief-sample-runbook.md');
     setContent(SAMPLE_MARKDOWN);
+    setBranch('main');
+    setAuthTokenEnv('');
     setFrequency('manual');
     setRefreshNow(true);
     setZipFile(null);
@@ -300,6 +306,7 @@ export default function SourcesPage() {
     setName(defaultName('git'));
     setUri(defaultUri('git'));
     setBranch('main');
+    setAuthTokenEnv('');
     setFrequency('daily');
     setContent('');
     setFilename('notes.txt');
@@ -314,6 +321,8 @@ export default function SourcesPage() {
     setConnectOpen(true);
     setType('folder_bundle');
     setFrequency('manual');
+    setBranch('main');
+    setAuthTokenEnv('');
     setName(resource.source_family_label || resource.name);
     setSupersedesResourceId(resource.id);
     setZipFile(null);
@@ -349,8 +358,9 @@ export default function SourcesPage() {
         await selectResource(data.resource.id);
         return;
       }
+      const gitAuthTokenEnv = authTokenEnv.trim();
       const source_config = type === 'git'
-        ? { url: uri, branch }
+        ? { url: uri, branch, ...(gitAuthTokenEnv ? { auth_token_env: gitAuthTokenEnv } : {}) }
         : type === 'url'
           ? { url: uri }
           : type === 'upload'
@@ -562,6 +572,7 @@ export default function SourcesPage() {
         method: 'PATCH',
         body: JSON.stringify({
           branch: gitDraft.branch.trim() || null,
+          auth_token_env: gitDraft.auth_token_env.trim() || null,
           clone_timeout: optionalNumber(gitDraft.clone_timeout),
           max_file_bytes: optionalNumber(gitDraft.max_file_bytes),
           max_repo_files: optionalNumber(gitDraft.max_repo_files),
@@ -676,7 +687,7 @@ export default function SourcesPage() {
           <Field label="Source type"><select className="input" value={type} onChange={(event) => changeType(event.target.value as ResourceType)}><option value="git">Git repository</option><option value="folder_bundle">Folder bundle (.zip)</option><option value="url">URL / web page</option><option value="markdown">Markdown / inline doc</option><option value="upload">Upload text</option></select></Field>
           {supersedesResourceId ? <div className="notice">Uploading a new version of {name}. SourceBrief keeps the same family label and compares it to the previous manifest.</div> : <Field label="Name"><input className="input" value={name} onChange={(event) => setName(event.target.value)} /></Field>}
           {type !== 'folder_bundle' ? <Field label={type === 'git' ? 'Git URL' : type === 'url' ? 'URL' : 'URI / path'}><input className="input" value={uri} onChange={(event) => setUri(event.target.value)} /></Field> : null}
-          {type === 'git' ? <div className="grid two"><Field label="Branch"><input className="input" value={branch} onChange={(event) => setBranch(event.target.value)} /></Field></div> : null}
+          {type === 'git' ? <div className="grid two"><Field label="Branch"><input className="input" value={branch} onChange={(event) => setBranch(event.target.value)} /></Field><Field label="Auth token env var"><input className="input" value={authTokenEnv} onChange={(event) => setAuthTokenEnv(event.target.value)} placeholder="GITHUB_TOKEN_FOR_SOURCEBRIEF" /><div className="muted">Optional for private repos. Enter the worker environment variable name only; never paste a raw token.</div></Field></div> : null}
           {type === 'folder_bundle' ? <Field label="Folder bundle zip"><input className="input" type="file" accept=".zip,application/zip" onChange={(event) => setZipFile(event.target.files?.[0] ?? null)} /><div className="muted">Upload a zipped folder. SourceBrief validates paths and archives before indexing.</div></Field> : null}
           {type === 'upload' ? <Field label="Filename"><input className="input" value={filename} onChange={(event) => setFilename(event.target.value)} /></Field> : null}
           {type === 'markdown' || type === 'upload' ? <Field label="Content"><textarea className="input" rows={8} value={content} onChange={(event) => setContent(event.target.value)} /></Field> : null}
@@ -745,6 +756,26 @@ export default function SourcesPage() {
             {selectedResource.coverage_warnings?.length ? <div className="notice error"><strong>Coverage warning</strong>{selectedResource.coverage_warnings.map((warning, index) => <div key={index} className="muted">{warning}</div>)}{selectedReview?.last_index_error_message ? <div className="muted">Last index error: {selectedReview.last_index_error_message}</div> : null}</div> : null}
             {selectedResource.coverage_status === 'partial' ? <div className="notice error"><strong>Partial corpus — answer with caveat</strong><div className="muted">{Object.entries(selectedResource.index_diagnostics?.configured_budgets ?? {}).map(([key, value]) => `${key}=${value}`).join(', ') || 'limited import profile'}</div>{selectedResource.index_diagnostics?.suggested_retry ? <div className="muted">Retry guidance: {selectedResource.index_diagnostics.suggested_retry}</div> : null}</div> : null}
             <div><div className="label">Source location</div><div className="muted">{selectedResource.uri}</div></div>
+            {isGit ? <form className="notice grid" aria-label="Git environment form" onSubmit={saveGitEnv}>
+              <div><strong>Git environment</strong><div className="muted">Configure private-repo access with a server-side environment variable reference. SourceBrief stores the env var name, not the token value.</div></div>
+              {gitEnvLoading ? <div className="muted">Loading Git environment…</div> : null}
+              {gitEnvError ? <div className="notice error">{gitEnvError}</div> : null}
+              {gitEnvSaved ? <div className="notice">Git environment saved.</div> : null}
+              <div className="grid two">
+                <Field label="Git branch"><input className="input" value={gitDraft.branch} onChange={(event) => setGitDraft((draft) => ({ ...draft, branch: event.target.value }))} placeholder="main" /></Field>
+                <Field label="Git auth token env var"><input className="input" value={gitDraft.auth_token_env} onChange={(event) => setGitDraft((draft) => ({ ...draft, auth_token_env: event.target.value }))} placeholder="GITHUB_TOKEN_FOR_SOURCEBRIEF" /><div className="muted">Use an environment variable present on the worker/API host. Do not paste a raw token.</div></Field>
+              </div>
+              <div className="grid three">
+                <Field label="Clone timeout seconds"><input className="input" inputMode="numeric" value={gitDraft.clone_timeout} onChange={(event) => setGitDraft((draft) => ({ ...draft, clone_timeout: event.target.value }))} placeholder="120" /></Field>
+                <Field label="Max file bytes"><input className="input" inputMode="numeric" value={gitDraft.max_file_bytes} onChange={(event) => setGitDraft((draft) => ({ ...draft, max_file_bytes: event.target.value }))} placeholder="200000" /></Field>
+                <Field label="Max repo files"><input className="input" inputMode="numeric" value={gitDraft.max_repo_files} onChange={(event) => setGitDraft((draft) => ({ ...draft, max_repo_files: event.target.value }))} placeholder="500" /></Field>
+              </div>
+              <div className="grid two">
+                <Field label="Max repo bytes"><input className="input" inputMode="numeric" value={gitDraft.max_repo_bytes} onChange={(event) => setGitDraft((draft) => ({ ...draft, max_repo_bytes: event.target.value }))} placeholder="50000000" /></Field>
+                <Field label="Git update frequency"><select className="input" value={gitDraft.update_frequency} onChange={(event) => setGitDraft((draft) => ({ ...draft, update_frequency: event.target.value }))}><option value="manual">manual</option><option value="hourly">hourly</option><option value="daily">daily</option><option value="weekly">weekly</option></select></Field>
+              </div>
+              <button className="btn secondary" disabled={gitEnvBusy} type="submit">{gitEnvBusy ? 'Saving…' : 'Save Git environment'}</button>
+            </form> : null}
             {selectedResource.type === 'folder_bundle' ? <div className="notice">
               <strong>Folder manifest</strong>
               {manifest ? <div className="grid three" style={{ marginTop: 8 }}>
