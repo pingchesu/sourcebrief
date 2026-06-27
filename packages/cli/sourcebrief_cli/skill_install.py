@@ -37,6 +37,10 @@ def canonical_json(data: Any) -> str:
     return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
+def _canonical_package_json(data: Any) -> str:
+    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
 def sha256_bytes(content: bytes) -> str:
     return "sha256:" + hashlib.sha256(content).hexdigest()
 
@@ -132,12 +136,45 @@ def _load_manifest(files: dict[str, bytes]) -> dict[str, Any]:
     return manifest
 
 
+def _verify_package_integrity(files: dict[str, bytes], manifest: dict[str, Any]) -> None:
+    package_inputs = manifest.get("package_hash_inputs")
+    if not isinstance(package_inputs, dict):
+        raise SkillInstallError("manifest is missing package_hash_inputs")
+    input_files = package_inputs.get("files")
+    if not isinstance(input_files, list):
+        raise SkillInstallError("manifest package_hash_inputs.files must be a list")
+    listed: set[str] = set()
+    for item in input_files:
+        if not isinstance(item, dict):
+            raise SkillInstallError("manifest package_hash_inputs.files entries must be objects")
+        rel = _validate_package_path(str(item.get("path") or ""))
+        if rel == "manifest.json":
+            raise SkillInstallError("manifest.json must not be part of package_hash_inputs.files")
+        if rel in listed:
+            raise SkillInstallError(f"duplicate package_hash_inputs file: {rel}")
+        content = files.get(rel)
+        if content is None:
+            raise SkillInstallError(f"package is missing integrity-listed file: {rel}")
+        if item.get("sha256") != sha256_bytes(content):
+            raise SkillInstallError(f"package file hash mismatch: {rel}")
+        if item.get("bytes") != len(content):
+            raise SkillInstallError(f"package file byte count mismatch: {rel}")
+        listed.add(rel)
+    extra_files = set(files) - {"manifest.json"} - listed
+    if extra_files:
+        raise SkillInstallError(f"package contains files not covered by package_hash_inputs: {', '.join(sorted(extra_files))}")
+    computed_package_hash = sha256_bytes((_canonical_package_json(package_inputs) + "\n").encode("utf-8"))
+    if manifest.get("package_hash") != computed_package_hash:
+        raise SkillInstallError("manifest package_hash does not match package_hash_inputs")
+
+
 def load_package(path: Path) -> LoadedPackage:
     source = path.expanduser()
     files = _load_package_zip(source) if source.suffix.lower() == ".zip" else _load_package_dir(source)
     files = {_validate_package_path(rel): content for rel, content in files.items()}
     _detect_plaintext_token(files)
     manifest = _load_manifest(files)
+    _verify_package_integrity(files, manifest)
     return LoadedPackage(source=source, manifest=manifest, files=files, package_hash=str(manifest["package_hash"]))
 
 
@@ -280,27 +317,38 @@ def _load_receipt(path: Path) -> dict[str, Any]:
     return receipt
 
 
+def _resolve_contained_path(root: Path, target: Path, *, kind: str) -> Path:
+    root_resolved = root.expanduser().resolve(strict=False)
+    target_resolved = target.expanduser().resolve(strict=False)
+    if target_resolved != root_resolved and root_resolved not in target_resolved.parents:
+        raise SkillInstallError(f"receipt {kind} escapes installed skill directory: {target}")
+    return target_resolved
+
+
 def uninstall(receipt_file: Path, *, force: bool = False) -> dict[str, Any]:
     receipt_path_expanded = receipt_file.expanduser()
     receipt = _load_receipt(receipt_path_expanded)
     skill_dir = Path(str(receipt.get("skill_dir"))).expanduser()
+    skill_root = skill_dir.resolve(strict=False)
     files = list(receipt["files"])
     removed: list[str] = []
     for record in files:
         target = Path(str(record.get("target_path", ""))).expanduser()
-        if not target.exists():
+        target_resolved = _resolve_contained_path(skill_root, target, kind="target_path")
+        if not target_resolved.exists():
             continue
-        current_hash = sha256_file(target)
+        current_hash = sha256_file(target_resolved)
         expected_hash = record.get("sha256_after")
         if current_hash != expected_hash and not force:
-            raise SkillInstallError(f"installed file was modified; use --force to remove: {target}")
+            raise SkillInstallError(f"installed file was modified; use --force to remove: {target_resolved}")
     for record in reversed(files):
         target = Path(str(record.get("target_path", ""))).expanduser()
-        if target.exists():
-            target.unlink()
-            removed.append(str(target))
-            parent = target.parent
-            while parent != skill_dir.parent and parent.exists():
+        target_resolved = _resolve_contained_path(skill_root, target, kind="target_path")
+        if target_resolved.exists():
+            target_resolved.unlink()
+            removed.append(str(target_resolved))
+            parent = target_resolved.parent
+            while parent != skill_root.parent and parent.exists() and (parent == skill_root or skill_root in parent.parents):
                 try:
                     parent.rmdir()
                 except OSError:

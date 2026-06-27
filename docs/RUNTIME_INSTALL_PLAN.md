@@ -182,8 +182,8 @@ For a manual install, rollback means:
 Use these commands when token revocation is needed:
 
 ```bash
-sourcebrief --json token list --workspace-id "$WORKSPACE_ID"
-sourcebrief --json token revoke --workspace-id "$WORKSPACE_ID" --token-id "$TOKEN_ID"
+sourcebrief --json token list --workspace "Demo Workspace"
+sourcebrief --json token revoke --workspace "Demo Workspace" --token-id "$TOKEN_ID"
 ```
 
 ## Trust boundaries

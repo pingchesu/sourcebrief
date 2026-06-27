@@ -12,6 +12,7 @@ import pytest
 import yaml  # type: ignore[import-untyped]
 
 cli = importlib.import_module("sourcebrief_cli.main")
+skill_install = importlib.import_module("sourcebrief_cli.skill_install")
 cli_main = cli.main
 
 
@@ -427,6 +428,68 @@ def test_cli_use_status_and_ask_defaults(monkeypatch, capsys, tmp_path):
     )
 
 
+def test_explicit_workspace_id_does_not_inherit_saved_project(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-saved", "project_id": "proj-saved"}), encoding="utf-8")
+
+    exit_code = cli_main(["--token", "cs_existing", "--json", "search", "--workspace-id", "ws-explicit", "--query", "demo"])
+
+    assert exit_code == 1
+    assert "--project / --project-id required" in capsys.readouterr().err
+    assert FakeClient.instances[-1].calls == []
+
+
+def test_resource_add_commands_require_scope_before_reading_local_inputs(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    upload = tmp_path / "upload.md"
+    upload.write_text("secret local content\n", encoding="utf-8")
+
+    commands = [
+        ["resource", "add-doc", "--name", "Runbook", "--uri", "doc://runbook", "--content", "hi"],
+        ["resource", "add-repo", "--name", "Repo", "--repo-url", "https://example.test/repo.git"],
+        ["resource", "add-url", "--name", "Page", "--url", "https://example.test/page"],
+        ["resource", "add-upload", "--name", "Upload", "--path", str(upload)],
+    ]
+    for argv in commands:
+        FakeClient.instances.clear()
+        assert cli_main(["--token", "cs_existing", "--json", *argv]) == 1
+        assert "--workspace / --workspace-id" in capsys.readouterr().err
+        assert FakeClient.instances[-1].calls == []
+
+
+def test_name_first_use_logs_in_before_resolving_names(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", "admin@sourcebrief.local")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", "local-password")
+
+    assert cli_main(["--json", "use", "--workspace", "Demo Workspace", "--project", "Demo Project"]) == 0
+    saved = json.loads(capsys.readouterr().out)
+    assert saved["workspace_id"] == "ws-1"
+    assert saved["project_id"] == "proj-1"
+    client = FakeClient.instances[-1]
+    assert client.calls[:3] == [
+        ("POST", "/auth/login", {"email": "admin@sourcebrief.local", "password": "local-password"}, None),
+        ("GET", "/workspaces", None, None),
+        ("GET", "/workspaces/ws-1/projects", None, None),
+    ]
+    assert client.token == "session-for-admin@sourcebrief.local"
+
+
+def test_id_only_use_remains_local_only_with_env_password(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "sourcebrief-config.json"))
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", "admin@sourcebrief.local")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", "local-password")
+
+    assert cli_main(["--json", "use", "--workspace-id", "ws-1", "--project-id", "proj-1"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "saved"
+    assert FakeClient.instances[-1].calls == []
+
+
 def test_cli_login_saves_session_token_and_logout_removes_it(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     config_path = tmp_path / "sourcebrief-config.json"
@@ -753,15 +816,32 @@ def test_cli_skill_export_writes_approved_package_name_first(monkeypatch, capsys
 def test_cli_skill_install_apply_and_uninstall(monkeypatch, capsys, tmp_path):
     package = tmp_path / "package"
     package.mkdir()
-    (package / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
+    skill_content = b"---\nname: demo\n---\n"
+    manifest_hash_content = json.dumps({"schema_version": "sourcebrief.skill-export.v1"}).encode() + b"\n"
+    (package / "SKILL.md").write_bytes(skill_content)
+    (package / "manifest.hash.json").write_bytes(manifest_hash_content)
+    package_inputs = {
+        "schema_version": "sourcebrief.skill-export.v1",
+        "package_kind": "sourcebrief_skill_pack",
+        "export_type": "hermes_skill",
+        "pack_key": "default",
+        "pack_version": 3,
+        "pack_hash": "sha256:" + "b" * 64,
+        "files": [
+            {"path": "SKILL.md", "sha256": skill_install.sha256_bytes(skill_content), "bytes": len(skill_content)},
+            {"path": "manifest.hash.json", "sha256": skill_install.sha256_bytes(manifest_hash_content), "bytes": len(manifest_hash_content)},
+        ],
+    }
+    package_hash = skill_install.sha256_bytes((json.dumps(package_inputs, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
     (package / "manifest.json").write_text(
         json.dumps(
             {
                 "package_kind": "sourcebrief_skill_pack",
                 "export_status": "approved",
-                "package_hash": "sha256:" + "a" * 64,
+                "package_hash": package_hash,
                 "pack_key": "default",
                 "pack_version": 3,
+                "package_hash_inputs": package_inputs,
             }
         )
         + "\n",

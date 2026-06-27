@@ -324,7 +324,9 @@ def _login_with_password(client: SourceBriefClient, email: str, password: str) -
 
 
 def _command_uses_authenticated_api(args: argparse.Namespace) -> bool:
-    if args.command in {"health", "use", "status", "login", "logout"}:
+    if args.command == "use":
+        return bool(getattr(args, "workspace", None) or getattr(args, "project", None))
+    if args.command in {"health", "status", "login", "logout"}:
         return False
     if args.command == "runtime" and getattr(args, "runtime_command", None) in {"detect", "apply", "rollback", "validate"}:
         return False
@@ -374,12 +376,14 @@ def _command_uses_selected_scope(args: argparse.Namespace) -> bool:
 def _apply_selected_defaults(args: argparse.Namespace, config: dict[str, Any]) -> None:
     if not _command_uses_selected_scope(args):
         return
+    workspace_id_explicit = bool(args.__dict__.get("workspace_id"))
     if "workspace_id" in args.__dict__ and not args.__dict__.get("workspace_id") and not getattr(args, "workspace", None):
         args.workspace_id = _selected_value(config, "workspace_id")
     if (
         "project_id" in args.__dict__
         and not args.__dict__.get("project_id")
         and args.command != "token"
+        and not workspace_id_explicit
         and not getattr(args, "workspace", None)
         and not getattr(args, "project", None)
         and not getattr(args, "project_ref", None)
@@ -682,6 +686,7 @@ def _maybe_refresh(client: SourceBriefClient, args: argparse.Namespace, resource
 
 
 def cmd_resource_add_doc(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
     content = args.content
     if args.content_file:
         content = Path(args.content_file).read_text(encoding="utf-8")
@@ -703,6 +708,7 @@ def cmd_resource_add_doc(client: SourceBriefClient, args: argparse.Namespace) ->
 
 
 def cmd_resource_add_repo(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
     source_config: dict[str, Any] = {"url": args.repo_url}
     if args.branch:
         source_config["branch"] = args.branch
@@ -730,6 +736,7 @@ def cmd_resource_add_repo(client: SourceBriefClient, args: argparse.Namespace) -
 
 
 def cmd_resource_add_url(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
     source_config: dict[str, Any] = {"url": args.url}
     if args.title:
         source_config["title"] = args.title
@@ -753,6 +760,7 @@ def cmd_resource_add_url(client: SourceBriefClient, args: argparse.Namespace) ->
 
 
 def cmd_resource_add_upload(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
     upload_path = Path(args.path)
     max_document_bytes = args.max_document_bytes or 5_000_000
     if upload_path.stat().st_size > max_document_bytes:
