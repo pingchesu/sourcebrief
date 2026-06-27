@@ -75,3 +75,30 @@ def test_launch_50q_report_html_contains_summary_without_raw_ids(tmp_path: Path)
     assert "SourceBrief 50Q Launch Walkthrough" in html
     assert "missing_citation" in html
     assert "123e4567" not in html
+
+
+def test_launch_50q_public_doc_links_operations_and_screenshots() -> None:
+    doc = (ROOT / "docs" / "evaluations" / "sourcebrief-launch-50q-20260627.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    proof = (ROOT / "docs" / "PROOF_ARTIFACTS.md").read_text(encoding="utf-8")
+
+    assert "## Actual operation walkthrough" in doc
+    assert "## What each screenshot proves" in doc
+    assert "scripts/launch_50q_walkthrough.py" in doc
+    assert "examples/sourcebrief-launch-50q/questions.json" in doc
+    assert "MCP `tools/list`" in doc
+    assert "CLI `sourcebrief --json search`" in doc
+    assert doc.count("../assets/screenshots/launch-50q/") == 7
+    for name in [
+        "01-login.png",
+        "02-dashboard.png",
+        "03-selection-settings.png",
+        "04-import-sources.png",
+        "05-workbench-citations.png",
+        "06-agent-profile.png",
+        "07-eval-report.png",
+    ]:
+        assert (ROOT / "docs" / "assets" / "screenshots" / "launch-50q" / name).exists()
+        assert name in doc
+    assert "50Q launch proof with screenshots" in readme
+    assert "screenshot-by-screenshot proof table" in proof

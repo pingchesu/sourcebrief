@@ -17,7 +17,7 @@ install skill/agent pack so the agent knows the project contract
     -> agent asks evidence first, then edits/tests in the real checkout
 ```
 
-[Install and use](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [View examples](examples/awesome-agent-harness-50q/README.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
+[Install and use](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [50Q launch proof with screenshots](docs/evaluations/sourcebrief-launch-50q-20260627.md) · [View examples](examples/awesome-agent-harness-50q/README.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
 
 <img src="docs/assets/sourcebrief-mental-model.svg" alt="SourceBrief mental model from sources to snapshots to reviewed evidence to MCP/API agent access" width="100%" />
 
@@ -39,6 +39,8 @@ SourceBrief exists so agents can ask the project for cited, permission-scoped ev
 <img src="docs/assets/sourcebrief-product-walkthrough.gif" alt="Animated SourceBrief walkthrough showing Command Center, Sources, and Workbench citations" width="100%" />
 
 This walkthrough was captured from a real local SourceBrief stack with live API, workers, Postgres, Redis, two indexed resources, and a real `agent-context` response. See the full [product walkthrough](docs/WALKTHROUGH.md) and the captured [agent-context output](docs/examples/agent-context-output.md).
+
+For launch proof, use the screenshot-backed [50Q walkthrough](docs/evaluations/sourcebrief-launch-50q-20260627.md). It documents the exact command path, created workspace/project/resource, MCP/CLI scenarios, 50-question result, follow-up issues, and seven committed screenshots under [`docs/assets/screenshots/launch-50q/`](docs/assets/screenshots/launch-50q/).
 
 A useful SourceBrief answer looks like this:
 

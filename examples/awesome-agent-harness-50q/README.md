@@ -2,6 +2,8 @@
 
 This example shows a real SourceBrief launch-readiness evaluation shape: five public agent-harness repositories, a fixed 50-question bank, bounded imports, and a redacted result summary.
 
+If you are looking for the **actual SourceBrief 50Q operation walkthrough with browser screenshots**, see [`../../docs/evaluations/sourcebrief-launch-50q-20260627.md`](../../docs/evaluations/sourcebrief-launch-50q-20260627.md). This example is the public-corpus evaluation report; the launch walkthrough is the full local stack + UI screenshots proof.
+
 It is intentionally honest about the result. SourceBrief produced cited, answer-ready context for every question, but the run was still graded **RISK** because all imported corpora were limited/partial and the runner did not yet synthesize polished end-user answers.
 
 ## Repos

@@ -71,6 +71,134 @@ python scripts/launch_50q_walkthrough.py \
 
 Generated artifacts stay under ignored `artifacts/` by default. Only sanitized screenshots and this report are committed.
 
+## Actual operation walkthrough
+
+The recorded run followed this concrete path:
+
+1. **Prepare the local runtime.**
+
+   ```bash
+   cp .env.example .env
+   # Set SOURCEBRIEF_ADMIN_PASSWORD in .env.
+   make compose-up
+   make quickstart-ready
+   make venv
+   npm --prefix apps/web install
+   ```
+
+   Proof captured by screenshots: login screen and Command Center.
+
+2. **Run the launch-proof runner against the real stack.**
+
+   ```bash
+   source .venv/bin/activate
+   python scripts/launch_50q_walkthrough.py \
+     --skip-compose \
+     --question-limit 50 \
+     --artifact-dir artifacts/sourcebrief-launch-50q-run
+   ```
+
+   The runner can also start Compose itself if `--skip-compose` is omitted.
+
+3. **Authenticate through the normal local auth path.**
+
+   The runner uses, in order:
+
+   - `SOURCEBRIEF_QA_TOKEN` or `SOURCEBRIEF_TOKEN`, if provided;
+   - otherwise `SOURCEBRIEF_ADMIN_EMAIL` + `SOURCEBRIEF_ADMIN_PASSWORD` from `.env` via `/auth/login`;
+   - otherwise `SOURCEBRIEF_DEV_AUTH=true` only for disposable local dev runs.
+
+   The recorded proof used session login. Screenshots do not expose the session token.
+
+4. **Create human-named workspace/project.**
+
+   The script creates:
+
+   - workspace: `50Q Launch Walkthrough <timestamp>`;
+   - project: `SourceBrief 50Q Product Walkthrough`.
+
+   The primary user flow is name/slug-first. Raw IDs are redacted from committed reports and not shown as the user-facing path.
+
+5. **Import a bounded real SourceBrief repo bundle.**
+
+   The script builds a local git bundle from the current `main` and adds it as a git resource named `SourceBrief repository launch import` with bounded launch-proof budgets:
+
+   - `max_repo_files=320`
+   - `max_file_bytes=120000`
+   - `max_repo_bytes=18000000`
+
+   The run waits for the index run to finish. The captured run intentionally surfaces partial/bounded coverage instead of hiding it.
+
+6. **Run the fixed 50-question manifest.**
+
+   Question bank: [`examples/sourcebrief-launch-50q/questions.json`](../../examples/sourcebrief-launch-50q/questions.json)
+
+   Each question calls the project `agent-context` endpoint with the imported resource scoped in. The report separates:
+
+   - mechanical API/citation pass/fail;
+   - answer-quality warnings;
+   - coverage warnings;
+   - citation previews.
+
+7. **Exercise runtime scenarios beyond the 50 questions.**
+
+   The runner also calls:
+
+   - MCP `tools/list`;
+   - MCP `sourcebrief.get_agent_context`;
+   - MCP `sourcebrief.grep_code` with a bounded path glob;
+   - CLI `sourcebrief --json search` as fallback/control-plane proof.
+
+8. **Capture screenshots with Playwright.**
+
+   The runner writes a temporary screenshot script under the artifact directory and captures:
+
+   - `/login` in a clean browser context;
+   - `/` Command Center;
+   - `/config` workspace/project selection settings;
+   - `/sources` import/index status;
+   - `/workbench` agent/citation surface;
+   - `/agent-profile` runtime configuration surface;
+   - generated `report.html` with the 50Q summary.
+
+9. **Inspect/sanitize before committing.**
+
+   The committed report and screenshots were checked for tokens, raw UUIDs, private local paths, and secret-looking values. Raw `report.json`, generated screenshot scripts, and local evidence bundles stay under ignored `artifacts/`.
+
+## Generated files from the runner
+
+For a fresh run with `--artifact-dir artifacts/sourcebrief-launch-50q-run`, expect:
+
+```text
+artifacts/sourcebrief-launch-50q-run/
+  README.md
+  report.json
+  report.html
+  capture_screenshots.cjs
+  screenshots/
+    01-login.png
+    02-dashboard.png
+    03-selection-settings.png
+    04-import-sources.png
+    05-workbench-citations.png
+    06-agent-profile.png
+    07-eval-report.png
+```
+
+Only the sanitized public screenshots and this Markdown report are committed. The raw JSON report remains local evidence unless intentionally redacted for a PR.
+
+## What each screenshot proves
+
+| Screenshot | Product moment | Regression it would catch |
+| --- | --- | --- |
+| `01-login.png` | Browser-visible login entry point. | Broken web routing, missing auth page, or token-first-only UX. |
+| `02-dashboard.png` | Command Center after session setup. | Runtime cannot load selected workspace/project or dashboard state. |
+| `03-selection-settings.png` | Workspace/project selection by human-readable name. | UUID-first golden path or missing project selection UI. |
+| `04-import-sources.png` | Source import lifecycle and bounded/partial corpus disclosure. | Import/index failures hidden from users or stale status display. |
+| `05-workbench-citations.png` | Agent Workbench/citation surface. | Agent flow lacks scoped cited context entry point. |
+| `06-agent-profile.png` | Runtime/MCP configuration surface. | Agent runtime setup path disappears from UI. |
+| `07-eval-report.png` | 50-question summary report. | Eval runner stops before producing human-readable launch evidence. |
+
 ## 50Q result
 
 The runner separates **mechanical pass/fail** from **answer-quality warnings**.

@@ -35,6 +35,8 @@ Visual artifacts below are real captured product proof, not mockups. When recapt
 | Product walkthrough GIF + three screenshots | PR #104 / `6fd0df6` | Local Docker Compose stack, dev-auth demo session, configured local API/web URLs | 2026-06-26 | Command Center `/` -> Sources `/sources` -> Workbench citation card `/workbench` | Citation screenshot is cropped to the human evidence card and excludes raw resource/snapshot IDs; GIF is rebuilt only from the committed screenshots; launch signoff must pair recaptures with a fresh redacted bundle from `make collect-e2e-evidence`. |
 | SourceBrief 50Q launch walkthrough screenshots | Issue #141 / `abc4c71` | Local Docker Compose stack, session login, API `:18000`, web `:3105` | 2026-06-27 | Login `/login` -> Command Center `/` -> Settings `/config` -> Sources `/sources` -> Workbench `/workbench` -> Agent Profile `/agent-profile` -> generated eval report | Screenshot set contains no raw tokens, UUIDs, or private local paths; generated JSON report stays under ignored `artifacts/`. |
 
+The full operation path for the 50Q walkthrough is documented in [`evaluations/sourcebrief-launch-50q-20260627.md`](evaluations/sourcebrief-launch-50q-20260627.md), including exact commands, auth order, workspace/project creation, bounded git import settings, MCP/CLI scenario calls, generated artifact tree, and a screenshot-by-screenshot proof table.
+
 ## Committed runtime output proof
 
 | Artifact | What it proves | Source |
