@@ -11,13 +11,29 @@ make compose-up
 until curl -fsS http://localhost:18000/readyz; do sleep 2; done
 ```
 
-Set shell helpers for this local walkthrough. These examples create a workspace, so they must use a user-authenticated request. For local demos, enable `SOURCEBRIEF_DEV_AUTH=true` in `.env` before startup and use the dev header:
+Set shell helpers for this local walkthrough. These examples create a workspace, so they must use a user/session-authenticated request. The normal local path is email/password session login; dev-header auth remains an explicit disposable-local fallback only.
 
 ```bash
+make venv
+export PATH="$PWD/.venv/bin:$PATH"
 export API=http://localhost:18000
-export AUTH='X-User-Email: demo@example.com'
 export SOURCEBRIEF_API_URL=$API
-export SOURCEBRIEF_EMAIL=demo@example.com
+
+export SOURCEBRIEF_SESSION="$(python - <<'PY'
+import json
+from urllib.request import Request, urlopen
+from dotenv import dotenv_values
+
+env = dotenv_values('.env')
+payload = json.dumps({
+    'email': env['SOURCEBRIEF_ADMIN_EMAIL'],
+    'password': env['SOURCEBRIEF_ADMIN_PASSWORD'],
+}).encode()
+request = Request('http://localhost:18000/auth/login', data=payload, headers={'Content-Type': 'application/json'}, method='POST')
+print(json.load(urlopen(request))['session_token'])
+PY
+)"
+export AUTH_HEADER="Authorization: Bearer ${SOURCEBRIEF_SESSION}"
 ```
 
 Bearer API tokens are useful after a workspace exists, for project/resource/query/MCP flows. They cannot create workspaces.
@@ -28,7 +44,7 @@ The examples below show curl first because it exposes the API shape. The same fl
 
 ```bash
 curl -s -X POST "$API/workspaces" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{"name":"Demo Workspace","slug":"demo"}'
 ```
 
@@ -42,7 +58,7 @@ export WORKSPACE_ID=<workspace-id>
 
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{"name":"Payments Knowledge","description":"Repos and runbooks for payments debugging"}'
 ```
 
@@ -56,7 +72,7 @@ export PROJECT_ID=<project-id>
 
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{
     "type":"markdown",
     "name":"Payment retry runbook",
@@ -77,7 +93,7 @@ export RESOURCE_ID=<resource-id>
 
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources/$RESOURCE_ID/refresh" \
-  -H "$AUTH"
+  -H "$AUTH_HEADER"
 ```
 
 Save the returned index run id:
@@ -89,7 +105,7 @@ export INDEX_RUN_ID=<index-run-id>
 Check status:
 
 ```bash
-curl -s "$API/workspaces/$WORKSPACE_ID/index-runs/$INDEX_RUN_ID" -H "$AUTH"
+curl -s "$API/workspaces/$WORKSPACE_ID/index-runs/$INDEX_RUN_ID" -H "$AUTH_HEADER"
 ```
 
 Wait until `status` is `succeeded`.
@@ -98,7 +114,7 @@ Wait until `status` is `succeeded`.
 
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/search" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{"query":"payment-retry-sourcebrief-demo"}'
 ```
 
@@ -108,7 +124,7 @@ Search results include citation fields such as resource id, snapshot id, version
 
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/context-packets" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{"query":"How do I debug payment retry stalls?","top_k":5}'
 ```
 
@@ -118,7 +134,7 @@ Context packets are the retrieval output used by agent-facing APIs. They include
 
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/agent-context" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{
     "query":"How do I debug payment retry stalls?",
     "runtime":"hermes",
@@ -150,7 +166,7 @@ List tools:
 
 ```bash
 curl -s -X POST "$API/mcp/$WORKSPACE_ID/$PROJECT_ID" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
@@ -158,7 +174,7 @@ Call the context tool:
 
 ```bash
 curl -s -X POST "$API/mcp/$WORKSPACE_ID/$PROJECT_ID" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{
     "jsonrpc":"2.0",
     "id":2,
@@ -180,20 +196,20 @@ SourceBrief exposes context through MCP. It does not expose production mutations
 Resource review queue:
 
 ```bash
-curl -s "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resource-review" -H "$AUTH"
+curl -s "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resource-review" -H "$AUTH_HEADER"
 ```
 
 Resource usage analytics:
 
 ```bash
-curl -s "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resource-usage" -H "$AUTH"
+curl -s "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resource-usage" -H "$AUTH_HEADER"
 ```
 
 Mark a resource reviewed:
 
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources/$RESOURCE_ID/review" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{"review_status":"approved","review_note":"Useful runbook","stale_after_days":30}'
 ```
 
@@ -201,7 +217,7 @@ Archive a resource:
 
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources/$RESOURCE_ID/archive" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{"reason":"superseded by new runbook"}'
 ```
 
@@ -209,7 +225,7 @@ Delete a resource:
 
 ```bash
 curl -s -X DELETE "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources/$RESOURCE_ID" \
-  -H "$AUTH"
+  -H "$AUTH_HEADER"
 ```
 
 ## Git repository resources
@@ -255,7 +271,7 @@ Minimal shape:
 
 ```bash
 curl -s -X POST "$API/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/resources" \
-  -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
   -d '{
     "type":"git",
     "name":"SourceBrief repo",

@@ -11,6 +11,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | 3 | [Concepts](CONCEPTS.md) | Source -> Snapshot -> Evidence -> Review -> Runtime mental model. |
 | 4 | [Quick start](QUICKSTART.md) | Run the local stack and reach the first cited answer. |
 | 5 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Connect Hermes, Claude Code, Codex, Cursor, or MCP clients. |
+| Reference | [Default credential policy](DEFAULT_CREDENTIAL_POLICY.md) | Why SourceBrief has no universal `changeme` login and how local demos authenticate. |
 
 ## Proof and demos
 

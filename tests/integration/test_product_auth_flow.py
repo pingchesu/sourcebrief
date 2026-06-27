@@ -44,6 +44,15 @@ def login_admin(client: TestClient, monkeypatch: pytest.MonkeyPatch, prefix: str
     return email, login.json()["session_token"], login.json()["default_workspace_id"], login.json()["default_project_id"]
 
 
+@pytest.mark.parametrize("unsafe_password", ["change-me-before-compose-up", "sourcebrief-admin"])
+def test_bootstrap_rejects_unsafe_default_admin_password(monkeypatch: pytest.MonkeyPatch, unsafe_password: str) -> None:
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", "admin@sourcebrief.local")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", unsafe_password)
+
+    with pytest.raises(RuntimeError, match="SOURCEBRIEF_ADMIN_PASSWORD must be changed"):
+        _bootstrap_default_admin()
+
+
 def test_bootstrap_admin_login_and_create_second_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     require_real_services()
     client = TestClient(app)
