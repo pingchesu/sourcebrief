@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts" / "launch_50q_walkthrough.py"
+QUESTIONS = ROOT / "examples" / "sourcebrief-launch-50q" / "questions.json"
+
+
+def load_module():
+    spec = importlib.util.spec_from_file_location("launch_50q_walkthrough_under_test", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_launch_50q_question_bank_has_exactly_50_sanitized_questions() -> None:
+    bank = json.loads(QUESTIONS.read_text(encoding="utf-8"))
+    assert bank["schema_version"] == "sourcebrief.launch-50q-question-bank.v1"
+    assert len(bank["questions"]) == 50
+    ids = [question["id"] for question in bank["questions"]]
+    assert len(set(ids)) == 50
+    assert all(question["query"] and question["expected_terms"] for question in bank["questions"])
+    serialized = json.dumps(bank)
+    assert "cs_" not in serialized
+
+
+def test_launch_50q_redaction_strips_tokens_passwords_and_ids() -> None:
+    module = load_module()
+    redacted = module.redact(
+        {
+            "session_token": "cs_abcdefghijklmnopqrstuvwxyz",
+            "nested": ["Bearer abcdefghijklmnopqrstuvwxyz", "resource 123e4567-e89b-12d3-a456-426614174000"],
+            "password": "secret",
+            "safe": "Workspace name",
+        }
+    )
+    assert "session_token" not in redacted
+    assert "password" not in redacted
+    assert redacted["nested"][0] == "<redacted-token>"
+    assert redacted["nested"][1] == "resource <id>"
+    assert redacted["safe"] == "Workspace name"
+
+
+def test_launch_50q_report_html_contains_summary_without_raw_ids(tmp_path: Path) -> None:
+    module = load_module()
+    report = {
+        "setup": {"workspace_name": "50Q Launch", "project_name": "Demo", "resource_name": "Repo"},
+        "summary": {"verdict": "RISK", "question_count": 1, "passed": 0, "failed": 1},
+        "questions": [{"id": "q1", "category": "ops", "mechanical_status": "fail", "citation_count": 0, "failures": ["missing_citation"]}],
+    }
+    output = tmp_path / "report.html"
+    module.write_report_html(report, output)
+    html = output.read_text(encoding="utf-8")
+    assert "SourceBrief 50Q Launch Walkthrough" in html
+    assert "missing_citation" in html
+    assert "123e4567" not in html

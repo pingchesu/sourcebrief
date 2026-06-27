@@ -23,6 +23,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Demo runtime output](examples/demo-runtime-output.md) | Captured output | Normalized output from a real local demo run. |
 | [Captured agent-context output](examples/agent-context-output.md) | Captured output | Normalized response from the product walkthrough run. |
 | [Awesome Agent Harness 50-question example](../examples/awesome-agent-harness-50q/README.md) | Real corpus eval example | Five public repos, 50 questions, bounded import notes, and final RISK verdict. |
+| [Screenshot-backed 50Q launch walkthrough](evaluations/sourcebrief-launch-50q-20260627.md) | Launch proof | Local startup/import/50Q/scenario run with committed screenshots and answer-quality follow-up issues. |
 | [Use SourceBrief with a local agent](../examples/use-sourcebrief-with-local-agent/README.md) | Product-led runtime example | Current MCP/runtime setup path plus target project skill-pack install flow. |
 
 ## Runtime and operations
