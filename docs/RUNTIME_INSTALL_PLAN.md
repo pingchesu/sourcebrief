@@ -64,7 +64,7 @@ sourcebrief --json agent profile \
   --project-id "$PROJECT_ID"
 ```
 
-Create a runtime token from a user/session-authenticated flow. In local dev, the CLI can create one when `SOURCEBRIEF_DEV_AUTH` is set to `true`:
+Create a runtime token from a user/session-authenticated flow. For local development, run `sourcebrief login --password-env SOURCEBRIEF_ADMIN_PASSWORD` first or use the web login. Dev-header auth is still available for disposable local experiments, but it is not the normal quickstart path:
 
 ```bash
 sourcebrief --json token create-runtime \

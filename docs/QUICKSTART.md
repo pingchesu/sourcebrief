@@ -55,11 +55,11 @@ Run the quickstart doctor before starting the stack. It uses only Python's stand
 python3 scripts/check_quickstart_prereqs.py
 ```
 
-Before the first startup, edit `.env` and replace the example admin password:
+Before the first startup, edit `.env` and replace the example admin password. SourceBrief intentionally does not ship a universal usable `changeme` login; see [Default credential policy](DEFAULT_CREDENTIAL_POLICY.md) for the accepted local-demo stance.
 
 ```env
 SOURCEBRIEF_ADMIN_EMAIL=admin@sourcebrief.local
-SOURCEBRIEF_ADMIN_PASSWORD=<choose-a-local-password>
+SOURCEBRIEF_ADMIN_PASSWORD=<choose-a-password>
 ```
 
 Keep this default unless you explicitly want local header auth for CLI experiments:

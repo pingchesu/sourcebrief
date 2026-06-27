@@ -154,6 +154,7 @@ cd sourcebrief
 
 cp .env.example .env
 # Edit SOURCEBRIEF_ADMIN_PASSWORD before the first startup.
+# SourceBrief has no universal `changeme` login; see docs/DEFAULT_CREDENTIAL_POLICY.md.
 # Keep SOURCEBRIEF_DEV_AUTH=false unless you explicitly want local header auth for CLI experiments.
 
 python3 scripts/check_quickstart_prereqs.py
