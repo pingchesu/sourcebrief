@@ -23,9 +23,23 @@ integration makes it agent infrastructure:
 
 This page is the practical runtime guide: MCP setup, scoped tokens, remote-code
 safety, generated skills, Context Pack Skill Exports, and the workflow agents
-should follow before editing or reviewing code. For agents, MCP plus skills are
-the primary path. The CLI is the control plane and fallback path for setup,
+should follow before editing or reviewing code. For agents, **MCP plus skills are
+the primary path**. The CLI is the control plane and fallback path for setup,
 resource lifecycle automation, validation, and CI.
+
+Do not present SourceBrief as "a CLI the agent can run." The stronger runtime
+contract is:
+
+```text
+generated skill/agent pack tells the agent WHEN and WHY to use SourceBrief
+        -> MCP gives the agent live cited evidence and drilldown tools
+        -> CLI remains available for doctor/setup/resource lifecycle fallback
+        -> local checkout tools perform edits/tests/commits outside SourceBrief
+```
+
+An agent runtime is not ready until all three SourceBrief pieces have been
+verified: skill loaded, MCP smoke call returns citations, and CLI doctor or
+runtime validation passes without exposing tokens.
 
 ## The mental model
 

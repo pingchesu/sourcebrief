@@ -4,9 +4,18 @@
 
 Coding agents do not need bigger prompts. They need evidence they can inspect before they edit.
 
-SourceBrief turns repos, docs, runbooks, URLs, uploads, and folder bundles into versioned context that Hermes, Claude Code, Codex, Cursor, and other MCP-compatible agents can query on demand. A good SourceBrief answer is not just plausible; it points back to source material with citations, snapshots, paths, line ranges, hashes, and follow-up read handles.
+SourceBrief turns repos, docs, runbooks, URLs, uploads, and folder bundles into an **agent operating contract**: MCP tools for live cited evidence, generated skills/agent packs that teach runtimes when to call those tools, and CLI/API control-plane commands for setup, validation, resource lifecycle, and fallback automation. A good SourceBrief answer is not just plausible; it points back to source material with citations, snapshots, paths, line ranges, hashes, and follow-up read handles.
 
 Use it when you need agents to answer with evidence, not vibes.
+
+The strong version is not "run this CLI." It is:
+
+```text
+install skill/agent pack so the agent knows the project contract
+    -> configure SourceBrief MCP so the agent can fetch cited evidence live
+    -> keep sourcebrief CLI available for doctor/setup/resource fallback
+    -> agent asks evidence first, then edits/tests in the real checkout
+```
 
 [Install and use](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [View examples](examples/awesome-agent-harness-50q/README.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
 
@@ -90,6 +99,14 @@ coding agent gets an issue
 ```
 
 Start broad with MCP tools such as `sourcebrief.ask` or `sourcebrief.discover`. Use `sourcebrief.lookup` for docs/code/symbol discovery. Drill down with `sourcebrief.search`, `sourcebrief.read_section`, `sourcebrief.search_code`, `sourcebrief.grep_code`, `sourcebrief.read_file`, `sourcebrief.find_symbol`, and graph tools when the task needs exact evidence. Generated skills and agent packs teach this workflow to the runtime. The CLI is still important, but as the human/CI control plane and fallback path for setup, resource lifecycle, and validation—not as the main agent reasoning surface. Use SourceBrief to know where to look and what to trust; use the coding agent's normal tools to edit, test, commit, and open PRs.
+
+### Agent runtime is not complete until all three pieces work
+
+| Piece | Why it matters | Proof |
+| --- | --- | --- |
+| Generated skill / agent pack | Tells the agent when to use SourceBrief, what scope is pinned, citation policy, and mutation boundaries. | Runtime loads `SKILL.md`, `AGENTS.md`, or `CLAUDE.md`. |
+| SourceBrief MCP | Gives the agent live cited evidence and drilldown tools. | `tools/list` shows SourceBrief tools and a smoke `tools/call` returns citations. |
+| CLI fallback/control plane | Lets humans/CI/agents bootstrap, validate, doctor, install/uninstall skills, and manage resources when MCP is down or not yet configured. | `sourcebrief doctor` or `sourcebrief runtime validate --run` passes without printing tokens. |
 
 For runtime setup, prompts, token scopes, remote-code safety, generated skills, and exact MCP tool guidance, read [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md).
 

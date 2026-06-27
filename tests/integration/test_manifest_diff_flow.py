@@ -717,6 +717,11 @@ def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: 
     files_by_path = {file["path"]: file for file in export_body["files"]}
     joined = "\n".join(file.get("content") or "" for file in export_body["files"])
     assert "sourcebrief.get_agent_context" in joined
+    assert "Non-negotiable agent operating contract" in files_by_path["SKILL.md"]["content"]
+    assert "MCP-first evidence path" in files_by_path["SKILL.md"]["content"]
+    assert "CLI fallback/toolbelt" in files_by_path["SKILL.md"]["content"]
+    assert "Installed-runtime acceptance check" in files_by_path["SKILL.md"]["content"]
+    assert "sourcebrief doctor" in files_by_path["SKILL.md"]["content"]
     assert "sourcebrief.read_section" in joined
     assert "references/data-structure.md" in joined
     assert "references/resource-map.md" in joined

@@ -954,6 +954,18 @@ def _agent_pack_manifest_dict(
             "local_repo_required": False,
             "local_grep_allowed": False,
         },
+        "agent_operating_contract": {
+            "required_pieces": ["generated_skill_or_agent_pack", "sourcebrief_mcp_server", "sourcebrief_cli_fallback"],
+            "primary_path": "mcp_tools_before_answering_or_editing",
+            "instruction_layer": "load generated skill/AGENTS/CLAUDE instructions so the agent knows when to call SourceBrief",
+            "cli_fallback": [
+                "sourcebrief doctor --query <smoke question>",
+                "sourcebrief runtime validate --plan <plan.json> --run",
+                "sourcebrief skill install --package <pack> --target hermes --dry-run",
+                "sourcebrief resource list",
+            ],
+            "not_ready_if_missing_any_piece": True,
+        },
         "capabilities": {
             "required": ["get_agent_context", "search_code", "grep_code", "read_file", "find_symbol"],
             "optional": ["generate_patch", "open_pr"],
@@ -1048,6 +1060,8 @@ def _agent_pack_hermes_skill(manifest: Mapping[str, Any]) -> str:
         "---\n\n"
         f"# {identity['name']}\n\n"
         "This is a SourceBrief remote repo agent skill shim. Installing this raw `SKILL.md` only installs the Hermes skill; MCP configuration is a separate mandatory setup step.\n\n"
+        "## Non-negotiable operating contract\n"
+        "This repo agent is not ready unless all three pieces exist: this generated skill, the SourceBrief MCP server, and a CLI fallback path for setup/doctor/resource lifecycle. The skill decides *when* to use SourceBrief, MCP is the primary evidence path, and CLI is the fallback/toolbelt—not the main reasoning surface.\n\n"
         "## Runtime contract\n"
         "- Remote-only: do not assume the target repositories exist on this machine.\n"
         "- Do not run local `grep`, `rg`, `cat`, or filesystem edits for these repositories unless the user explicitly provides a separate local checkout for the current task.\n"
@@ -1063,7 +1077,8 @@ def _agent_pack_hermes_skill(manifest: Mapping[str, Any]) -> str:
         "2. Call `sourcebrief.get_agent_context` with the user's question and an appropriate resource scope when known.\n"
         "3. Pick retrieval profiles intentionally: `hybrid` by default, `lexical` for exact identifiers/errors/config keys, `vector` for semantic discovery, `hybrid_rerank` when eval precision matters, and `graph` for architecture/impact/code-structure questions.\n"
         "4. If the answer needs exact evidence, use remote grep/read/search/symbol tools against indexed snapshots; do not fall back to local filesystem access.\n"
-        "5. Preserve authorization and production-mutation boundaries.\n\n"
+        "5. If MCP is unavailable, use CLI fallback only for diagnosis/setup: `sourcebrief doctor`, `sourcebrief runtime validate --run`, `sourcebrief skill install --dry-run`, or resource lifecycle commands. Do not answer from uncited memory.\n"
+        "6. Preserve authorization and production-mutation boundaries.\n\n"
         "## Authorized sources in this generated pack\n"
         f"{_agent_pack_source_lines(sources)}\n"
     )
@@ -1075,6 +1090,7 @@ def _agent_pack_codex_agents(manifest: Mapping[str, Any]) -> str:
     return (
         f"# {identity['name']} SourceBrief Remote Repo Agent\n\n"
         "You are using a SourceBrief remote repo agent. The checked-out Skill Pack is not the target source repository.\n\n"
+        "Non-negotiable contract: load the generated instructions, use SourceBrief MCP as the primary evidence path, and keep `sourcebrief` CLI as setup/doctor/resource-lifecycle fallback only. If one of those pieces is missing, say the runtime is not fully installed before answering.\n\n"
         "- Remote-only: do not assume repository files exist in the current working directory.\n"
         "- Do not run local `grep`, `rg`, `cat`, or edits for target repositories unless the user explicitly provides a separate local checkout.\n"
         "- Use `sourcebrief.get_agent_context` first, then remote grep/read/search/symbol tools for exact follow-up inspection.\n"
@@ -1093,6 +1109,7 @@ def _agent_pack_claude_md(manifest: Mapping[str, Any]) -> str:
     return (
         f"# {identity['name']} SourceBrief Remote Repo Agent\n\n"
         "Use SourceBrief MCP for this repo agent. This instruction file is not a source checkout.\n\n"
+        "Non-negotiable contract: this instruction file tells the agent when to use SourceBrief, MCP is the primary evidence path, and CLI is the setup/doctor/resource-lifecycle fallback. If skill + MCP + CLI fallback are not verified, say the runtime is not fully installed.\n\n"
         "- Remote-only: do not assume target repositories are local.\n"
         "- Do not use local `grep`, `rg`, `cat`, or filesystem edits for the target repos unless the user provides a separate checkout.\n"
         "- Call `sourcebrief.get_agent_context` first, then remote grep/read/search/symbol tools for exact follow-up inspection.\n"

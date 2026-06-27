@@ -595,6 +595,12 @@ def test_agent_pack_phase1_context_only_remote_install_contract() -> None:
     assert "MCP" in zip_text
     assert "Manifest digest: `sha256:" in zip_text
     assert "Future GitHub PR publishing must require explicit user approval" in zip_text
+    assert "agent_operating_contract" in responses["manifest"].text
+    assert "sourcebrief_cli_fallback" in responses["manifest"].text
+    assert "Non-negotiable operating contract" in responses["hermes"].text
+    assert "CLI fallback path" in responses["hermes"].text
+    assert "runtime is not fully installed" in responses["codex"].text
+    assert "skill + MCP + CLI fallback" in responses["claude"].text
 
     generated_text = "\n".join(
         response.text for name, response in responses.items() if name != "mcp"

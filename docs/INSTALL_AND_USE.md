@@ -21,7 +21,7 @@ The product advantage is not "another chat UI". It is evidence discipline:
 
 ## What each surface is for
 
-SourceBrief is not trying to be "just a CLI tool." The product is an agent evidence layer with several surfaces:
+SourceBrief is not trying to be "just a CLI tool." Treat it as an agent operating contract with three required pieces: generated skill/agent instructions, MCP evidence tools, and CLI/API control-plane fallback. The surfaces are:
 
 | Surface | Primary user | Purpose |
 | --- | --- | --- |
@@ -40,7 +40,17 @@ skill/agent instruction tells the agent to ask SourceBrief
         -> agent edits/tests in the real checkout, not inside SourceBrief
 ```
 
-CLI completeness matters because it gives operators and CI a reliable control plane, and it gives agents an explicit fallback procedure. It is not the core product surface for agent reasoning; MCP plus skills are.
+CLI completeness matters because it gives operators, CI, and agents a reliable toolbelt when setup/debug/resource lifecycle work is needed. It is not the core product surface for agent reasoning; MCP plus generated skills are. Do not call an agent integration complete until MCP works, the generated skill/pack is installed or loaded, and CLI fallback validation passes.
+
+## The strong agent install bar
+
+For a coding agent, SourceBrief is only "installed" when all three checks pass:
+
+1. **Skill/agent pack loaded** — the runtime can read the generated `SKILL.md`, `AGENTS.md`, or `CLAUDE.md` so it knows the project scope, citation policy, and mutation boundary.
+2. **MCP live evidence works** — `tools/list` exposes SourceBrief tools and a smoke `tools/call` returns citations.
+3. **CLI fallback is available** — `sourcebrief doctor`, `sourcebrief runtime validate --run`, and `sourcebrief skill install --dry-run` are available for setup/debug/resource lifecycle without pasting secrets.
+
+If a demo only shows CLI commands, it is an admin demo. If it only shows MCP without the skill, the agent may not know when to call it. If it only installs the skill without MCP, it is just prose. The product story requires all three.
 
 ## 1. Install and start locally
 
@@ -224,7 +234,7 @@ MCP-capable agents should start broad, then drill down:
 
 ## 6. Connect an agent runtime
 
-This is the important agent path. Use the short guided path first:
+This is the important agent path. Use the short guided path first; it must end with MCP configured, a generated skill/pack loaded, and CLI fallback validated:
 
 ```bash
 sourcebrief runtime setup hermes \
@@ -247,6 +257,8 @@ sourcebrief runtime apply \
 ```
 
 For runtime-specific details, token scopes, generated skills, and failure modes, read [Agent runtime usage](AGENT_RUNTIME_USAGE.md). That guide is longer because it is the operator/runtime reference, not the first-use path.
+
+Generated skills are not optional decoration. They are how the agent learns the operating order: ask SourceBrief MCP first, preserve citations, drill down with exact tools, and use CLI only for setup/fallback/admin work.
 
 ## 7. Embeddings and rerank: what is actually tested
 

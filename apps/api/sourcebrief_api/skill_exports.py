@@ -466,6 +466,16 @@ sourcebrief:
 
 Use this skill when a user asks about the sources covered by SourceBrief Context Pack `{version.pack_key}` v`{version.version}`. This is not a source dump. It is a progressive-disclosure skill package that teaches the agent how to inspect SourceBrief evidence before answering.
 
+## Non-negotiable agent operating contract
+
+This package is only strong when the runtime has all three pieces:
+
+1. **Skill activation** — load this `SKILL.md` so the agent knows when to use SourceBrief and which pack is pinned.
+2. **MCP-first evidence path** — call SourceBrief MCP tools for cited evidence before answering, planning edits, or reviewing changes.
+3. **CLI fallback/toolbelt** — use `sourcebrief` CLI only for setup, doctor/validation, package install/uninstall, resource lifecycle, or automation when MCP is unavailable.
+
+If any piece is missing, say the SourceBrief runtime is not fully installed and run the verification/fallback steps below instead of guessing.
+
 ## Best for
 
 - onboarding to a repo, folder bundle, or document collection;
@@ -500,6 +510,13 @@ Use this skill when a user asks about the sources covered by SourceBrief Context
 5. Before answering, verify `context_pack_key`, `context_pack_version`, `context_pack_snapshot_pin_enforced`, and citations.
 6. Answer only from returned evidence. If evidence is insufficient, say what is missing and request reindex/pack update.
 
+## Agent response policy
+
+- Start from SourceBrief evidence, not from memory or local file assumptions.
+- Use CLI only as an explicit toolbelt: `sourcebrief doctor`, `sourcebrief runtime validate`, `sourcebrief skill install --dry-run`, `sourcebrief skill uninstall --receipt`, or resource lifecycle commands.
+- If MCP fails, report the failure and run a CLI/API fallback when available; do not silently downgrade to uncited reasoning.
+- If the user asks "can the agent use this?", verify skill + MCP + CLI fallback, not only one command.
+
 ## Reference file index
 
 {_reference_index_lines()}
@@ -533,6 +550,16 @@ sourcebrief skill install --package ./sourcebrief-skill --target hermes --dry-ru
 When calling MCP tools directly, pass `context_pack_key={version.pack_key}` and `context_pack_version={version.version}` so returned evidence stays pinned to this package.
 
 Admin/setup commands must not print tokens. Keep `SOURCEBRIEF_TOKEN` in the runtime environment or secret manager.
+
+## Installed-runtime acceptance check
+
+An installed agent is not considered ready until:
+
+- this skill is visible to the runtime;
+- MCP `tools/list` includes SourceBrief tools;
+- a SourceBrief MCP call returns citations for a smoke query;
+- `sourcebrief doctor` or `sourcebrief runtime validate --run` passes without printing tokens;
+- CLI fallback commands are documented for the operator.
 
 ## Mutation boundary
 
@@ -1065,6 +1092,9 @@ def _validate_files(files: list[dict[str, Any]], skill_content: str) -> dict[str
         if required not in paths:
             errors.append({"code": "missing_file", "message": f"Missing {required}"})
     required_text = [
+        "Non-negotiable agent operating contract",
+        "MCP-first evidence path",
+        "CLI fallback/toolbelt",
         "context_pack_key",
         "context_pack_version",
         "context_pack_snapshot_pin_enforced",

@@ -2,7 +2,7 @@
 
 This example is the product-led counterpart to the 50-question evaluation example. It is about using SourceBrief as a project context layer for a local coding agent, not merely asking SourceBrief questions about public repos.
 
-The intended user story:
+The intended user story is deliberately stronger than "run a CLI command":
 
 ```text
 I have a project.
@@ -10,6 +10,7 @@ I connect it to SourceBrief.
 SourceBrief indexes, reviews, and packages project context.
 My local agent installs a small project skill/instruction pack.
 The agent uses SourceBrief MCP/API for citations and code drilldown while it works.
+The CLI stays available as a setup/doctor/resource fallback, not the main reasoning surface.
 ```
 
 ## What this example proves
@@ -17,8 +18,18 @@ The agent uses SourceBrief MCP/API for citations and code drilldown while it wor
 - SourceBrief is a runtime context product, not just a search demo.
 - The agent should not need a local checkout of every indexed source to answer with evidence.
 - MCP is the default live evidence path.
-- CLI is the setup/admin/fallback path.
+- Generated skills teach the agent when to call MCP and how to preserve citation discipline.
+- CLI is the setup/admin/fallback path and must be documented for the agent/operator.
 - Project skill packs are local instruction/config artifacts; SourceBrief remains the remote source of truth.
+
+## Strong runtime acceptance bar
+
+This example is not complete if it only demonstrates CLI output. A local agent integration must prove:
+
+1. the generated skill/agent pack is installed or loaded;
+2. SourceBrief MCP `tools/list` and a smoke `tools/call` work;
+3. CLI fallback works for `doctor`, `runtime validate`, and `skill install --dry-run`;
+4. the agent answer cites SourceBrief evidence and does not pretend remote indexed code is a local checkout.
 
 ## Current runnable path
 
