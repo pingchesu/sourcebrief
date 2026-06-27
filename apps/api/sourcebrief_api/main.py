@@ -13,7 +13,7 @@ from collections import Counter
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
@@ -94,9 +94,14 @@ from sourcebrief_api.graph_versions import (
     compile_graph_version,
 )
 from sourcebrief_api.remote_code import (
+    MAX_GREP_MATCHES,
+    MAX_READ_LINES,
+    MAX_REGEX_SCAN_SECONDS,
     MAX_SCANNED_BYTES,
     MAX_SCANNED_FILES,
     MAX_SEARCH_LINE_CHARS,
+    MAX_SEARCH_RESULTS,
+    MAX_SYMBOL_RESULTS,
     RemoteCodeError,
     check_scan_budget,
     compile_safe_regex,
@@ -207,6 +212,10 @@ from sourcebrief_api.schemas import (
     ProjectRead,
     PrRequestRead,
     PurgeResourceResponse,
+    RemoteCodeRpcCallResult,
+    RemoteCodeRpcRequest,
+    RemoteCodeRpcResponse,
+    RemoteCodeRpcSpecResponse,
     RemoteFindSymbolRequest,
     RemoteFindSymbolResponse,
     RemoteGrepCodeMatch,
@@ -1223,6 +1232,8 @@ def _runtime_capabilities(profile: AgentProfile | None, include_optional_tools: 
             policy = "opt_in_approval_record_enabled" if enabled else "opt_in_approval_record_disabled_by_default"
         elif name == "sourcebrief.generate_skill_pack":
             policy = "server_artifact_generation_requires_review_write; never mutates local files"
+        elif name == "sourcebrief.get_rpc_spec":
+            policy = "read_only_schema_guidance_for_batch_code_access"
         elif name == "sourcebrief.get_runtime_help":
             policy = "read_only_setup_guidance"
         capabilities.append(
@@ -6952,6 +6963,7 @@ def remote_search_code(
     session: Session = Depends(get_session),
 ) -> RemoteSearchCodeResponse:
     started = perf_counter()
+    payload = RemoteSearchCodeRequest(**_runtime_args_with_resource_ref(session, workspace_id, project_id, principal, payload.model_dump(mode="json", exclude_none=True), single=False))
     require_scope(principal, "project:query")
     require_scope(principal, "code:read")
     _require_project_access(session, workspace_id, project_id, principal)
@@ -7010,6 +7022,7 @@ def remote_grep_code(
     session: Session = Depends(get_session),
 ) -> RemoteGrepCodeResponse:
     started = perf_counter()
+    payload = RemoteGrepCodeRequest(**_runtime_args_with_resource_ref(session, workspace_id, project_id, principal, payload.model_dump(mode="json", exclude_none=True), single=False))
     require_scope(principal, "project:query")
     require_scope(principal, "code:read")
     _require_project_access(session, workspace_id, project_id, principal)
@@ -7070,6 +7083,7 @@ def remote_read_file(
     session: Session = Depends(get_session),
 ) -> RemoteReadFileResponse:
     started = perf_counter()
+    payload = RemoteReadFileRequest(**_runtime_args_with_resource_ref(session, workspace_id, project_id, principal, payload.model_dump(mode="json", exclude_none=True), single=True))
     require_scope(principal, "resource:read")
     require_scope(principal, "code:read")
     _require_project_access(session, workspace_id, project_id, principal)
@@ -7078,6 +7092,8 @@ def remote_read_file(
     except RemoteCodeError as exc:
         _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="read_file", status_value="denied", denied_reason=exc.code)
         raise _remote_code_error(exc) from exc
+    if payload.resource_id is None:
+        raise HTTPException(status_code=422, detail={"code": "missing_resource", "message": "resource_id or resource_ref is required"})
     resource = _resolve_resource(session, workspace_id, project_id, payload.resource_id, principal)
     if resource.current_snapshot_id is None:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "file not found"})
@@ -7085,7 +7101,7 @@ def remote_read_file(
         select(SnapshotFile, SourceSnapshot).where(
             SnapshotFile.workspace_id == workspace_id,
             SnapshotFile.project_id == project_id,
-            SnapshotFile.resource_id == payload.resource_id,
+            SnapshotFile.resource_id == resource.id,
             SnapshotFile.source_snapshot_id == resource.current_snapshot_id,
             SnapshotFile.path == path,
             SnapshotFile.deleted_at.is_(None),
@@ -7124,6 +7140,7 @@ def remote_find_symbol(
     session: Session = Depends(get_session),
 ) -> RemoteFindSymbolResponse:
     started = perf_counter()
+    payload = RemoteFindSymbolRequest(**_runtime_args_with_resource_ref(session, workspace_id, project_id, principal, payload.model_dump(mode="json", exclude_none=True), single=False))
     require_scope(principal, "project:query")
     require_scope(principal, "code:read")
     _require_project_access(session, workspace_id, project_id, principal)
@@ -7170,6 +7187,167 @@ def remote_find_symbol(
         )
     _record_remote_code_audit(session, workspace_id=workspace_id, project_id=project_id, principal=principal, tool_name="find_symbol", status_value="succeeded", result_count=len(symbols), latency_ms=(perf_counter() - started) * 1000)
     return RemoteFindSymbolResponse(symbols=symbols)
+
+
+def _remote_code_rpc_spec(workspace_id: UUID, project_id: UUID) -> RemoteCodeRpcSpecResponse:
+    base = f"/workspaces/{workspace_id}/projects/{project_id}"
+    return RemoteCodeRpcSpecResponse(
+        schema_version="sourcebrief.remote-code-rpc.v1",
+        transport="HTTP JSON over session/API-token auth; MCP remains the default agent orchestration layer.",
+        endpoints={
+            "json_rpc_batch": f"{base}/code/rpc",
+            "legacy_search": f"{base}/remote-code/search_code",
+            "legacy_grep": f"{base}/remote-code/grep_code",
+            "legacy_read": f"{base}/remote-code/read_file",
+            "legacy_symbols": f"{base}/remote-code/find_symbol",
+        },
+        methods={
+            "sourcebrief.code.search": {"params": "RemoteSearchCodeRequest: query, resource_ref/resource_refs/resource_ids, top_k, cursor", "result_key": "results", "purpose": "Lexical/identifier code search over authorized current git snapshots."},
+            "sourcebrief.code.grep": {"params": "RemoteGrepCodeRequest: pattern, resource_ref/resource_refs/resource_ids, path_glob, max_matches, regex, context_lines", "result_key": "matches", "purpose": "Bounded grep; broad scans may return budget_exceeded with retry guidance."},
+            "sourcebrief.code.read_batch": {"params": "{files:[{resource_ref or resource_id, path, start_line?, end_line?}]} (max 20 files)", "result_key": "files", "purpose": "Batch exact reads after search/grep/citation drilldown."},
+            "sourcebrief.code.lookup_plan": {"params": "{query, resource_ref/resource_refs/resource_ids?, path_glob?}", "result_key": "plan", "purpose": "Return suggested search/grep/read RPC calls without leaking snippets."},
+        },
+        auth={
+            "required_scopes": ["project:query", "code:read"],
+            "read_file_extra_scope": "resource:read",
+            "resource_resolution": "Prefer resource_ref/resource_refs in user-facing clients; raw UUIDs remain advanced/debug escape hatches and resolve only inside the caller's workspace/project scope.",
+        },
+        budgets={
+            "max_calls_per_batch": 20,
+            "max_read_files_per_call": 20,
+            "max_scanned_files": MAX_SCANNED_FILES,
+            "max_scanned_bytes": MAX_SCANNED_BYTES,
+            "max_regex_scan_seconds": MAX_REGEX_SCAN_SECONDS,
+            "max_matches": MAX_GREP_MATCHES,
+            "max_search_results": MAX_SEARCH_RESULTS,
+            "max_symbol_results": MAX_SYMBOL_RESULTS,
+            "max_read_lines": MAX_READ_LINES,
+        },
+        failure_modes={
+            "budget_exceeded": "status=error on the call with retry_guidance and scanned file/byte counts; clients should retry with path_glob or exact read.",
+            "partial": "batch-level status=partial when at least one call succeeds and at least one call errors.",
+            "not_queryable": "no current git snapshot or disabled retrieval returns a structured not_found/not_queryable error without backend paths.",
+            "forbidden": "missing scopes or resource boundaries return errors and never include code snippets.",
+            "ambiguous_resource": "resource_ref ambiguity fails closed with candidates visible only within authorized scope.",
+        },
+    )
+
+
+def _remote_code_rpc_error_payload(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, HTTPException):
+        detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+        return {"status_code": exc.status_code, "detail": jsonable_encoder(detail)}
+    if isinstance(exc, ValidationError):
+        return {"status_code": 422, "detail": {"code": "invalid_request", "message": "invalid RPC params", "errors": jsonable_encoder(exc.errors())}}
+    return {"status_code": 500, "detail": {"code": "internal_error", "message": str(exc)}}
+
+
+def _remote_code_lookup_plan(params: dict[str, Any]) -> dict[str, Any]:
+    query = str(params.get("query") or params.get("pattern") or "").strip()
+    path_glob = params.get("path_glob")
+    top_k = min(int(params.get("top_k") or 10), MAX_SEARCH_RESULTS)
+    max_matches = min(int(params.get("max_matches") or 20), MAX_GREP_MATCHES)
+    base_locator = {
+        key: value
+        for key, value in {
+            "resource_ref": params.get("resource_ref"),
+            "resource_refs": params.get("resource_refs"),
+            "resource_ids": params.get("resource_ids"),
+        }.items()
+        if value
+    }
+    return {
+        "query": query,
+        "recommended_sequence": [
+            {"method": "sourcebrief.code.search", "params": {"query": query, **base_locator, "top_k": top_k}, "why": "Find likely files/symbol-adjacent lines first with low result volume."},
+            {"method": "sourcebrief.code.grep", "params": {"pattern": query, **base_locator, **({"path_glob": path_glob} if path_glob else {}), "max_matches": max_matches}, "why": "Drill into cited paths or a narrowed glob; avoid broad scans when the corpus is large."},
+            {"method": "sourcebrief.code.read_batch", "params": {"files": [{**base_locator, "path": "<path from search/grep>", "start_line": 1, "end_line": 80}]}, "why": "Read exact retained snapshot lines after discovering paths; no checkout mutation is exposed."},
+        ],
+        "budget_guidance": _remote_code_rpc_spec(UUID(int=0), UUID(int=0)).budgets,
+    }
+
+
+def _execute_remote_code_rpc_call(
+    workspace_id: UUID,
+    project_id: UUID,
+    call_method: str,
+    params: dict[str, Any],
+    principal: Principal,
+    session: Session,
+) -> dict[str, Any]:
+    if call_method == "sourcebrief.code.search":
+        search_payload = RemoteSearchCodeRequest(**params)
+        return {"results": jsonable_encoder(remote_search_code(workspace_id, project_id, search_payload, principal, session).results)}
+    if call_method == "sourcebrief.code.grep":
+        grep_payload = RemoteGrepCodeRequest(**params)
+        response = remote_grep_code(workspace_id, project_id, grep_payload, principal, session)
+        return {"matches": jsonable_encoder(response.matches), "truncated": response.truncated, "next_cursor": response.next_cursor}
+    if call_method == "sourcebrief.code.read_batch":
+        files = params.get("files")
+        if not isinstance(files, list) or not files:
+            raise HTTPException(status_code=422, detail={"code": "invalid_request", "message": "files must be a non-empty array"})
+        if len(files) > 20:
+            raise HTTPException(status_code=422, detail={"code": "batch_too_large", "message": "read_batch accepts at most 20 files"})
+        reads = []
+        for item in files:
+            if not isinstance(item, dict):
+                raise HTTPException(status_code=422, detail={"code": "invalid_request", "message": "each files item must be an object"})
+            reads.append(jsonable_encoder(remote_read_file(workspace_id, project_id, RemoteReadFileRequest(**item), principal, session)))
+        return {"files": reads}
+    if call_method == "sourcebrief.code.lookup_plan":
+        require_scope(principal, "project:query")
+        require_scope(principal, "code:read")
+        _require_project_access(session, workspace_id, project_id, principal)
+        return {"plan": _remote_code_lookup_plan(params)}
+    raise HTTPException(status_code=422, detail={"code": "unknown_method", "message": f"unsupported code RPC method: {call_method}"})
+
+
+@app.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/code/rpc/spec",
+    response_model=RemoteCodeRpcSpecResponse,
+)
+def remote_code_rpc_spec(
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RemoteCodeRpcSpecResponse:
+    require_scope(principal, "project:query")
+    _require_project_access(session, workspace_id, project_id, principal)
+    return _remote_code_rpc_spec(workspace_id, project_id)
+
+
+@app.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/code/rpc",
+    response_model=RemoteCodeRpcResponse,
+)
+def remote_code_rpc(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: RemoteCodeRpcRequest,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> RemoteCodeRpcResponse:
+    started = perf_counter()
+    results: list[RemoteCodeRpcCallResult] = []
+    for call in payload.calls:
+        call_started = perf_counter()
+        try:
+            result = _execute_remote_code_rpc_call(workspace_id, project_id, call.method, call.params, principal, session)
+            results.append(RemoteCodeRpcCallResult(id=call.id, method=call.method, status="ok", result=result, telemetry={"elapsed_ms": round((perf_counter() - call_started) * 1000, 2)}))
+        except Exception as exc:  # noqa: BLE001 - RPC batches must serialize per-call errors.
+            results.append(RemoteCodeRpcCallResult(id=call.id, method=call.method, status="error", error=_remote_code_rpc_error_payload(exc), telemetry={"elapsed_ms": round((perf_counter() - call_started) * 1000, 2)}))
+            if payload.fail_fast:
+                break
+    error_count = sum(1 for item in results if item.status == "error")
+    status_value: Literal["ok", "partial", "error"] = "ok" if error_count == 0 else "error" if error_count == len(results) else "partial"
+    return RemoteCodeRpcResponse(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        status=status_value,
+        results=results,
+        telemetry={"elapsed_ms": round((perf_counter() - started) * 1000, 2), "call_count": len(results), "error_count": error_count},
+    )
 
 
 
@@ -9588,6 +9766,11 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "inputSchema": {"type": "object", "properties": {"pack_key": {"type": "string"}, "version": {"type": "integer", "minimum": 1}, "title": {"type": "string"}, "summary": {"type": "string"}, "approve_comment": {"type": "string"}}},
         },
         {
+            "name": "sourcebrief.get_rpc_spec",
+            "description": "Return the exact HTTP/JSON-RPC batch code-access schema, auth requirements, budgets, and failure-mode contract. MCP remains the default agent orchestration layer; this is for SDK/high-throughput clients.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
             "name": "sourcebrief.get_runtime_help",
             "description": "Return CLI-first instructions for installing generated SourceBrief skill packs and MCP runtime config locally.",
             "inputSchema": {"type": "object", "properties": {"target": {"type": "string", "enum": ["hermes"]}}},
@@ -9731,7 +9914,8 @@ async def mcp_endpoint(
             "sourcebrief.graph_query": 15,
             "sourcebrief.graph_path": 16,
             "sourcebrief.generate_skill_pack": 20,
-            "sourcebrief.get_runtime_help": 21,
+            "sourcebrief.get_rpc_spec": 21,
+            "sourcebrief.get_runtime_help": 22,
             "sourcebrief.generate_patch": 30,
             "sourcebrief.open_pr": 31,
         }
@@ -9795,6 +9979,8 @@ async def mcp_endpoint(
                 result = remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**_runtime_remote_args(symbol_args, {"name", "kind", "resource_ids", "top_k"})), principal, session)
             elif tool_name == "sourcebrief.generate_skill_pack":
                 result = _runtime_generate_skill_pack(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "sourcebrief.get_rpc_spec":
+                result = remote_code_rpc_spec(workspace_id, project_id, principal, session)
             elif tool_name == "sourcebrief.get_runtime_help":
                 result = _runtime_help(arguments)
             elif tool_name == "sourcebrief.generate_patch":

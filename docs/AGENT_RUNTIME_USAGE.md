@@ -154,6 +154,8 @@ Use these MCP tools for remote code:
 | Propose a patch without mutating Git | `sourcebrief.generate_patch` |
 | Record explicit PR approval metadata | `sourcebrief.open_pr` |
 
+For high-throughput SDK/backend clients, use MCP `sourcebrief.get_rpc_spec` to fetch the exact HTTP/JSON-RPC code-access schema, then call `POST /workspaces/{workspace_id}/projects/{project_id}/code/rpc`. The RPC surface batches `sourcebrief.code.search`, `sourcebrief.code.grep`, `sourcebrief.code.read_batch`, and `sourcebrief.code.lookup_plan`; it uses the same auth/resource boundaries as MCP, prefers `resource_ref` names in user-facing clients, and returns per-call `ok`/`error` telemetry instead of asking a model to invent HTTP payloads from prose.
+
 The right behavior for a coding agent is:
 
 ```text
