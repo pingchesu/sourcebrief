@@ -273,3 +273,214 @@ def test_authenticate_fails_before_mutation_with_actionable_auth_guidance(tmp_pa
     assert auth_mode["usable"] is False
     assert auth_mode["attempted"] == ["dev-header"]
     assert "authentication required" in auth_mode["reason"]
+
+
+def test_capture_run_environment_records_raw_generation_source_state(tmp_path, monkeypatch) -> None:
+    module = load_eval_module()
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(module, "load_dotenv", lambda _path: {})
+    monkeypatch.setattr(
+        module,
+        "run_local_command",
+        lambda command, timeout=60: {"command": command, "exit_code": 0, "stdout": "ok\n", "stderr": ""},
+    )
+    monkeypatch.setattr(module, "http_check", lambda url, timeout=30: {"url": url, "ok": True})
+    source_state = {
+        "git_head": "head-sha",
+        "git_branch": "main",
+        "repo_dirty": False,
+        "dirty_paths": [],
+        "script_commit": "script-sha",
+        "question_bank_commit": "questions-sha",
+    }
+
+    environment = module.capture_run_environment(
+        tmp_path / "out",
+        api_url="http://api.local",
+        web_url=None,
+        argv=["runner", "--output-dir", "out"],
+        source_state=source_state,
+    )
+
+    assert environment["raw_generation_command"]["argv"] == ["runner", "--output-dir", "out"]
+    assert environment["validation_or_reuse_command"] is None
+    assert environment["script_commit"] == "script-sha"
+    assert environment["question_bank_commit"] == "questions-sha"
+    assert environment["repo_dirty"] is False
+    persisted = module.json.loads((tmp_path / "out" / "run-environment.json").read_text(encoding="utf-8"))
+    assert persisted["source_state"]["script_commit"] == "script-sha"
+
+
+def test_reuse_existing_evidence_preserves_raw_command_and_records_validation_command(tmp_path, monkeypatch) -> None:
+    module = load_eval_module()
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    manifest = manifest_with_question(
+        {
+            "id": "answered",
+            "query": "What does the runbook say?",
+            "category": "runbook",
+            "customer_job": "understand runbook",
+            "difficulty": "medium",
+            "demo_type": "human-answer-demo",
+            "target_repo": "demo",
+            "target_repos": ["demo"],
+            "expected_result": "pass",
+            "min_citations": 1,
+            "import_type": "full",
+        }
+    )
+    report = module.build_grade_report(
+        manifest,
+        [{"results": [{"id": "answered", "citation_count": 1, "context_chars": 240, "failure_reasons": []}, negative_eval_response()]}],
+        {
+            "answered": {"answer": {"text": "Based on cited context: retry. [1]"}, "citations": [{"path": "runbook.md"}], "context": "x" * 240},
+            "negative-control": negative_context(),
+        },
+    )
+    raw_command = {"argv": ["runner", "--output-dir", str(out_dir)], "exit_code": 0}
+    raw_source_state = {
+        "script_commit": "raw-script-sha",
+        "question_bank_commit": "raw-questions-sha",
+        "repo_dirty": False,
+        "dirty_paths": [],
+    }
+    (out_dir / "eval-manifest.json").write_text(module.json.dumps(manifest), encoding="utf-8")
+    (out_dir / "eval-report.json").write_text(module.json.dumps(report), encoding="utf-8")
+    (out_dir / "run-environment.json").write_text(
+        module.json.dumps({"raw_generation_command": raw_command, "source_state": raw_source_state}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(module, "load_dotenv", lambda _path: {})
+    monkeypatch.setattr(
+        module,
+        "run_local_command",
+        lambda command, timeout=60: {"command": command, "exit_code": 0, "stdout": "ok\n", "stderr": ""},
+    )
+    monkeypatch.setattr(module, "http_check", lambda url, timeout=30: {"url": url, "ok": True})
+
+    reused_manifest, reused_report, previous_raw_command, previous_raw_source_state = module.validate_existing_evidence(out_dir)
+    environment = module.capture_run_environment(
+        out_dir,
+        api_url="http://api.local",
+        web_url="http://web.local",
+        argv=["runner", "--reuse-existing-evidence", "--output-dir", str(out_dir)],
+        source_state=previous_raw_source_state,
+        raw_generation=False,
+        previous_raw_generation_command=previous_raw_command,
+        validation_source_state={"script_commit": "validation-script-sha", "question_bank_commit": "validation-questions-sha", "repo_dirty": True},
+    )
+
+    assert reused_manifest["run"]["sourcebrief_commit"] == manifest["run"]["sourcebrief_commit"]
+    assert reused_report["aggregate"]["verdict"] == report["aggregate"]["verdict"]
+    assert environment["raw_generation_command"] == raw_command
+    assert environment["source_state"] == raw_source_state
+    assert environment["script_commit"] == "raw-script-sha"
+    assert environment["question_bank_commit"] == "raw-questions-sha"
+    assert environment["repo_dirty"] is False
+    assert environment["validation_source_state"]["script_commit"] == "validation-script-sha"
+    assert environment["validation_source_state"]["repo_dirty"] is True
+    assert environment["validation_or_reuse_command"]["argv"] == ["runner", "--reuse-existing-evidence", "--output-dir", str(out_dir)]
+
+
+def test_reuse_existing_evidence_without_raw_provenance_fails_cleanly(tmp_path, monkeypatch, capsys) -> None:
+    module = load_eval_module()
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    manifest = manifest_with_question(
+        {
+            "id": "answered",
+            "query": "What does the runbook say?",
+            "category": "runbook",
+            "customer_job": "understand runbook",
+            "difficulty": "medium",
+            "demo_type": "human-answer-demo",
+            "target_repo": "demo",
+            "target_repos": ["demo"],
+            "expected_result": "pass",
+            "min_citations": 1,
+            "import_type": "full",
+        }
+    )
+    report = module.build_grade_report(
+        manifest,
+        [{"results": [{"id": "answered", "citation_count": 1, "context_chars": 240, "failure_reasons": []}, negative_eval_response()]}],
+        {
+            "answered": {"answer": {"text": "Based on cited context: retry. [1]"}, "citations": [{"path": "runbook.md"}], "context": "x" * 240},
+            "negative-control": negative_context(),
+        },
+    )
+    (out_dir / "eval-manifest.json").write_text(module.json.dumps(manifest), encoding="utf-8")
+    (out_dir / "eval-report.json").write_text(module.json.dumps(report), encoding="utf-8")
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(module, "evidence_source_state", lambda: {"script_commit": "validation-script-sha", "repo_dirty": True})
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        ["runner", "--reuse-existing-evidence", "--output-dir", str(out_dir), "--api-url", "http://api.local"],
+    )
+
+    assert module.main() == 2
+    assert "cannot safely infer raw-generation provenance" in capsys.readouterr().err
+    assert not (out_dir / "run-environment.json").exists()
+
+
+def test_reuse_existing_evidence_rejects_malformed_raw_source_state(tmp_path, monkeypatch, capsys) -> None:
+    module = load_eval_module()
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    manifest = manifest_with_question(
+        {
+            "id": "answered",
+            "query": "What does the runbook say?",
+            "category": "runbook",
+            "customer_job": "understand runbook",
+            "difficulty": "medium",
+            "demo_type": "human-answer-demo",
+            "target_repo": "demo",
+            "target_repos": ["demo"],
+            "expected_result": "pass",
+            "min_citations": 1,
+            "import_type": "full",
+        }
+    )
+    report = module.build_grade_report(
+        manifest,
+        [{"results": [{"id": "answered", "citation_count": 1, "context_chars": 240, "failure_reasons": []}, negative_eval_response()]}],
+        {
+            "answered": {"answer": {"text": "Based on cited context: retry. [1]"}, "citations": [{"path": "runbook.md"}], "context": "x" * 240},
+            "negative-control": negative_context(),
+        },
+    )
+    (out_dir / "eval-manifest.json").write_text(module.json.dumps(manifest), encoding="utf-8")
+    (out_dir / "eval-report.json").write_text(module.json.dumps(report), encoding="utf-8")
+    (out_dir / "run-environment.json").write_text(
+        module.json.dumps(
+            {
+                "raw_generation_command": {"argv": ["runner"], "exit_code": 0},
+                "source_state": {"script_commit": "", "question_bank_commit": "raw-questions-sha", "repo_dirty": "false"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(module, "evidence_source_state", lambda: {"script_commit": "validation-script-sha", "repo_dirty": False})
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        ["runner", "--reuse-existing-evidence", "--output-dir", str(out_dir), "--api-url", "http://api.local"],
+    )
+
+    assert module.main() == 2
+    assert "cannot safely infer raw-generation provenance" in capsys.readouterr().err
+
+
+def test_dirty_evidence_guard_requires_explicit_override(monkeypatch) -> None:
+    module = load_eval_module()
+    monkeypatch.setattr(module, "evidence_source_state", lambda: {"repo_dirty": True, "dirty_paths": [" M scripts/run_awesome_agent_harness_eval.py"]})
+
+    with pytest.raises(RuntimeError, match="--allow-dirty-evidence"):
+        module.assert_clean_evidence_source(allow_dirty=False)
+
+    assert module.assert_clean_evidence_source(allow_dirty=True)["repo_dirty"] is True
