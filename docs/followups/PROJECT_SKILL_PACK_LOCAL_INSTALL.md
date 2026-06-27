@@ -139,7 +139,7 @@ Returns MCP/CLI usage guidance for the current project/runtime:
   "runtime": "hermes",
   "mcp_tools": ["sourcebrief.ask", "sourcebrief.lookup", "sourcebrief.read_section", "sourcebrief.grep_code"],
   "cli_fallback": [
-    "sourcebrief doctor --workspace-id ... --project-id ...",
+    "sourcebrief doctor --workspace \"SourceBrief CLI Demo\" --project \"First useful moment\"",
     "sourcebrief runtime validate --plan plan.json --run",
     "sourcebrief skill install --export-id ... --target hermes --profile default --dry-run"
   ],
@@ -154,13 +154,13 @@ Returns MCP/CLI usage guidance for the current project/runtime:
 
 ```bash
 sourcebrief skill export \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
+  --workspace "SourceBrief CLI Demo" \
+  --project "First useful moment" \
   --context-pack-key default \
-  --context-pack-version 3 \
-  --target hermes \
-  --out /tmp/sourcebrief-skill-pack
+  --context-pack-version current \
+  --target hermes
 ```
+
 
 ### Install locally
 

@@ -54,24 +54,23 @@ Store the token in the runtime's secret manager or environment. Do not paste it 
 
 The UI plan is copyable, but generation is not validation. Run the validator command before relying on the SourceBrief endpoint/token, then separately confirm your runtime loaded the copied config.
 
-## Get IDs and a token
+## Choose by name and create a token
 
-For first-time setup, prefer the UI: it shows the workspace, project, and resource names before any internal IDs. If you are scripting, get IDs from creation responses, the current UI route, or an existing agent profile response:
+For first-time setup, prefer the UI: it shows the workspace, project, and resource names before any internal IDs. For CLI flows, save the active workspace/project by name:
 
 ```bash
-sourcebrief --json agent profile \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID"
+sourcebrief use --workspace "SourceBrief CLI Demo" --project "First useful moment"
+sourcebrief --json agent profile
 ```
 
 Create a runtime token from a user/session-authenticated flow. For local development, run `sourcebrief login --password-env SOURCEBRIEF_ADMIN_PASSWORD` first or use the web login. Dev-header auth is still available for disposable local experiments, but it is not the normal quickstart path:
 
 ```bash
 sourcebrief --json token create-runtime \
-  --workspace-id "$WORKSPACE_ID" \
+  --workspace "SourceBrief CLI Demo" \
   --name "SourceBrief runtime token" \
   --read-code \
-  --project-id "$PROJECT_ID" \
+  --project "First useful moment" \
   --resource-id "$RESOURCE_ID"
 ```
 
@@ -81,12 +80,12 @@ The plaintext token is returned once. Store it in the runtime secret store or an
 
 ## Generate a plan from the CLI
 
-The UI is the primary human-facing path because it lets you choose the workspace, project, and resource scope by name. Use the CLI when you are scripting or when you already have the IDs from the UI route, creation responses, or `sourcebrief --json agent profile` output.
+The UI is the primary human-facing path because it lets you choose the workspace, project, and resource scope by name. The CLI also supports name-first selectors and persists the resolved selection for later commands; internal IDs stay available for advanced/debug scripting.
 
 Guided dry-run setup:
 
 ```bash
-sourcebrief use --workspace-id "$WORKSPACE_ID" --project-id "$PROJECT_ID"
+sourcebrief use --workspace "SourceBrief CLI Demo" --project "First useful moment"
 sourcebrief --json runtime setup hermes \
   --public-api-url "http://localhost:18000" \
   --resource-id "$RESOURCE_ID" \
@@ -99,8 +98,8 @@ Lower-level explicit plan generation:
 
 ```bash
 sourcebrief --json runtime plan \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
+  --workspace "SourceBrief CLI Demo" \
+  --project "First useful moment" \
   --target hermes \
   --public-api-url "http://localhost:18000" \
   --resource-id "$RESOURCE_ID"
@@ -142,8 +141,8 @@ Hermes has a guarded local apply flow. Claude, Codex, Cursor, and other runtimes
 
 ```bash
 sourcebrief --json runtime plan \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
+  --workspace "SourceBrief CLI Demo" \
+  --project "First useful moment" \
   --target hermes \
   --public-api-url "http://localhost:18000" \
   --resource-id "$RESOURCE_ID" > plan.json

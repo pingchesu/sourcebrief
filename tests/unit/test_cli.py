@@ -37,6 +37,18 @@ class FakeClient:
         if method == "POST" and path == "/auth/login":
             assert body is not None
             return {"session_token": f"session-for-{body['email']}"}
+        if method == "GET" and path == "/workspaces":
+            return [
+                {"id": "ws-1", "name": "Demo Workspace", "slug": "demo-workspace"},
+                {"id": "ws-amb-1", "name": "Duplicate Workspace", "slug": "dupe-a"},
+                {"id": "ws-amb-2", "name": "Duplicate Workspace", "slug": "dupe-b"},
+            ]
+        if method == "GET" and path == "/workspaces/ws-1/projects":
+            return [
+                {"id": "proj-1", "workspace_id": "ws-1", "name": "Demo Project", "visibility": "workspace"},
+                {"id": "proj-amb-1", "workspace_id": "ws-1", "name": "Duplicate Project", "visibility": "workspace"},
+                {"id": "proj-amb-2", "workspace_id": "ws-1", "name": "Duplicate Project", "visibility": "workspace"},
+            ]
         if method == "POST" and path.endswith("/resources"):
             assert body is not None
             return {
@@ -609,6 +621,51 @@ def test_cli_selected_defaults_apply_to_search_and_resource_list(monkeypatch, ca
         "/workspaces/ws-explicit/projects/proj-explicit/search",
     )
 
+    assert cli_main(["--json", "search", "--workspace", "demo-workspace", "--project", "Demo Project", "--query", "demo"]) == 0
+    named_client = FakeClient.instances[-1]
+    assert named_client.calls[0][0:2] == ("GET", "/workspaces")
+    assert named_client.calls[1][0:2] == ("GET", "/workspaces/ws-1/projects")
+    assert named_client.calls[2][0:2] == ("POST", "/workspaces/ws-1/projects/proj-1/search")
+    capsys.readouterr()
+
+    assert cli_main(["search", "--workspace", "demo-workspace", "--query", "demo"]) == 1
+    assert "--project / --project-id required" in capsys.readouterr().err
+
+
+def test_cli_use_can_save_name_first_scope_and_rejects_ambiguous_names(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+
+    assert cli_main(["--json", "use", "--workspace", "Demo Workspace", "--project", "Demo Project"]) == 0
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["workspace_id"] == "ws-1"
+    assert saved["workspace_name"] == "Demo Workspace"
+    assert saved["workspace_slug"] == "demo-workspace"
+    assert saved["project_id"] == "proj-1"
+    assert saved["project_name"] == "Demo Project"
+    out = json.loads(capsys.readouterr().out)
+    assert out["workspace"] == "Demo Workspace"
+    assert out["project"] == "Demo Project"
+
+    assert cli_main(["use", "--workspace", "Duplicate Workspace"]) == 1
+    assert "workspace 'Duplicate Workspace' is ambiguous" in capsys.readouterr().err
+
+    assert cli_main(["use", "--workspace", "Demo Workspace", "--project", "Duplicate Project"]) == 1
+    assert "project 'Duplicate Project' is ambiguous" in capsys.readouterr().err
+
+
+def test_cli_runtime_token_can_resolve_project_name_under_saved_workspace(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"workspace_id": "ws-1", "workspace_name": "Demo Workspace"}), encoding="utf-8")
+
+    assert cli_main(["--json", "token", "create-runtime", "--context-only", "--project", "Demo Project"]) == 0
+    body = FakeClient.instances[-1].calls[-1][2]
+    assert body is not None
+    assert body["allowed_project_ids"] == ["proj-1"]
+
 
 def test_cli_missing_selected_scope_errors(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
@@ -616,7 +673,7 @@ def test_cli_missing_selected_scope_errors(monkeypatch, capsys, tmp_path):
 
     assert cli_main(["search", "--query", "demo"]) == 1
     err = capsys.readouterr().err
-    assert "--workspace-id and --project-id required" in err
+    assert "--workspace / --workspace-id and --project / --project-id required" in err
     assert "sourcebrief use" in err
 
 
@@ -727,7 +784,7 @@ def test_token_create_runtime_presets(monkeypatch, capsys):
     capsys.readouterr()
 
     assert cli_main(["--json", "token", "create-runtime", "--workspace-id", "ws-1", "--context-only"]) == 1
-    assert "requires --project-id/--resource-id or explicit --workspace-wide" in capsys.readouterr().err
+    assert "requires --project/--project-id/--resource-id or explicit --workspace-wide" in capsys.readouterr().err
 
     assert cli_main(["--json", "token", "create-runtime", "--workspace-id", "ws-1", "--context-only", "--workspace-wide"]) == 0
     body = FakeClient.instances[-1].calls[0][2]
@@ -1203,7 +1260,7 @@ def test_doctor_query_without_scope_is_incomplete_and_nonzero(monkeypatch, capsy
     assert [check["name"] for check in data["checks"]] == ["api", "auth_mode", "project", "mcp_context"]
     assert data["checks"][-1]["status"] == "incomplete"
     assert data["checks"][-1]["message"] == "MCP smoke was not run: workspace/project not selected."
-    assert "sourcebrief use --workspace-id" in data["checks"][-1]["next_step"]
+    assert 'sourcebrief use --workspace "..." --project "..."' in data["checks"][-1]["next_step"]
     assert not any(call[1].startswith("/mcp/") for call in FakeClient.instances[-1].calls)
 
 

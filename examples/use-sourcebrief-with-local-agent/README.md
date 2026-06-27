@@ -67,10 +67,10 @@ A good answer must include citations back to the indexed source. If citations ar
 
 ### 4. Generate and validate runtime MCP config
 
-Use the UI Agent Profile page or CLI runtime setup once you know the workspace/project/resource IDs:
+Use the UI Agent Profile page or CLI runtime setup after selecting the workspace/project by name:
 
 ```bash
-sourcebrief use --workspace-id "$WORKSPACE_ID" --project-id "$PROJECT_ID"
+sourcebrief use --workspace "SourceBrief CLI Demo" --project "First useful moment"
 sourcebrief --json runtime setup hermes \
   --public-api-url "http://localhost:18000" \
   --resource-id "$RESOURCE_ID" \
@@ -98,14 +98,14 @@ The desired flow is:
 ```bash
 # 1. Publish or choose a reviewed context pack.
 sourcebrief context-pack publish \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
+  --workspace "SourceBrief CLI Demo" \
+  --project "First useful moment" \
   --pack-key default
 
 # 2. Export a project-specific skill pack.
 sourcebrief skill export \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
+  --workspace "SourceBrief CLI Demo" \
+  --project "First useful moment" \
   --context-pack-key default \
   --context-pack-version 1 \
   --target hermes \

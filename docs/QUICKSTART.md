@@ -232,9 +232,8 @@ Real repos may exceed the default import budgets for chunks or code symbols. Sou
 Use this when validating the agent runtime contract rather than the human first-use flow:
 
 ```bash
+sourcebrief use --workspace "SourceBrief CLI Demo" --project "First useful moment"
 sourcebrief agent-context \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
   --resource-id "$RESOURCE_ID" \
   --runtime hermes \
   --query "how does SourceBrief expose agent context?"

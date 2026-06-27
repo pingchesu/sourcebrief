@@ -236,8 +236,8 @@ Git resources use `type: "git"`. This is the repo-as-agent path: SourceBrief clo
 
 ```bash
 sourcebrief resource add-repo \
-  --workspace-id $WORKSPACE_ID \
-  --project-id $PROJECT_ID \
+  --workspace "Demo" \
+  --project "Demo Project" \
   --name "SourceBrief repo" \
   --repo-url https://github.com/pingchesu/sourcebrief.git \
   --branch main \
@@ -250,8 +250,8 @@ Search the repo:
 
 ```bash
 sourcebrief search \
-  --workspace-id $WORKSPACE_ID \
-  --project-id $PROJECT_ID \
+  --workspace "Demo" \
+  --project "Demo Project" \
   --query "agent-context API"
 ```
 
@@ -259,8 +259,8 @@ Ask for runtime-shaped context:
 
 ```bash
 sourcebrief agent-context \
-  --workspace-id $WORKSPACE_ID \
-  --project-id $PROJECT_ID \
+  --workspace "Demo" \
+  --project "Demo Project" \
   --runtime codex \
   --query "How does SourceBrief expose MCP context?"
 ```
@@ -301,14 +301,17 @@ Useful commands:
 ```bash
 sourcebrief health
 sourcebrief workspace create --name Demo --slug demo
-sourcebrief project create --workspace-id <workspace-id> --name "Demo Project"
-sourcebrief resource add-doc --workspace-id <workspace-id> --project-id <project-id> --name Runbook --uri doc://runbook --content-file runbook.md --refresh --wait
-sourcebrief resource add-repo --workspace-id <workspace-id> --project-id <project-id> --name Repo --repo-url https://github.com/example/repo.git --refresh --wait
-sourcebrief resource list --workspace-id <workspace-id> --project-id <project-id>
-sourcebrief search --workspace-id <workspace-id> --project-id <project-id> --query "payment retry"
-sourcebrief agent-context --workspace-id <workspace-id> --project-id <project-id> --runtime hermes --query "payment retry runbook"
-sourcebrief mcp-context --workspace-id <workspace-id> --project-id <project-id> --runtime claude --query "payment retry runbook"
+sourcebrief project create --workspace Demo --name "Demo Project"
+sourcebrief use --workspace Demo --project "Demo Project"
+sourcebrief resource add-doc --name Runbook --uri doc://runbook --content-file runbook.md --refresh --wait
+sourcebrief resource add-repo --name Repo --repo-url https://github.com/example/repo.git --refresh --wait
+sourcebrief resource list
+sourcebrief search --query "payment retry"
+sourcebrief agent-context --runtime hermes --query "payment retry runbook"
+sourcebrief mcp-context --runtime claude --query "payment retry runbook"
 ```
+
+The primary CLI path is name-first. `--workspace-id` and `--project-id` still exist for advanced/debug scripts that need exact internal IDs.
 
 Global options:
 

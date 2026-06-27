@@ -106,11 +106,12 @@ def _apply_resource_refs(body: dict[str, Any], args: argparse.Namespace) -> None
         body["resource_refs"] = refs
 
 
-def _split_csv_or_repeated(values: list[str] | None) -> list[str] | None:
+def _split_csv_or_repeated(values: str | list[str] | None) -> list[str] | None:
     if not values:
         return None
+    raw_values = [values] if isinstance(values, str) else values
     result: list[str] = []
-    for value in values:
+    for value in raw_values:
         result.extend(part.strip() for part in value.split(",") if part.strip())
     return result or None
 
@@ -158,6 +159,96 @@ def _save_cli_config(config: dict[str, Any]) -> Path:
 def _selected_value(config: dict[str, Any], key: str) -> str | None:
     value = config.get(key)
     return value if isinstance(value, str) and value else None
+
+
+def _casefold(value: str) -> str:
+    return value.strip().casefold()
+
+
+def _matches_workspace_selector(workspace: dict[str, Any], selector: str) -> bool:
+    wanted = _casefold(selector)
+    return wanted in {
+        _casefold(str(workspace.get("id") or "")),
+        _casefold(str(workspace.get("name") or "")),
+        _casefold(str(workspace.get("slug") or "")),
+    }
+
+
+def _matches_project_selector(project: dict[str, Any], selector: str) -> bool:
+    wanted = _casefold(selector)
+    return wanted in {
+        _casefold(str(project.get("id") or "")),
+        _casefold(str(project.get("name") or "")),
+    }
+
+
+def _workspace_candidate(workspace: dict[str, Any]) -> str:
+    return f"{workspace.get('name')} (slug={workspace.get('slug')}, id={workspace.get('id')})"
+
+
+def _project_candidate(project: dict[str, Any]) -> str:
+    return f"{project.get('name')} (id={project.get('id')})"
+
+
+def _resolve_workspace_selector(client: SourceBriefClient, selector: str) -> dict[str, Any]:
+    workspaces = client.request("GET", "/workspaces")
+    if not isinstance(workspaces, list):
+        raise SourceBriefCliError("workspace resolver expected /workspaces to return a list")
+    matches = [workspace for workspace in workspaces if isinstance(workspace, dict) and _matches_workspace_selector(workspace, selector)]
+    if not matches:
+        raise SourceBriefCliError(f"workspace {selector!r} was not found or is not accessible")
+    if len(matches) > 1:
+        choices = "; ".join(_workspace_candidate(workspace) for workspace in matches)
+        raise SourceBriefCliError(f"workspace {selector!r} is ambiguous; choose one of: {choices}")
+    return matches[0]
+
+
+def _resolve_project_selector(client: SourceBriefClient, workspace_id: str, selector: str) -> dict[str, Any]:
+    projects = client.request("GET", f"/workspaces/{workspace_id}/projects")
+    if not isinstance(projects, list):
+        raise SourceBriefCliError("project resolver expected /projects to return a list")
+    matches = [project for project in projects if isinstance(project, dict) and _matches_project_selector(project, selector)]
+    if not matches:
+        raise SourceBriefCliError(f"project {selector!r} was not found or is not accessible in the selected workspace")
+    if len(matches) > 1:
+        choices = "; ".join(_project_candidate(project) for project in matches)
+        raise SourceBriefCliError(f"project {selector!r} is ambiguous in the selected workspace; choose one of: {choices}")
+    return matches[0]
+
+
+def _resolve_named_scope(client: SourceBriefClient, args: argparse.Namespace, config: dict[str, Any]) -> None:
+    workspace_selector = getattr(args, "workspace", None)
+    project_selector = getattr(args, "project", None)
+    project_refs = getattr(args, "project_ref", None)
+    if not (workspace_selector or project_selector or project_refs):
+        return
+    if workspace_selector and getattr(args, "workspace_id", None):
+        raise SourceBriefCliError("use either --workspace or --workspace-id, not both")
+    if project_selector and getattr(args, "project_id", None):
+        raise SourceBriefCliError("use either --project or --project-id, not both")
+    if workspace_selector:
+        workspace = _resolve_workspace_selector(client, workspace_selector)
+        args.workspace_id = str(workspace["id"])
+        args._resolved_workspace_name = workspace.get("name")
+        args._resolved_workspace_slug = workspace.get("slug")
+    elif not getattr(args, "workspace_id", None):
+        saved_workspace_id = _selected_value(config, "workspace_id")
+        if saved_workspace_id:
+            args.workspace_id = saved_workspace_id
+    if project_selector:
+        if not getattr(args, "workspace_id", None):
+            raise SourceBriefCliError("--project requires --workspace or a saved workspace selection")
+        project = _resolve_project_selector(client, str(args.workspace_id), project_selector)
+        args.project_id = str(project["id"])
+        args._resolved_project_name = project.get("name")
+    if project_refs:
+        if not getattr(args, "workspace_id", None):
+            raise SourceBriefCliError("--project requires --workspace or a saved workspace selection")
+        resolved_project_ids = list(getattr(args, "project_id", None) or [])
+        for selector in project_refs:
+            project = _resolve_project_selector(client, str(args.workspace_id), selector)
+            resolved_project_ids.append(str(project["id"]))
+        args.project_id = resolved_project_ids
 
 
 def _dotenv_path() -> Path:
@@ -256,23 +347,41 @@ def _maybe_session_login(client: SourceBriefClient, args: argparse.Namespace) ->
 def _command_uses_selected_scope(args: argparse.Namespace) -> bool:
     if args.command in {"ask", "search", "agent-context", "mcp-context", "doctor"}:
         return True
+    if args.command == "project" and getattr(args, "project_command", None) == "create":
+        return True
+    if args.command == "token" and getattr(args, "token_command", None) in {"create", "create-runtime", "list", "revoke"}:
+        return True
+    if args.command == "agent" and getattr(args, "agent_command", None) in {"list", "profile"}:
+        return True
     if args.command == "resource" and getattr(args, "resource_command", None) in {
         "add-doc",
         "add-repo",
         "add-upload",
         "add-url",
         "list",
+        "refresh",
+        "restore",
+        "purge",
+        "schedule-due",
+        "graph",
     }:
         return True
-    return args.command == "runtime" and getattr(args, "runtime_command", None) == "setup"
+    return args.command == "runtime" and getattr(args, "runtime_command", None) in {"plan", "setup"}
 
 
 def _apply_selected_defaults(args: argparse.Namespace, config: dict[str, Any]) -> None:
     if not _command_uses_selected_scope(args):
         return
-    if "workspace_id" in args.__dict__ and not args.__dict__.get("workspace_id"):
+    if "workspace_id" in args.__dict__ and not args.__dict__.get("workspace_id") and not getattr(args, "workspace", None):
         args.workspace_id = _selected_value(config, "workspace_id")
-    if "project_id" in args.__dict__ and not args.__dict__.get("project_id"):
+    if (
+        "project_id" in args.__dict__
+        and not args.__dict__.get("project_id")
+        and args.command != "token"
+        and not getattr(args, "workspace", None)
+        and not getattr(args, "project", None)
+        and not getattr(args, "project_ref", None)
+    ):
         args.project_id = _selected_value(config, "project_id")
 
 
@@ -291,12 +400,12 @@ def _resolve_email(args: argparse.Namespace) -> None:
 def _require_scope(args: argparse.Namespace, *, workspace: bool = True, project: bool = True) -> None:
     missing: list[str] = []
     if workspace and "workspace_id" in args.__dict__ and not args.__dict__.get("workspace_id"):
-        missing.append("--workspace-id")
+        missing.append("--workspace / --workspace-id")
     if project and "project_id" in args.__dict__ and not args.__dict__.get("project_id"):
-        missing.append("--project-id")
+        missing.append("--project / --project-id")
     if missing:
         joined = " and ".join(missing)
-        raise SourceBriefCliError(f"{joined} required; pass it explicitly or run sourcebrief use first")
+        raise SourceBriefCliError(f"{joined} required; pass a name explicitly or run sourcebrief use first")
 
 
 def _wait_for_run(client: SourceBriefClient, workspace_id: str, index_run_id: str, timeout: int) -> dict[str, Any]:
@@ -319,14 +428,21 @@ def cmd_health(client: SourceBriefClient, _args: argparse.Namespace) -> Any:
 def cmd_use(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
     config = dict(getattr(args, "_sourcebrief_config", {}) or {})
     if args.clear:
-        config.pop("workspace_id", None)
-        config.pop("project_id", None)
+        for key in ("workspace_id", "project_id", "workspace_name", "workspace_slug", "project_name"):
+            config.pop(key, None)
     if args.workspace_id:
         config["workspace_id"] = args.workspace_id
+        if getattr(args, "_resolved_workspace_name", None):
+            config["workspace_name"] = args._resolved_workspace_name
+        if getattr(args, "_resolved_workspace_slug", None):
+            config["workspace_slug"] = args._resolved_workspace_slug
         if not args.project_id and not args.clear:
             config.pop("project_id", None)
+            config.pop("project_name", None)
     if args.project_id:
         config["project_id"] = args.project_id
+        if getattr(args, "_resolved_project_name", None):
+            config["project_name"] = args._resolved_project_name
     if getattr(args, "_api_url_explicit", False) or "api_url" not in config:
         config["api_url"] = args.api_url.rstrip("/")
     path = _save_cli_config(config)
@@ -334,6 +450,8 @@ def cmd_use(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
         "status": "saved",
         "config_path": str(path),
         "api_url": config.get("api_url"),
+        "workspace": config.get("workspace_name") or config.get("workspace_slug"),
+        "project": config.get("project_name"),
         "workspace_id": config.get("workspace_id"),
         "project_id": config.get("project_id"),
     }
@@ -344,6 +462,8 @@ def cmd_status(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
     return {
         "config_path": str(_config_path()),
         "api_url": args.api_url.rstrip("/"),
+        "workspace": _selected_value(config, "workspace_name") or _selected_value(config, "workspace_slug"),
+        "project": _selected_value(config, "project_name"),
         "workspace_id": _selected_value(config, "workspace_id"),
         "project_id": _selected_value(config, "project_id"),
         "auth_mode": getattr(args, "_auth_mode", "bearer_token" if args.token else "email_header"),
@@ -452,7 +572,7 @@ def cmd_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
             except SourceBriefCliError as exc:
                 checks.append(_check_result("mcp_context", "failed", query=args.query, error=str(exc)))
     else:
-        next_step = "run `sourcebrief use --workspace-id ... --project-id ...` or rerun doctor with --workspace-id ... --project-id ..."
+        next_step = 'run `sourcebrief use --workspace "..." --project "..."` or rerun doctor with --workspace "..." --project "..."'
         checks.append(
             _check_result(
                 "project",
@@ -487,6 +607,7 @@ def cmd_workspace_create(client: SourceBriefClient, args: argparse.Namespace) ->
 
 
 def cmd_project_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args, project=False)
     return client.request(
         "POST",
         f"/workspaces/{args.workspace_id}/projects",
@@ -496,6 +617,7 @@ def cmd_project_create(client: SourceBriefClient, args: argparse.Namespace) -> A
 
 
 def cmd_token_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args, project=False)
     return client.request(
         "POST",
         f"/workspaces/{args.workspace_id}/api-tokens",
@@ -511,11 +633,12 @@ def cmd_token_create(client: SourceBriefClient, args: argparse.Namespace) -> Any
 
 
 def cmd_token_create_runtime(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args, project=False)
     allowed_project_ids = _split_csv_or_repeated(args.project_id)
     allowed_resource_ids = _split_csv_or_repeated(args.resource_id)
     if not args.workspace_wide and not (allowed_project_ids or allowed_resource_ids):
         raise SourceBriefCliError(
-            "token create-runtime requires --project-id/--resource-id or explicit --workspace-wide"
+            "token create-runtime requires --project/--project-id/--resource-id or explicit --workspace-wide"
         )
     scopes = READ_CODE_RUNTIME_SCOPES if args.read_code else CONTEXT_RUNTIME_SCOPES
     return client.request(
@@ -533,10 +656,12 @@ def cmd_token_create_runtime(client: SourceBriefClient, args: argparse.Namespace
 
 
 def cmd_token_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args, project=False)
     return client.request("GET", f"/workspaces/{args.workspace_id}/api-tokens")
 
 
 def cmd_token_revoke(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args, project=False)
     return client.request("DELETE", f"/workspaces/{args.workspace_id}/api-tokens/{args.token_id}")
 
 
@@ -655,6 +780,7 @@ def cmd_resource_add_upload(client: SourceBriefClient, args: argparse.Namespace)
 
 
 def cmd_resource_refresh(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
 
     run = client.request(
         "POST",
@@ -672,6 +798,7 @@ def cmd_resource_list(client: SourceBriefClient, args: argparse.Namespace) -> An
 
 
 def cmd_resource_restore(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
     return client.request(
         "POST",
         f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}/restore",
@@ -679,6 +806,7 @@ def cmd_resource_restore(client: SourceBriefClient, args: argparse.Namespace) ->
 
 
 def cmd_resource_purge(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
     return client.request(
         "POST",
         f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}/purge",
@@ -686,6 +814,7 @@ def cmd_resource_purge(client: SourceBriefClient, args: argparse.Namespace) -> A
 
 
 def cmd_resource_schedule_due(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
     query = f"limit={args.limit}"
     if args.dry_run:
         query += "&dry_run=true"
@@ -879,7 +1008,16 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
         error = _mcp_error_message(mcp_response)
         mcp_validation = {"status": "failed" if error else "passed", "error": error}
     saved_config = dict(getattr(args, "_sourcebrief_config", {}) or {})
-    saved_config.update({"api_url": args.api_url.rstrip("/"), "workspace_id": workspace["id"], "project_id": project["id"]})
+    saved_config.update(
+        {
+            "api_url": args.api_url.rstrip("/"),
+            "workspace_id": workspace["id"],
+            "workspace_name": workspace.get("name"),
+            "workspace_slug": workspace.get("slug"),
+            "project_id": project["id"],
+            "project_name": project.get("name"),
+        }
+    )
     config_path = _save_cli_config(saved_config)
     return {
         "status": "indexed_and_ready_for_retrieval",
@@ -1019,10 +1157,12 @@ def cmd_runtime_validate(_client: SourceBriefClient, args: argparse.Namespace) -
 
 
 def cmd_agent_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args, project=False)
     return client.request("GET", f"/workspaces/{args.workspace_id}/agents")
 
 
 def cmd_agent_profile(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
     return client.request(
         "GET",
         f"/workspaces/{args.workspace_id}/projects/{args.project_id}/agent-profile",
@@ -1030,6 +1170,7 @@ def cmd_agent_profile(client: SourceBriefClient, args: argparse.Namespace) -> An
 
 
 def cmd_resource_graph(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
     return client.request(
         "GET",
         f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}/graph?limit={args.limit}",
@@ -1037,8 +1178,10 @@ def cmd_resource_graph(client: SourceBriefClient, args: argparse.Namespace) -> A
 
 
 def _add_common_resource_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--workspace-id", help="workspace ID; defaults to sourcebrief use selection")
-    parser.add_argument("--project-id", help="project ID; defaults to sourcebrief use selection")
+    parser.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    parser.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    parser.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    parser.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     parser.add_argument("--name", required=True)
     parser.add_argument("--update-frequency", default="manual")
     parser.add_argument("--refresh", action="store_true", help="refresh after creating the resource")
@@ -1075,8 +1218,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="save default workspace/project for later read/query commands",
         description=f"Save CLI defaults in {_config_path()}. Explicit flags still override saved values.",
     )
-    use.add_argument("--workspace-id", help="workspace ID to save; changing it without --project-id clears the saved project")
-    use.add_argument("--project-id", help="project ID to save")
+    use.add_argument("--workspace", help="workspace name or slug to save; changing it without --project clears the saved project")
+    use.add_argument("--workspace-id", help="advanced: workspace ID to save; changing it without --project-id clears the saved project")
+    use.add_argument("--project", help="project name to save")
+    use.add_argument("--project-id", help="advanced: project ID to save")
     use.add_argument("--clear", action="store_true", help="clear saved workspace/project before applying new values")
     use.set_defaults(func=cmd_use)
 
@@ -1103,8 +1248,10 @@ def build_parser() -> argparse.ArgumentParser:
     quickstart.set_defaults(func=cmd_quickstart_demo)
 
     doctor = sub.add_parser("doctor", help="check API/auth/project/MCP readiness")
-    doctor.add_argument("--workspace-id", help="workspace ID; defaults to sourcebrief use selection")
-    doctor.add_argument("--project-id", help="project ID; defaults to sourcebrief use selection")
+    doctor.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    doctor.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    doctor.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    doctor.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     doctor.add_argument("--query", help="optional MCP context smoke-test query")
     doctor.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
     doctor.add_argument("--resource-id", action="append")
@@ -1119,39 +1266,46 @@ def build_parser() -> argparse.ArgumentParser:
 
     projects = sub.add_parser("project", help="project commands").add_subparsers(dest="project_command")
     project_create = projects.add_parser("create", help="create a project")
-    project_create.add_argument("--workspace-id", required=True)
+    project_create.add_argument("--workspace", help="workspace name or slug")
+    project_create.add_argument("--workspace-id", help="advanced: workspace ID")
     project_create.add_argument("--name", required=True)
     project_create.add_argument("--description")
     project_create.set_defaults(func=cmd_project_create)
 
     tokens = sub.add_parser("token", help="workspace API token commands").add_subparsers(dest="token_command")
     token_create = tokens.add_parser("create", help="create a bearer API token for agents/Hermes")
-    token_create.add_argument("--workspace-id", required=True)
+    token_create.add_argument("--workspace", help="workspace name or slug")
+    token_create.add_argument("--workspace-id", help="advanced: workspace ID")
     token_create.add_argument("--name", required=True)
     token_create.add_argument("--scope", action="append", required=True, help="scope, repeatable or comma-separated")
-    token_create.add_argument("--project-id", action="append", help="allowed project ID, repeatable or comma-separated")
+    token_create.add_argument("--project", dest="project_ref", action="append", help="allowed project name, repeatable")
+    token_create.add_argument("--project-id", action="append", help="advanced: allowed project ID, repeatable or comma-separated")
     token_create.add_argument("--resource-id", action="append", help="allowed resource ID, repeatable or comma-separated")
     token_create.add_argument("--expires-at", help="ISO-8601 timestamp")
     token_create.set_defaults(func=cmd_token_create)
 
     token_runtime = tokens.add_parser("create-runtime", help="create a preset runtime token")
-    token_runtime.add_argument("--workspace-id", required=True)
+    token_runtime.add_argument("--workspace", help="workspace name or slug")
+    token_runtime.add_argument("--workspace-id", help="advanced: workspace ID")
     token_runtime.add_argument("--name", default="SourceBrief runtime")
     preset = token_runtime.add_mutually_exclusive_group()
     preset.add_argument("--context-only", dest="read_code", action="store_false", help="project/query/resource/review read scopes only")
     preset.add_argument("--read-code", dest="read_code", action="store_true", help="include code:read for source drill-down tools")
-    token_runtime.add_argument("--project-id", action="append", help="allowed project ID, repeatable or comma-separated")
+    token_runtime.add_argument("--project", dest="project_ref", action="append", help="allowed project name, repeatable")
+    token_runtime.add_argument("--project-id", action="append", help="advanced: allowed project ID, repeatable or comma-separated")
     token_runtime.add_argument("--resource-id", action="append", help="allowed resource ID, repeatable or comma-separated")
     token_runtime.add_argument("--workspace-wide", action="store_true", help="explicitly allow this runtime token across the whole workspace")
     token_runtime.add_argument("--expires-at", help="ISO-8601 timestamp")
     token_runtime.set_defaults(func=cmd_token_create_runtime, read_code=False)
 
     token_list = tokens.add_parser("list", help="list API tokens without plaintext secrets")
-    token_list.add_argument("--workspace-id", required=True)
+    token_list.add_argument("--workspace", help="workspace name or slug")
+    token_list.add_argument("--workspace-id", help="advanced: workspace ID")
     token_list.set_defaults(func=cmd_token_list)
 
     token_revoke = tokens.add_parser("revoke", help="revoke an API token")
-    token_revoke.add_argument("--workspace-id", required=True)
+    token_revoke.add_argument("--workspace", help="workspace name or slug")
+    token_revoke.add_argument("--workspace-id", help="advanced: workspace ID")
     token_revoke.add_argument("--token-id", required=True)
     token_revoke.set_defaults(func=cmd_token_revoke)
 
@@ -1194,57 +1348,74 @@ def build_parser() -> argparse.ArgumentParser:
     add_upload.set_defaults(func=cmd_resource_add_upload)
 
     refresh = resources.add_parser("refresh", help="refresh a resource")
-    refresh.add_argument("--workspace-id", required=True)
-    refresh.add_argument("--project-id", required=True)
+    refresh.add_argument("--workspace", help="workspace name or slug")
+    refresh.add_argument("--workspace-id", help="advanced: workspace ID")
+    refresh.add_argument("--project", help="project name")
+    refresh.add_argument("--project-id", help="advanced: project ID")
     refresh.add_argument("--resource-id", required=True)
     refresh.add_argument("--wait", action="store_true")
     refresh.add_argument("--timeout", type=int, default=120)
     refresh.set_defaults(func=cmd_resource_refresh)
 
     list_resources = resources.add_parser("list", help="list resources")
-    list_resources.add_argument("--workspace-id")
-    list_resources.add_argument("--project-id")
+    list_resources.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    list_resources.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    list_resources.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    list_resources.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     list_resources.set_defaults(func=cmd_resource_list)
 
     restore = resources.add_parser("restore", help="restore an archived or soft-deleted resource")
-    restore.add_argument("--workspace-id", required=True)
-    restore.add_argument("--project-id", required=True)
+    restore.add_argument("--workspace", help="workspace name or slug")
+    restore.add_argument("--workspace-id", help="advanced: workspace ID")
+    restore.add_argument("--project", help="project name")
+    restore.add_argument("--project-id", help="advanced: project ID")
     restore.add_argument("--resource-id", required=True)
     restore.set_defaults(func=cmd_resource_restore)
 
     purge = resources.add_parser("purge", help="hard purge a soft-deleted resource and artifacts")
-    purge.add_argument("--workspace-id", required=True)
-    purge.add_argument("--project-id", required=True)
+    purge.add_argument("--workspace", help="workspace name or slug")
+    purge.add_argument("--workspace-id", help="advanced: workspace ID")
+    purge.add_argument("--project", help="project name")
+    purge.add_argument("--project-id", help="advanced: project ID")
     purge.add_argument("--resource-id", required=True)
     purge.set_defaults(func=cmd_resource_purge)
 
     schedule = resources.add_parser("schedule-due", help="enqueue due scheduled refreshes for a project")
-    schedule.add_argument("--workspace-id", required=True)
-    schedule.add_argument("--project-id", required=True)
+    schedule.add_argument("--workspace", help="workspace name or slug")
+    schedule.add_argument("--workspace-id", help="advanced: workspace ID")
+    schedule.add_argument("--project", help="project name")
+    schedule.add_argument("--project-id", help="advanced: project ID")
     schedule.add_argument("--limit", type=int, default=100)
     schedule.add_argument("--dry-run", action="store_true")
     schedule.set_defaults(func=cmd_resource_schedule_due)
 
     graph = resources.add_parser("graph", help="show a resource graph index")
-    graph.add_argument("--workspace-id", required=True)
-    graph.add_argument("--project-id", required=True)
+    graph.add_argument("--workspace", help="workspace name or slug")
+    graph.add_argument("--workspace-id", help="advanced: workspace ID")
+    graph.add_argument("--project", help="project name")
+    graph.add_argument("--project-id", help="advanced: project ID")
     graph.add_argument("--resource-id", required=True)
     graph.add_argument("--limit", type=int, default=50)
     graph.set_defaults(func=cmd_resource_graph)
 
     agents = sub.add_parser("agent", help="agent registry commands").add_subparsers(dest="agent_command")
     agent_list = agents.add_parser("list", help="list project agents in a workspace")
-    agent_list.add_argument("--workspace-id", required=True)
+    agent_list.add_argument("--workspace", help="workspace name or slug")
+    agent_list.add_argument("--workspace-id", help="advanced: workspace ID")
     agent_list.set_defaults(func=cmd_agent_list)
 
     agent_profile = agents.add_parser("profile", help="show one project agent profile")
-    agent_profile.add_argument("--workspace-id", required=True)
-    agent_profile.add_argument("--project-id", required=True)
+    agent_profile.add_argument("--workspace", help="workspace name or slug")
+    agent_profile.add_argument("--workspace-id", help="advanced: workspace ID")
+    agent_profile.add_argument("--project", help="project name")
+    agent_profile.add_argument("--project-id", help="advanced: project ID")
     agent_profile.set_defaults(func=cmd_agent_profile)
 
     search = sub.add_parser("search", help="search project context")
-    search.add_argument("--workspace-id")
-    search.add_argument("--project-id")
+    search.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    search.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    search.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    search.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     search.add_argument("--query", required=True)
     search.add_argument("--resource-id", action="append")
     search.add_argument("--resource", action="append", help="resource ID or unambiguous resource ref/name")
@@ -1258,8 +1429,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ask.add_argument("query", help="question to answer from cited project evidence")
     ask.add_argument("--json", action="store_true", help="print the full agent-context packet for this ask")
-    ask.add_argument("--workspace-id", help="workspace ID; overrides saved sourcebrief use value")
-    ask.add_argument("--project-id", help="project ID; overrides saved sourcebrief use value")
+    ask.add_argument("--workspace", help="workspace name or slug; overrides saved sourcebrief use value")
+    ask.add_argument("--workspace-id", help="advanced: workspace ID; overrides saved sourcebrief use value")
+    ask.add_argument("--project", help="project name; overrides saved sourcebrief use value")
+    ask.add_argument("--project-id", help="advanced: project ID; overrides saved sourcebrief use value")
     ask.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
     ask.add_argument("--resource-id", action="append")
     ask.add_argument("--resource", action="append", help="resource ID or unambiguous resource ref/name")
@@ -1269,8 +1442,10 @@ def build_parser() -> argparse.ArgumentParser:
     ask.set_defaults(func=cmd_ask, include_code_symbols=True)
 
     agent = sub.add_parser("agent-context", help="request runtime-shaped context")
-    agent.add_argument("--workspace-id")
-    agent.add_argument("--project-id")
+    agent.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    agent.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    agent.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    agent.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     agent.add_argument("--query", required=True)
     agent.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
     agent.add_argument("--resource-id", action="append")
@@ -1282,8 +1457,10 @@ def build_parser() -> argparse.ArgumentParser:
     agent.set_defaults(func=cmd_agent_context, include_code_symbols=True, include_answer=True)
 
     mcp = sub.add_parser("mcp-context", help="call the central MCP context tool")
-    mcp.add_argument("--workspace-id")
-    mcp.add_argument("--project-id")
+    mcp.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    mcp.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    mcp.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    mcp.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     mcp.add_argument("--query", required=True)
     mcp.add_argument("--runtime", default="api", choices=["api", "hermes", "claude", "codex", "cursor"])
     mcp.add_argument("--resource-id", action="append")
@@ -1293,8 +1470,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     runtime = sub.add_parser("runtime", help="agent runtime install and validation commands").add_subparsers(dest="runtime_command")
     runtime_plan = runtime.add_parser("plan", help="generate a dry-run runtime install plan")
-    runtime_plan.add_argument("--workspace-id", required=True)
-    runtime_plan.add_argument("--project-id", required=True)
+    runtime_plan.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    runtime_plan.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    runtime_plan.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    runtime_plan.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     runtime_plan.add_argument("--target", required=True, choices=["hermes", "claude", "codex"])
     runtime_plan.add_argument("--public-api-url")
     runtime_plan.add_argument("--server-name")
@@ -1304,8 +1483,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     runtime_setup = runtime.add_parser("setup", help="guided dry-run runtime setup; never writes local config")
     runtime_setup.add_argument("target", choices=["hermes"])
-    runtime_setup.add_argument("--workspace-id", help="workspace ID; defaults to sourcebrief use selection")
-    runtime_setup.add_argument("--project-id", help="project ID; defaults to sourcebrief use selection")
+    runtime_setup.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    runtime_setup.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    runtime_setup.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    runtime_setup.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     runtime_setup.add_argument("--public-api-url")
     runtime_setup.add_argument("--server-name")
     runtime_setup.add_argument("--resource-id", action="append")
@@ -1443,6 +1624,7 @@ def main(argv: list[str] | None = None) -> int:
     client = SourceBriefClient(args.api_url, args.email, token=args.token)
     try:
         _maybe_session_login(client, args)
+        _resolve_named_scope(client, args, getattr(args, "_sourcebrief_config", {}) or {})
         data = args.func(client, args)
     except (SourceBriefCliError, runtime_apply.RuntimeApplyError) as exc:
         print(f"sourcebrief: error: {exc}", file=sys.stderr)
