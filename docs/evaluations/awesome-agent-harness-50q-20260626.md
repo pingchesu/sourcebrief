@@ -128,9 +128,11 @@ SOURCEBRIEF_API_URL="$API_URL" SOURCEBRIEF_WEB_URL="$WEB_URL" \
   --index-timeout 900
 ```
 
+Raw evidence generation now requires a clean worktree by default. If an operator intentionally needs a non-canonical exploratory run from local edits, pass `--allow-dirty-evidence`; the resulting `run-environment.json` records `repo_dirty=true` plus the dirty paths. To validate or re-summarize an existing evidence directory without re-importing resources, pass `--reuse-existing-evidence`; the runner preserves the previous `raw_generation_command` and records the later validation command separately.
+
 The runner stores redacted raw payloads under the output directory:
 
-- `run-environment.json` — command/exit-code, URLs, compose project, API/frontend/provider health
+- `run-environment.json` — command/exit-code, raw-generation vs validation/reuse command, script/question-bank commits, repo dirty state, URLs, compose project, API/frontend/provider health
 - `imports/` — per-repo import attempts, snapshots, index-run outcomes
 - `resource-ref/` — human-name/resource_ref lookup proof
 - `eval-batches/` — `/retrieval-evals` payloads and responses

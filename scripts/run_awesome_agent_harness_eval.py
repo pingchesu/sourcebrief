@@ -216,6 +216,47 @@ def run_local_command(command: list[str], *, timeout: int = 60) -> dict[str, Any
         }
 
 
+def _command_stdout(capture: dict[str, Any]) -> str:
+    if capture.get("exit_code") != 0:
+        return "unknown"
+    stdout = capture.get("stdout")
+    return stdout.strip() if isinstance(stdout, str) and stdout.strip() else "unknown"
+
+
+def evidence_source_state() -> dict[str, Any]:
+    git_status = run_local_command(["git", "status", "--short", "--branch"])
+    raw_status_stdout = git_status.get("stdout")
+    git_status_stdout = raw_status_stdout if isinstance(raw_status_stdout, str) else ""
+    dirty_lines = [line for line in git_status_stdout.splitlines() if line and not line.startswith("##")]
+    return {
+        "git_head": _command_stdout(run_local_command(["git", "rev-parse", "HEAD"])),
+        "git_branch": _command_stdout(run_local_command(["git", "branch", "--show-current"])),
+        "git_status_short": git_status,
+        "repo_dirty": bool(dirty_lines),
+        "dirty_paths": dirty_lines,
+        "script_commit": _command_stdout(run_local_command(["git", "log", "-n", "1", "--format=%H", "--", str(Path(__file__).relative_to(REPO_ROOT))])),
+        "question_bank_commit": _command_stdout(
+            run_local_command(["git", "log", "-n", "1", "--format=%H", "--", str(QUESTION_BANK.relative_to(REPO_ROOT))])
+        ),
+    }
+
+
+def assert_clean_evidence_source(*, allow_dirty: bool) -> dict[str, Any]:
+    state = evidence_source_state()
+    if state["repo_dirty"] and not allow_dirty:
+        dirty_preview = "; ".join(state["dirty_paths"][:8])
+        raise RuntimeError(
+            "Refusing to generate canonical evaluation evidence from a dirty worktree. "
+            "Commit/stash changes or pass --allow-dirty-evidence for an explicitly non-canonical run. "
+            f"Dirty paths: {dirty_preview}"
+        )
+    return state
+
+
+def _command_record(argv: list[str], *, exit_code: int, note: str) -> dict[str, Any]:
+    return {"argv": argv, "exit_code": exit_code, "exit_code_note": note}
+
+
 def http_check(url: str, *, timeout: int = 30) -> dict[str, Any]:
     started_at = datetime.now(UTC).isoformat()
     try:
@@ -237,12 +278,37 @@ def http_check(url: str, *, timeout: int = 30) -> dict[str, Any]:
         return {"url": url, "ok": False, "error": str(exc), "started_at": started_at, "finished_at": datetime.now(UTC).isoformat()}
 
 
-def capture_run_environment(out_dir: Path, *, api_url: str, web_url: str | None, argv: list[str]) -> dict[str, Any]:
+def capture_run_environment(
+    out_dir: Path,
+    *,
+    api_url: str,
+    web_url: str | None,
+    argv: list[str],
+    source_state: dict[str, Any] | None = None,
+    raw_generation: bool = True,
+    previous_raw_generation_command: dict[str, Any] | None = None,
+    validation_source_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     dotenv = load_dotenv(REPO_ROOT / ".env")
     compose_project = first_config_value(dotenv, "COMPOSE_PROJECT_NAME", "SOURCEBRIEF_COMPOSE_PROJECT", default=REPO_ROOT.name)
+    current_command = _command_record(
+        argv,
+        exit_code=0,
+        note="written after successful runner completion",
+    )
+    raw_generation_command = current_command if raw_generation else previous_raw_generation_command
+    validation_or_reuse_command = None if raw_generation else current_command
+    source_state = source_state if source_state is not None else evidence_source_state()
     data = {
         "captured_at": datetime.now(UTC).isoformat(),
-        "operator_command": {"argv": argv, "exit_code": 0, "exit_code_note": "written after successful runner completion"},
+        "operator_command": current_command,
+        "raw_generation_command": raw_generation_command,
+        "validation_or_reuse_command": validation_or_reuse_command,
+        "source_state": source_state,
+        "validation_source_state": validation_source_state,
+        "script_commit": source_state.get("script_commit"),
+        "question_bank_commit": source_state.get("question_bank_commit"),
+        "repo_dirty": source_state.get("repo_dirty"),
         "configured_urls": {"api_url": api_url, "web_url": web_url},
         "compose_project": compose_project,
         "commands": {
@@ -776,6 +842,49 @@ def build_grade_report(manifest: dict[str, Any], eval_responses: list[dict[str, 
     return report
 
 
+def _valid_raw_source_state(state: dict[str, Any]) -> bool:
+    return (
+        isinstance(state.get("script_commit"), str)
+        and bool(state["script_commit"].strip())
+        and isinstance(state.get("question_bank_commit"), str)
+        and bool(state["question_bank_commit"].strip())
+        and isinstance(state.get("repo_dirty"), bool)
+        and ("dirty_paths" not in state or isinstance(state.get("dirty_paths"), list))
+    )
+
+
+def _raw_source_state_from_environment(environment: dict[str, Any]) -> dict[str, Any] | None:
+    existing_state = environment.get("source_state")
+    if not isinstance(existing_state, dict):
+        return None
+    if not _valid_raw_source_state(existing_state):
+        return None
+    return existing_state
+
+
+def validate_existing_evidence(
+    out_dir: Path,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
+    manifest_path = out_dir / "eval-manifest.json"
+    report_path = out_dir / "eval-report.json"
+    environment_path = out_dir / "run-environment.json"
+    if not manifest_path.exists() or not report_path.exists():
+        raise RuntimeError(
+            "--reuse-existing-evidence requires existing eval-manifest.json and eval-report.json in the output directory"
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    validate_manifest(manifest)
+    validate_grade_report(report, manifest=manifest)
+    previous_raw_command: dict[str, Any] | None = None
+    previous_raw_source_state: dict[str, Any] | None = None
+    if environment_path.exists():
+        previous_environment = json.loads(environment_path.read_text(encoding="utf-8"))
+        previous_raw_command = previous_environment.get("raw_generation_command") or previous_environment.get("operator_command")
+        previous_raw_source_state = _raw_source_state_from_environment(previous_environment)
+    return manifest, report, previous_raw_command, previous_raw_source_state
+
+
 def write_markdown_summary(out_dir: Path, manifest: dict[str, Any], imports: list[dict[str, Any]], report: dict[str, Any], source_fetch: dict[str, Any]) -> None:
     lines = [
         "# Awesome Agent Harness Top 5 Eval Evidence",
@@ -837,10 +946,54 @@ def main() -> int:
     parser.add_argument("--slug", default=f"awesome-agent-harness-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}")
     parser.add_argument("--index-timeout", type=int, default=900)
     parser.add_argument("--sourcebrief-commit", default=os.popen("git rev-parse HEAD").read().strip() or "unknown")
+    parser.add_argument(
+        "--allow-dirty-evidence",
+        action="store_true",
+        help="allow raw evidence generation from a dirty worktree; evidence will be marked repo_dirty=true",
+    )
+    parser.add_argument(
+        "--reuse-existing-evidence",
+        action="store_true",
+        help="validate existing eval-manifest/eval-report in --output-dir and record this command separately from raw generation",
+    )
     args = parser.parse_args()
 
     out_dir = Path(args.output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    source_state = evidence_source_state()
+    if args.reuse_existing_evidence:
+        manifest, report, previous_raw_command, previous_raw_source_state = validate_existing_evidence(out_dir)
+        if previous_raw_command is None or previous_raw_source_state is None:
+            print(
+                "--reuse-existing-evidence requires existing run-environment.json with raw_generation_command and raw source_state; "
+                "cannot safely infer raw-generation provenance from the validation-time worktree.",
+                file=sys.stderr,
+            )
+            return 2
+        validation_source_state = source_state
+        capture_run_environment(
+            out_dir,
+            api_url=args.api_url,
+            web_url=args.web_url,
+            argv=sys.argv,
+            source_state=previous_raw_source_state,
+            raw_generation=False,
+            previous_raw_generation_command=previous_raw_command,
+            validation_source_state=validation_source_state,
+        )
+        print(
+            json.dumps(
+                {"output_dir": str(out_dir), "manifest_sha256": sha256_digest(manifest), "aggregate": report["aggregate"]},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+    try:
+        source_state = assert_clean_evidence_source(allow_dirty=args.allow_dirty_evidence)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     bank = load_question_bank()
     write_json(out_dir / "question-bank.json", bank)
     source_fetch = fetch_source_list(out_dir)
@@ -867,7 +1020,7 @@ def main() -> int:
     report = build_grade_report(manifest, eval_responses, contexts)
     write_json(out_dir / "eval-report.json", report)
     write_markdown_summary(out_dir, manifest, imports, report, source_fetch)
-    capture_run_environment(out_dir, api_url=args.api_url, web_url=args.web_url, argv=sys.argv)
+    capture_run_environment(out_dir, api_url=args.api_url, web_url=args.web_url, argv=sys.argv, source_state=source_state)
     print(json.dumps({"output_dir": str(out_dir), "manifest_sha256": sha256_digest(manifest), "aggregate": report["aggregate"]}, indent=2, sort_keys=True))
     return 0
 
