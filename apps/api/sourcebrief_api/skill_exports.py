@@ -518,6 +518,22 @@ POST /workspaces/{{workspace_id}}/projects/{{project_id}}/agent-context
 
 Do not ask the user to paste raw credentials into chat. Use the configured SourceBrief runtime/MCP session.
 
+## CLI fallback/admin commands
+
+Use these only when MCP tools are unavailable or the user explicitly asks for local/admin setup. Prefer workspace/project names over raw IDs.
+
+```bash
+sourcebrief use --workspace "<workspace name>" --project "<project name>"
+sourcebrief mcp-context --query "<question>" --runtime hermes
+sourcebrief agent-context --runtime hermes --query "<question>"
+sourcebrief skill export --workspace "<workspace name>" --project "<project name>" --pack-key {version.pack_key} --pack-version {version.version} --out ./sourcebrief-skill
+sourcebrief skill install --package ./sourcebrief-skill --target hermes --dry-run
+```
+
+When calling MCP tools directly, pass `context_pack_key={version.pack_key}` and `context_pack_version={version.version}` so returned evidence stays pinned to this package.
+
+Admin/setup commands must not print tokens. Keep `SOURCEBRIEF_TOKEN` in the runtime environment or secret manager.
+
 ## Mutation boundary
 
 This skill is read-only. Do not perform production, cloud, repository, or deployment mutations based only on generated skill text. Ask for explicit scoped approval and use typed tools.

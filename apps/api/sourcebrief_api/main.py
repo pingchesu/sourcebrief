@@ -1221,6 +1221,10 @@ def _runtime_capabilities(profile: AgentProfile | None, include_optional_tools: 
         elif name == "sourcebrief.open_pr":
             enabled = _tool_policy_pr_enabled(profile)
             policy = "opt_in_approval_record_enabled" if enabled else "opt_in_approval_record_disabled_by_default"
+        elif name == "sourcebrief.generate_skill_pack":
+            policy = "server_artifact_generation_requires_review_write; never mutates local files"
+        elif name == "sourcebrief.get_runtime_help":
+            policy = "read_only_setup_guidance"
         capabilities.append(
             RuntimeInstallPlanCapability(
                 name=name,
@@ -4342,6 +4346,49 @@ def download_skill_export_file(
         raise HTTPException(status_code=404, detail="export file not found")
     media_type = "application/json" if file_path.endswith(".json") else "text/plain"
     return Response(content=str(file.get("content", "")), media_type=media_type)
+
+
+
+
+def _skill_export_file_is_safe(path: str) -> bool:
+    parts = [part for part in path.replace("\\", "/").split("/") if part]
+    return bool(parts) and not path.startswith("/") and ".." not in parts
+
+
+def _skill_export_zip_bytes(export: SkillExport) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item in export.files_json:
+            file = cast(dict[str, Any], item)
+            path = str(file.get("path") or "")
+            if not _skill_export_file_is_safe(path):
+                raise HTTPException(status_code=500, detail="skill export contains invalid file path")
+            info = zipfile.ZipInfo(path, date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, str(file.get("content") or ""))
+    return buffer.getvalue()
+
+
+@app.get("/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}/download.zip")
+def download_skill_export_package(
+    workspace_id: UUID,
+    project_id: UUID,
+    export_id: UUID,
+    principal: Principal = Depends(require_principal),
+    session: Session = Depends(get_session),
+) -> Response:
+    export = _resolve_skill_export(session, workspace_id, project_id, export_id)
+    _require_skill_export_read(session, workspace_id, project_id, principal, export)
+    if export.status != SKILL_EXPORT_STATUS_APPROVED:
+        raise HTTPException(status_code=403, detail="skill export must be approved before download")
+    content = _skill_export_zip_bytes(export)
+    filename = f"sourcebrief-{export.pack_key}-v{export.pack_version}-skill.zip"
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 
 
@@ -9536,6 +9583,16 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "kind": {"type": "string"}, "resource_ids": {"type": "array", "items": {"type": "string"}}, "resource_ref": {"type": "string"}, "resource_refs": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["name"]},
         },
         {
+            "name": "sourcebrief.generate_skill_pack",
+            "description": "Generate a project-specific Hermes skill pack from a published context pack. This creates server-side preview/download artifacts only; it never writes local runtime files.",
+            "inputSchema": {"type": "object", "properties": {"pack_key": {"type": "string"}, "version": {"type": "integer", "minimum": 1}, "title": {"type": "string"}, "summary": {"type": "string"}, "approve_comment": {"type": "string"}}},
+        },
+        {
+            "name": "sourcebrief.get_runtime_help",
+            "description": "Return CLI-first instructions for installing generated SourceBrief skill packs and MCP runtime config locally.",
+            "inputSchema": {"type": "object", "properties": {"target": {"type": "string", "enum": ["hermes"]}}},
+        },
+        {
             "name": "sourcebrief.generate_patch",
             "description": "Generate a patch proposal from authorized indexed snapshot files. Opt-in only; does not mutate a source repo.",
             "inputSchema": {"type": "object", "properties": {"resource_id": {"type": "string"}, "scope": {"type": "string"}, "files": {"type": "array", "items": {"type": "object"}}, "source_branch": {"type": "string"}, "target_branch": {"type": "string"}, "base_commit": {"type": "string"}}, "required": ["resource_id", "scope", "files"]},
@@ -9546,6 +9603,73 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "inputSchema": {"type": "object", "properties": {"patch_proposal_id": {"type": "string"}, "source_branch": {"type": "string"}, "target_branch": {"type": "string"}, "approval_note": {"type": "string"}, "github_pr_url": {"type": "string"}}, "required": ["patch_proposal_id", "source_branch", "target_branch", "approval_note"]},
         },
     ]
+
+
+def _runtime_generate_skill_pack(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    args: Mapping[str, Any],
+) -> dict[str, Any]:
+    pack_key = str(args.get("pack_key") or "default")
+    version_number = int(args["version"]) if args.get("version") is not None else _resolve_pack_version(session, workspace_id, project_id, pack_key, "current").version
+    payload = SkillExportGenerateRequest(
+        title=str(args.get("title") or "SourceBrief runtime skill"),
+        summary=str(args["summary"]) if args.get("summary") is not None else None,
+    )
+    export = generate_skill_export(workspace_id, project_id, pack_key, version_number, payload, principal, session)
+    approve_comment = args.get("approve_comment")
+    if approve_comment:
+        export = approve_skill_export(
+            workspace_id,
+            project_id,
+            export.id,
+            SkillExportReviewRequest(comment=str(approve_comment)),
+            principal,
+            session,
+        )
+    export_dict = jsonable_encoder(export)
+    download_path = f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export.id}/download.zip"
+    return {
+        "status": export.status,
+        "skill_export": export_dict,
+        "download_path": download_path,
+        "download_available": export.status == SKILL_EXPORT_STATUS_APPROVED,
+        "local_install": {
+            "dry_run": "sourcebrief skill install --package <package-dir-or-zip> --target hermes --dry-run",
+            "apply": "sourcebrief skill install --package <package-dir-or-zip> --target hermes --apply",
+            "uninstall": "sourcebrief skill uninstall --receipt <receipt.json>",
+        },
+        "mutation_boundary": "MCP generation never writes local runtime files; install is a separate local CLI action.",
+    }
+
+
+def _runtime_help(args: Mapping[str, Any]) -> dict[str, Any]:
+    target = str(args.get("target") or "hermes")
+    if target != "hermes":
+        raise HTTPException(status_code=422, detail="runtime help currently supports target=hermes")
+    return {
+        "target": "hermes",
+        "flow": [
+            "Generate and approve a project skill pack from a published context pack.",
+            "Download or export the package locally; inspect SKILL.md, manifest.json, and references/.",
+            "Run sourcebrief skill install --package <package> --target hermes --dry-run.",
+            "Apply only with --apply; the installer writes a receipt without plaintext tokens.",
+            "Rollback with sourcebrief skill uninstall --receipt <receipt.json>.",
+        ],
+        "commands": {
+            "export": "sourcebrief skill export --workspace \"<name>\" --project \"<name>\" --pack-key default --approve-comment \"Approved\" --out ./sourcebrief-skill",
+            "dry_run": "sourcebrief skill install --package ./sourcebrief-skill --target hermes --dry-run",
+            "apply": "sourcebrief skill install --package ./sourcebrief-skill --target hermes --apply",
+            "uninstall": "sourcebrief skill uninstall --receipt <receipt.json>",
+        },
+        "boundaries": [
+            "The remote MCP server never mutates local files.",
+            "Tokens stay in environment variables/runtime secret managers and are not embedded in the skill package or receipt.",
+            "Non-default Hermes profiles require explicit --profile or --skills-dir.",
+        ],
+    }
 
 
 @app.post("/mcp/{workspace_id}/{project_id}", response_model=None)
@@ -9606,6 +9730,8 @@ async def mcp_endpoint(
             "sourcebrief.get_graph_inventory": 14,
             "sourcebrief.graph_query": 15,
             "sourcebrief.graph_path": 16,
+            "sourcebrief.generate_skill_pack": 20,
+            "sourcebrief.get_runtime_help": 21,
             "sourcebrief.generate_patch": 30,
             "sourcebrief.open_pr": 31,
         }
@@ -9667,6 +9793,10 @@ async def mcp_endpoint(
             elif tool_name == "sourcebrief.find_symbol":
                 symbol_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False)
                 result = remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**_runtime_remote_args(symbol_args, {"name", "kind", "resource_ids", "top_k"})), principal, session)
+            elif tool_name == "sourcebrief.generate_skill_pack":
+                result = _runtime_generate_skill_pack(session, workspace_id, project_id, principal, arguments)
+            elif tool_name == "sourcebrief.get_runtime_help":
+                result = _runtime_help(arguments)
             elif tool_name == "sourcebrief.generate_patch":
                 result = remote_generate_patch(workspace_id, project_id, GeneratePatchRequest(**arguments), principal, session)
             elif tool_name == "sourcebrief.open_pr":

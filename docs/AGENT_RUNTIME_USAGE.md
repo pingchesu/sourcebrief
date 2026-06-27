@@ -446,36 +446,30 @@ citation-backed skill package. This is the heavier path for team workflows where
 the evidence bundle has been reviewed and should carry freshness rules,
 references, validation metadata, and leak-scan results.
 
-Generate a skill export from a published pack:
+Generate, approve, and write a local package directory with the CLI:
 
 ```bash
-curl -fsS -X POST \
-  -H "<auth-header>" \
-  -H "Content-Type: application/json" \
-  "http://localhost:18000/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/context-packs/$PACK_KEY/versions/$PACK_VERSION/skill-exports" \
-  -d '{"export_type":"hermes_skill","title":"My project SourceBrief skill"}'
+sourcebrief skill export \
+  --workspace "SourceBrief CLI Demo" \
+  --project "First useful moment" \
+  --pack-key "$PACK_KEY" \
+  --pack-version "$PACK_VERSION" \
+  --title "My project SourceBrief skill" \
+  --approve-comment "Reviewed citations, coverage, and leak scan." \
+  --out ./sourcebrief-skill
 ```
 
-Review the returned files, validation report, leak scan, and manifest. Approve only if the package is safe:
+Inspect `SKILL.md`, `manifest.json`, and `references/`, then dry-run and apply the local Hermes install:
 
 ```bash
-curl -fsS -X POST \
-  -H "<auth-header>" \
-  -H "Content-Type: application/json" \
-  "http://localhost:18000/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/skill-exports/$EXPORT_ID/approve" \
-  -d '{"comment":"Reviewed citations, coverage, and leak scan."}'
+sourcebrief skill install --package ./sourcebrief-skill --target hermes --dry-run
+sourcebrief skill install --package ./sourcebrief-skill --target hermes --receipt ./sourcebrief-skill-receipt.json --apply
+sourcebrief skill uninstall --receipt ./sourcebrief-skill-receipt.json
 ```
 
-Download an approved file:
+The API also exposes an approved package download at `/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}/download.zip`; draft exports cannot be downloaded or installed.
 
-```bash
-curl -fsS \
-  -H "<auth-header>" \
-  "http://localhost:18000/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/skill-exports/$EXPORT_ID/files/SKILL.md" \
-  -o SKILL.md
-```
-
-Generated skill exports are better for repeatable team workflows because they can include package metadata, references, playbooks, citation policy, freshness rules, and leak-scan validation.
+Generated skill exports are better for repeatable team workflows because they can include package metadata, references, playbooks, citation policy, freshness rules, local install receipts, and leak-scan validation.
 
 ## Usage examples by agent
 

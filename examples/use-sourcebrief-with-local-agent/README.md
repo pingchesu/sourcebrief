@@ -22,7 +22,7 @@ The agent uses SourceBrief MCP/API for citations and code drilldown while it wor
 
 ## Current runnable path
 
-Until `sourcebrief skill install` lands, run the current local stack and runtime setup flow.
+Run the local stack, create an indexed demo project, generate an approved skill package, and install it locally with a receipt.
 
 ### 1. Start SourceBrief
 
@@ -87,53 +87,52 @@ sourcebrief --json runtime apply --plan plan.json --target hermes --dry-run
 sourcebrief --json runtime apply --plan plan.json --target hermes --apply
 ```
 
-The runtime plan wires the local agent to the project-scoped SourceBrief MCP endpoint. It does not install a project skill yet.
+The runtime plan wires the local agent to the project-scoped SourceBrief MCP endpoint. The skill-pack flow below installs the project-specific local instructions.
 
-## Target product path: project skill pack install
+## Project skill pack install
 
-This is the next product slice proposed in [`PROJECT_SKILL_PACK_LOCAL_INSTALL.md`](../../docs/followups/PROJECT_SKILL_PACK_LOCAL_INSTALL.md).
+This is the implemented Hermes first slice from [`PROJECT_SKILL_PACK_LOCAL_INSTALL.md`](../../docs/followups/PROJECT_SKILL_PACK_LOCAL_INSTALL.md).
 
 The desired flow is:
 
 ```bash
-# 1. Publish or choose a reviewed context pack.
-sourcebrief context-pack publish \
-  --workspace "SourceBrief CLI Demo" \
-  --project "First useful moment" \
-  --pack-key default
-
-# 2. Export a project-specific skill pack.
+# 1. Export a project-specific skill pack from an approved/published context pack.
 sourcebrief skill export \
   --workspace "SourceBrief CLI Demo" \
   --project "First useful moment" \
-  --context-pack-key default \
-  --context-pack-version 1 \
-  --target hermes \
-  --out /tmp/sourcebrief-skill-pack
+  --pack-key default \
+  --pack-version 1 \
+  --approve-comment "Approved for local install." \
+  --out ./sourcebrief-skill-pack
 
-# 3. Inspect, dry-run, and install locally.
+# 2. Inspect, dry-run, and install locally.
 sourcebrief skill install \
-  --export-id "$SKILL_EXPORT_ID" \
+  --package ./sourcebrief-skill-pack \
   --target hermes \
   --profile default \
   --dry-run
 
 sourcebrief skill install \
-  --export-id "$SKILL_EXPORT_ID" \
+  --package ./sourcebrief-skill-pack \
   --target hermes \
   --profile default \
+  --receipt ./sourcebrief-skill-receipt.json \
   --apply
+
+# 3. Roll back if needed.
+sourcebrief skill uninstall --receipt ./sourcebrief-skill-receipt.json
 ```
 
 After install, the local runtime should have a small SourceBrief-generated skill such as:
 
 ```text
-~/.hermes/skills/sourcebrief-first-useful-moment/
+~/.hermes/skills/sourcebrief-default/
   SKILL.md
-  references/context-pack.json
-  references/resource-map-summary.md
+  manifest.json
+  references/data-structure.md
+  references/resource-map.md
   references/citation-policy.md
-  install-receipt.json
+  examples/smoke-queries.md
 ```
 
 The skill does **not** embed full project source. It teaches the agent when and how to call SourceBrief.
@@ -187,4 +186,4 @@ A finished version of this example should commit sanitized output showing:
 - one agent answer with citations;
 - rollback/uninstall command.
 
-Until the skill-install commands are implemented, this README is a product-led target example plus the currently runnable runtime setup path.
+This example remains intentionally sanitized: no tokens, local source paths, raw private corpus dumps, or generated runtime receipts are committed.

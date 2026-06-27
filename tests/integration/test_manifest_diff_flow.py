@@ -790,6 +790,7 @@ def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: 
     )
     assert downloaded.status_code == 200, downloaded.text
     assert "Default runtime skill" in downloaded.text
+    assert "sourcebrief skill install --package" in downloaded.text
     manifest_download = client.get(
         f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}/files/manifest.json",
         headers=auth_headers(token),
@@ -797,6 +798,16 @@ def test_skill_export_generation_approval_download_scope_and_purge(monkeypatch: 
     assert manifest_download.status_code == 200, manifest_download.text
     assert '"export_status":"approved"' in manifest_download.text
     assert '"approval"' in manifest_download.text
+    package_download = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}/download.zip",
+        headers=auth_headers(token),
+    )
+    assert package_download.status_code == 200, package_download.text
+    assert package_download.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(package_download.content)) as archive:
+        assert "SKILL.md" in archive.namelist()
+        assert "manifest.json" in archive.namelist()
+        assert "sourcebrief skill install --package" in archive.read("SKILL.md").decode("utf-8")
     traversal = client.get(
         f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_body['id']}/files/../SKILL.md",
         headers=auth_headers(token),

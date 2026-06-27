@@ -1,6 +1,6 @@
 # Project skill-pack local install flow
 
-Status: Proposed follow-up for issue #137
+Status: Implemented first Hermes local-install slice for issue #137
 Related docs: `REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md`, `context-artifact-compiler/C2-skill-pack-compiler-spec.md`, `RUNTIME_INSTALL_PLAN.md`
 Decision: SourceBrief may generate project-specific skill packs through API/MCP, but local installation must be performed by a local CLI/apply step with receipt and rollback.
 
@@ -96,19 +96,17 @@ MCP should expose generation and help, not silent local mutation.
 
 ### `sourcebrief.generate_skill_pack`
 
-Returns a package preview and/or download handle.
+Returns a package preview and download path. It may generate/approve server-side artifacts, but it never writes local runtime files.
 
 Input sketch:
 
 ```json
 {
-  "workspace_id": "ws_xxx",
-  "project_id": "prj_xxx",
-  "context_pack_key": "default",
-  "context_pack_version": 3,
-  "target_runtime": "hermes",
-  "resource_ids": ["res_xxx"],
-  "include_code_tools": true
+  "pack_key": "default",
+  "version": 3,
+  "title": "SourceBrief runtime skill",
+  "summary": "Project-specific SourceBrief skill",
+  "approve_comment": "Approved for local install."
 }
 ```
 
@@ -116,16 +114,14 @@ Output sketch:
 
 ```json
 {
-  "skill_export_id": "skexp_xxx",
-  "package_hash": "sha256:...",
   "status": "draft|approved",
-  "files": [
-    {"path": "hermes/SKILL.md", "sha256": "...", "bytes": 1234},
-    {"path": "sourcebrief-agent.yaml", "sha256": "...", "bytes": 2345}
-  ],
-  "install_guidance": {
-    "recommended": "sourcebrief skill install --export-id skexp_xxx --target hermes --profile default",
-    "dry_run": "sourcebrief skill install --export-id skexp_xxx --target hermes --profile default --dry-run"
+  "skill_export": {"id": "...", "package_hash": "sha256:...", "files": []},
+  "download_path": "/workspaces/.../skill-exports/.../download.zip",
+  "download_available": true,
+  "local_install": {
+    "dry_run": "sourcebrief skill install --package <package-dir-or-zip> --target hermes --dry-run",
+    "apply": "sourcebrief skill install --package <package-dir-or-zip> --target hermes --apply",
+    "uninstall": "sourcebrief skill uninstall --receipt <receipt.json>"
   }
 }
 ```
@@ -141,7 +137,7 @@ Returns MCP/CLI usage guidance for the current project/runtime:
   "cli_fallback": [
     "sourcebrief doctor --workspace \"SourceBrief CLI Demo\" --project \"First useful moment\"",
     "sourcebrief runtime validate --plan plan.json --run",
-    "sourcebrief skill install --export-id ... --target hermes --profile default --dry-run"
+    "sourcebrief skill install --package ./sourcebrief-skill --target hermes --dry-run"
   ],
   "required_env": ["SOURCEBRIEF_API_URL", "SOURCEBRIEF_TOKEN"],
   "safety_notes": ["No plaintext token is stored in the skill pack."]
@@ -156,9 +152,10 @@ Returns MCP/CLI usage guidance for the current project/runtime:
 sourcebrief skill export \
   --workspace "SourceBrief CLI Demo" \
   --project "First useful moment" \
-  --context-pack-key default \
-  --context-pack-version current \
-  --target hermes
+  --pack-key default \
+  --pack-version 3 \
+  --approve-comment "Approved for local install." \
+  --out ./sourcebrief-skill
 ```
 
 
@@ -166,22 +163,23 @@ sourcebrief skill export \
 
 ```bash
 sourcebrief skill install \
-  --export-id "$SKILL_EXPORT_ID" \
+  --package ./sourcebrief-skill \
   --target hermes \
   --profile default \
   --dry-run
 
 sourcebrief skill install \
-  --export-id "$SKILL_EXPORT_ID" \
+  --package ./sourcebrief-skill \
   --target hermes \
   --profile default \
+  --receipt ./sourcebrief-skill-receipt.json \
   --apply
 ```
 
 ### Uninstall / rollback
 
 ```bash
-sourcebrief skill uninstall --receipt ~/.sourcebrief/receipts/sourcebrief-skill-*.json
+sourcebrief skill uninstall --receipt ./sourcebrief-skill-receipt.json
 ```
 
 ## Install receipt
@@ -193,24 +191,20 @@ Receipt fields:
   "schema_version": "sourcebrief.skill-install-receipt.v1",
   "target": "hermes",
   "profile": "default",
-  "installed_path": "~/.hermes/skills/sourcebrief-my-project",
-  "sourcebrief_api_url": "https://sourcebrief.example.com",
-  "workspace_id": "ws_xxx",
-  "project_id": "prj_xxx",
-  "context_pack_key": "default",
-  "context_pack_version": 3,
-  "skill_export_id": "skexp_xxx",
+  "skill_name": "sourcebrief-default",
+  "skill_dir": "~/.hermes/skills/sourcebrief-default",
   "package_hash": "sha256:...",
+  "context_pack": {"pack_key": "default", "version": 3, "pack_hash": "sha256:..."},
   "files": [
     {
-      "path": "~/.hermes/skills/sourcebrief-my-project/SKILL.md",
-      "pre_hash": null,
-      "post_hash": "sha256:..."
+      "package_path": "SKILL.md",
+      "target_path": "~/.hermes/skills/sourcebrief-default/SKILL.md",
+      "existed_before": false,
+      "sha256_before": null,
+      "sha256_after": "sha256:..."
     }
   ],
-  "token_env_vars": ["SOURCEBRIEF_TOKEN"],
-  "created_at": "2026-01-01T00:00:00Z",
-  "rollback_command": "sourcebrief skill uninstall --receipt ..."
+  "installed_at": "2026-01-01T00:00:00Z"
 }
 ```
 
@@ -220,8 +214,8 @@ The receipt must not include the token value.
 
 Hermes first slice:
 
-- install generated `hermes/SKILL.md` into the active profile skill directory;
-- install optional references only if Hermes skill format supports the directory package in that environment;
+- install generated `SKILL.md` plus package references/examples/scripts into the target Hermes skill directory;
+- accept package directories or `.zip` packages;
 - do not modify another Hermes profile unless the user passes `--profile` explicitly;
 - do not edit MCP config unless the user separately runs runtime apply or passes a future explicit `--include-runtime-config --apply` flag;
 - run read-only validation after install:
@@ -255,13 +249,13 @@ The installed skill must tell the agent:
 
 ## Acceptance criteria
 
-- [ ] API/MCP can generate a skill-pack preview/download handle for an approved context pack.
-- [ ] CLI can dry-run and apply a Hermes skill install from that package.
-- [ ] Install writes a receipt and uninstall/rollback works.
-- [ ] Skill and receipt contain env var names but no plaintext tokens.
-- [ ] Path traversal and profile escape tests fail closed.
-- [ ] Generated `SKILL.md` includes SourceBrief MCP and CLI usage guidance.
-- [ ] Product-led example demonstrates local install and agent usage without requiring the target source repo to be locally checked out.
+- [x] API/MCP can generate a skill-pack preview/download handle for an approved context pack.
+- [x] CLI can dry-run and apply a Hermes skill install from that package.
+- [x] Install writes a receipt and uninstall/rollback works.
+- [x] Skill and receipt contain env var names but no plaintext tokens.
+- [x] Path traversal and profile escape tests fail closed.
+- [x] Generated `SKILL.md` includes SourceBrief MCP and CLI usage guidance.
+- [x] Product-led example demonstrates local install and agent usage without requiring the target source repo to be locally checked out.
 
 ## PR slicing recommendation
 

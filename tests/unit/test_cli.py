@@ -136,6 +136,54 @@ class FakeClient:
             return [{"project_id": "proj-1", "name": "SourceBrief repo", "resource_count": 1}]
         if method == "GET" and path == "/workspaces/ws-1/projects/proj-1/agent-profile":
             return {"project_id": "proj-1", "name": "SourceBrief repo", "graph_node_count": 3}
+        if method == "GET" and path == "/workspaces/ws-1/projects/proj-1/context-packs/default/current":
+            return {"pack_key": "default", "version": 3, "status": "published"}
+        if method == "POST" and path == "/workspaces/ws-1/projects/proj-1/context-packs/default/versions/3/skill-exports":
+            assert body is not None
+            return {
+                "id": "skill-export-1",
+                "context_pack_version_id": "pack-version-1",
+                "pack_key": "default",
+                "pack_version": 3,
+                "export_type": "hermes_skill",
+                "export_version": 1,
+                "status": "draft",
+                "title": body["title"],
+                "summary": body.get("summary"),
+                "package_hash": "sha256:" + "a" * 64,
+                "manifest_json": {"package_hash": "sha256:" + "a" * 64},
+                "files": [
+                    {"path": "SKILL.md", "kind": "skill", "sha256": "sha256:" + "b" * 64, "bytes": 20, "content": "---\nname: demo\n---\n"},
+                    {"path": "manifest.json", "kind": "json", "sha256": "sha256:" + "c" * 64, "bytes": 100, "content": json.dumps({"package_kind": "sourcebrief_skill_pack", "export_status": "draft", "package_hash": "sha256:" + "a" * 64, "pack_key": "default", "pack_version": 3}) + "\n"},
+                ],
+                "validation_json": {"ok": True},
+                "leak_scan_json": {"ok": True},
+                "created_at": "2026-01-01T00:00:00Z",
+            }
+        if method == "POST" and path == "/workspaces/ws-1/projects/proj-1/skill-exports/skill-export-1/approve":
+            assert body is not None
+            return {
+                "id": "skill-export-1",
+                "context_pack_version_id": "pack-version-1",
+                "pack_key": "default",
+                "pack_version": 3,
+                "export_type": "hermes_skill",
+                "export_version": 1,
+                "status": "approved",
+                "title": "Demo skill",
+                "summary": None,
+                "package_hash": "sha256:" + "a" * 64,
+                "manifest_json": {"package_hash": "sha256:" + "a" * 64, "export_status": "approved"},
+                "files": [
+                    {"path": "SKILL.md", "kind": "skill", "sha256": "sha256:" + "b" * 64, "bytes": 20, "content": "---\nname: demo\n---\n"},
+                    {"path": "manifest.json", "kind": "json", "sha256": "sha256:" + "d" * 64, "bytes": 100, "content": json.dumps({"package_kind": "sourcebrief_skill_pack", "export_status": "approved", "package_hash": "sha256:" + "a" * 64, "pack_key": "default", "pack_version": 3}) + "\n"},
+                ],
+                "validation_json": {"ok": True},
+                "leak_scan_json": {"ok": True},
+                "created_at": "2026-01-01T00:00:00Z",
+                "approved_at": "2026-01-01T00:01:00Z",
+                "review_comment": body["comment"],
+            }
         if method == "POST" and path == "/workspaces/ws-1/projects/proj-1/runtime-install-plan":
             assert body is not None
             plan = {
@@ -665,6 +713,74 @@ def test_cli_runtime_token_can_resolve_project_name_under_saved_workspace(monkey
     body = FakeClient.instances[-1].calls[-1][2]
     assert body is not None
     assert body["allowed_project_ids"] == ["proj-1"]
+
+
+def test_cli_skill_export_writes_approved_package_name_first(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    out_dir = tmp_path / "skill-package"
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "skill",
+                "export",
+                "--workspace",
+                "Demo Workspace",
+                "--project",
+                "Demo Project",
+                "--title",
+                "Demo skill",
+                "--approve-comment",
+                "Approved for local install.",
+                "--out",
+                str(out_dir),
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["export"]["status"] == "approved"
+    assert payload["download_url"].endswith("/skill-exports/skill-export-1/download.zip")
+    assert (out_dir / "SKILL.md").exists()
+    assert json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))["export_status"] == "approved"
+    paths = [call[1] for call in FakeClient.instances[-1].calls]
+    assert "/workspaces/ws-1/projects/proj-1/context-packs/default/current" in paths
+    assert "/workspaces/ws-1/projects/proj-1/context-packs/default/versions/3/skill-exports" in paths
+    assert "/workspaces/ws-1/projects/proj-1/skill-exports/skill-export-1/approve" in paths
+
+
+def test_cli_skill_install_apply_and_uninstall(monkeypatch, capsys, tmp_path):
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
+    (package / "manifest.json").write_text(
+        json.dumps(
+            {
+                "package_kind": "sourcebrief_skill_pack",
+                "export_status": "approved",
+                "package_hash": "sha256:" + "a" * 64,
+                "pack_key": "default",
+                "pack_version": 3,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    skills_dir = tmp_path / "skills"
+    receipt = tmp_path / "receipt.json"
+
+    assert cli_main(["--json", "skill", "install", "--package", str(package), "--skills-dir", str(skills_dir), "--receipt", str(receipt), "--dry-run"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "dry_run"
+
+    assert cli_main(["--json", "skill", "install", "--package", str(package), "--skills-dir", str(skills_dir), "--receipt", str(receipt), "--apply"]) == 0
+    installed = json.loads(capsys.readouterr().out)
+    assert installed["status"] == "installed"
+    assert (skills_dir / "sourcebrief-default" / "SKILL.md").exists()
+
+    assert cli_main(["--json", "skill", "uninstall", "--receipt", str(receipt)]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "uninstalled"
+    assert not (skills_dir / "sourcebrief-default" / "SKILL.md").exists()
 
 
 def test_cli_missing_selected_scope_errors(monkeypatch, capsys, tmp_path):
