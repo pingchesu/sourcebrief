@@ -1,0 +1,73 @@
+name: Feature request / proposal
+description: Propose a SourceBrief improvement before implementation
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please open proposals before implementation so scope, tradeoffs, and acceptance criteria are reviewable.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What user problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: What should this explicitly not do?
+  - type: textarea
+    id: options
+    attributes:
+      label: Options considered
+      description: Include alternatives, tradeoffs, reversibility, migration path, and failure modes.
+      placeholder: |
+        Option A:
+        - Pros:
+        - Cons:
+        Option B:
+        - Pros:
+        - Cons:
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What would make this complete and verifiable?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: observability
+    attributes:
+      label: Observability / operations
+      description: What logs, errors, metrics, docs, or rollback path should exist?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Web UI
+        - CLI
+        - API
+        - MCP / agent runtime
+        - Git import / ingestion
+        - Retrieval / citations
+        - Eval / examples
+        - Auth / permissions
+        - Documentation
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues first.
+          required: true
+        - label: I am not including secrets or private corpus content.
+          required: true

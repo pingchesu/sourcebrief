@@ -12,8 +12,8 @@ Evidence bundle: `artifacts/e2e/20260626170543-issue86-awesome-agent-harness-ret
 
 Manifest digest: `sha256:437fff6b08a69a243476b7d6478870a4857ed709511dc2fe1d6a94385fe9665c`
 
-Workspace: `1e5a774d-0f66-409c-af6c-923270d56a5e`
-Project: `7a0932f4-17fd-4f8c-92ef-079f07126b5e`
+Workspace: `<redacted-local-workspace-id>`
+Project: `<redacted-local-project-id>`
 
 ## Scope
 

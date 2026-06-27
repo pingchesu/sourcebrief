@@ -8,7 +8,7 @@ SourceBrief turns repos, docs, runbooks, URLs, uploads, and folder bundles into 
 
 Use it when you need agents to answer with evidence, not vibes.
 
-[See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [View proof artifacts](docs/PROOF_ARTIFACTS.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Read the docs](docs/README.md)
+[See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [View examples](examples/awesome-agent-harness-50q/README.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
 
 <img src="docs/assets/sourcebrief-mental-model.svg" alt="SourceBrief mental model from sources to snapshots to reviewed evidence to MCP/API agent access" width="100%" />
 
@@ -114,6 +114,7 @@ For runtime setup, prompts, token scopes, remote-code safety, generated skills, 
 | Understand the system design | [Architecture](docs/ARCHITECTURE.md) |
 | Operate or debug the local stack | [Operations](docs/OPERATIONS.md) |
 | Check alpha readiness and limits | [Project status](docs/STATUS.md) |
+| Review real evaluation examples | [Awesome Agent Harness 50-question example](examples/awesome-agent-harness-50q/README.md) |
 
 ## Trust boundaries
 
@@ -190,6 +191,10 @@ Web UI / CLI / Agent client
 ```
 
 Read the full design in [Architecture](docs/ARCHITECTURE.md).
+
+## Contributing
+
+Contributions are welcome. Please start with a GitHub issue for bugs, feature proposals, or evaluation/example requests so scope and acceptance criteria are visible before implementation. See [CONTRIBUTING.md](CONTRIBUTING.md) and the issue templates in `.github/ISSUE_TEMPLATE/`.
 
 ## Development
 

@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible SourceBrief failure
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough evidence for maintainers to reproduce or triage it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the failure and user-visible impact.
+      placeholder: The CLI command failed with..., or the UI showed...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Include commands, URLs, resource type, and relevant environment choices. Do not paste secrets.
+      placeholder: |
+        1. Start stack with ...
+        2. Connect resource ...
+        3. Run ...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs / screenshots / output
+      description: Redact tokens, passwords, private repo URLs with embedded credentials, and raw private corpus content.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: SourceBrief version / commit
+      placeholder: git rev-parse HEAD
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Web UI
+        - CLI
+        - API
+        - MCP / agent runtime
+        - Git import / ingestion
+        - Retrieval / citations
+        - Docs / examples
+        - Auth / permissions
+        - Docker / local stack
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues first.
+          required: true
+        - label: I removed secrets or private data from this report.
+          required: true

@@ -21,6 +21,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [5-minute demo](DEMO.md) | Deterministic local demo | Tiny source -> indexed snapshot -> cited agent context -> MCP-shaped response. |
 | [Demo runtime output](examples/demo-runtime-output.md) | Captured output | Normalized output from a real local demo run. |
 | [Captured agent-context output](examples/agent-context-output.md) | Captured output | Normalized response from the product walkthrough run. |
+| [Awesome Agent Harness 50-question example](../examples/awesome-agent-harness-50q/README.md) | Real corpus eval example | Five public repos, 50 questions, bounded import notes, and final RISK verdict. |
 
 ## Runtime and operations
 

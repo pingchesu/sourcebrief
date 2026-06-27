@@ -1,0 +1,46 @@
+name: Evaluation / example request
+description: Request or propose a reproducible SourceBrief demo/evaluation corpus
+labels: [evaluation, documentation]
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+      description: What should this example or evaluation prove?
+    validations:
+      required: true
+  - type: textarea
+    id: repos
+    attributes:
+      label: Repos / sources
+      description: List URLs, source types, and why they are representative.
+      placeholder: |
+        - https://github.com/example/repo — reason
+    validations:
+      required: true
+  - type: textarea
+    id: questions
+    attributes:
+      label: Questions or tasks
+      description: Include expected evidence and bad-answer criteria if available.
+      placeholder: |
+        1. Question...
+           Expected evidence:
+           Bad answer if:
+    validations:
+      required: true
+  - type: textarea
+    id: run_shape
+    attributes:
+      label: Desired run / output shape
+      description: How should people reproduce it, and what final artifact should be committed?
+      placeholder: README, question bank, redacted output, screenshots, eval report...
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: Public examples are safe to publish and contain no secrets or private corpus data.
+          required: true
+        - label: Partial/limited imports will be labeled honestly.
+          required: true
