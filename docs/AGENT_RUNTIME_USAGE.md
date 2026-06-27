@@ -1,5 +1,10 @@
 # Agent runtime usage
 
+> This is the long-form runtime/operator reference. If you are new to the
+> product, start with [Install and use](INSTALL_AND_USE.md) first; it gives the
+> short install path, daily resource commands, product advantages, and
+> embedding/rerank test boundaries.
+
 The UI gets project context into shape: connect sources, index snapshots, review
 what was found, and keep stale material out. The runtime layer is where that work
 pays off. A coding agent can ask SourceBrief for the exact evidence it needs

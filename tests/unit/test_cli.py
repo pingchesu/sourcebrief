@@ -59,6 +59,20 @@ class FakeClient:
                 "uri": body["uri"],
                 "status": "created",
             }
+        if method == "GET" and path == "/workspaces/ws-1/projects/proj-1/resources":
+            return [{"id": "res-1", "name": "SourceBrief repo", "type": "git", "uri": "https://example.test/repo.git", "status": "active"}]
+        if method == "GET" and path == "/workspaces/ws-1/projects/proj-1/resources/res-1":
+            return {"id": "res-1", "name": "SourceBrief repo", "type": "git", "uri": "https://example.test/repo.git", "status": "active"}
+        if method == "PATCH" and path == "/workspaces/ws-1/projects/proj-1/resources/res-1":
+            assert body is not None
+            return {"id": "res-1", "name": body.get("name", "SourceBrief repo"), "type": "git", "uri": body.get("uri", "https://example.test/repo.git"), "status": "active", **body}
+        if method == "PATCH" and path == "/workspaces/ws-1/projects/proj-1/resources/res-1/git-env":
+            assert body is not None
+            return {"resource_id": "res-1", "name": "SourceBrief repo", "uri": "https://example.test/repo.git", **body}
+        if method == "POST" and path == "/workspaces/ws-1/projects/proj-1/resources/res-1/archive":
+            return {"id": "res-1", "name": "SourceBrief repo", "status": "archived", "retrieval_enabled": False}
+        if method == "DELETE" and path == "/workspaces/ws-1/projects/proj-1/resources/res-1":
+            return None
         if method == "POST" and path.endswith("/refresh"):
             return {"id": "run-1", "status": "queued"}
         if method == "GET" and path == "/workspaces/ws-1/index-runs/run-1":
@@ -349,6 +363,94 @@ def test_add_doc_requires_content(monkeypatch, capsys):
     assert exit_code == 1
     err = capsys.readouterr().err
     assert "add-doc requires --content or --content-file" in err
+
+
+def test_resource_crud_commands_call_existing_api(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    assert cli_main(["--json", "resource", "list", "--workspace-id", "ws-1", "--project-id", "proj-1"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed[0]["name"] == "SourceBrief repo"
+
+    assert cli_main(["--json", "resource", "get", "--workspace-id", "ws-1", "--project-id", "proj-1", "--resource-id", "res-1"]) == 0
+    assert json.loads(capsys.readouterr().out)["id"] == "res-1"
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "resource",
+                "update",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--resource-id",
+                "res-1",
+                "--name",
+                "Renamed repo",
+                "--no-retrieval-enabled",
+                "--stale-after-days",
+                "45",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["retrieval_enabled"] is False
+
+    assert (
+        cli_main(
+            [
+                "--json",
+                "resource",
+                "update-git",
+                "--workspace-id",
+                "ws-1",
+                "--project-id",
+                "proj-1",
+                "--resource-id",
+                "res-1",
+                "--branch",
+                "main",
+                "--max-files",
+                "250",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["max_repo_files"] == 250
+
+    assert cli_main(["--json", "resource", "archive", "--workspace-id", "ws-1", "--project-id", "proj-1", "--resource-id", "res-1"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "archived"
+
+    assert cli_main(["--json", "resource", "delete", "--workspace-id", "ws-1", "--project-id", "proj-1", "--resource-id", "res-1"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"resource_id": "res-1", "status": "deleted"}
+
+    calls = [call for instance in FakeClient.instances for call in instance.calls]
+    assert ("GET", "/workspaces/ws-1/projects/proj-1/resources", None, None) in calls
+    assert ("GET", "/workspaces/ws-1/projects/proj-1/resources/res-1", None, None) in calls
+    assert (
+        "PATCH",
+        "/workspaces/ws-1/projects/proj-1/resources/res-1",
+        {"name": "Renamed repo", "retrieval_enabled": False, "stale_after_days": 45},
+        None,
+    ) in calls
+    assert (
+        "PATCH",
+        "/workspaces/ws-1/projects/proj-1/resources/res-1/git-env",
+        {"branch": "main", "max_repo_files": 250},
+        None,
+    ) in calls
+    assert ("POST", "/workspaces/ws-1/projects/proj-1/resources/res-1/archive", None, None) in calls
+    assert ("DELETE", "/workspaces/ws-1/projects/proj-1/resources/res-1", None, {204}) in calls
+
+
+def test_resource_update_requires_a_change(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    assert cli_main(["resource", "update", "--workspace-id", "ws-1", "--project-id", "proj-1", "--resource-id", "res-1"]) == 1
+    assert "requires at least one field" in capsys.readouterr().err
+
 
 
 def test_search_json_output(monkeypatch, capsys):
