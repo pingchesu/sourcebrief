@@ -207,10 +207,10 @@ Token creation requires user/session authentication with `token:admin`; API toke
 
 ```bash
 sourcebrief --json token create-runtime \
-  --workspace-id "$WORKSPACE_ID" \
+  --workspace "SourceBrief CLI Demo" \
   --name "Hermes SourceBrief token" \
   --read-code \
-  --project-id "$PROJECT_ID" \
+  --project "First useful moment" \
   --resource-id "$RESOURCE_ID"
 ```
 
@@ -225,16 +225,19 @@ export SB_TOKEN="<sourcebrief-api-token>"
 List and revoke tokens:
 
 ```bash
-sourcebrief --json token list --workspace-id "$WORKSPACE_ID"
-sourcebrief --json token revoke --workspace-id "$WORKSPACE_ID" --token-id "$TOKEN_ID"
+sourcebrief --json token list --workspace "SourceBrief CLI Demo"
+sourcebrief --json token revoke --workspace "SourceBrief CLI Demo" --token-id "$TOKEN_ID"
 ```
 
-If you do not already have IDs, get them from the UI route you are using, from the API responses when you create a workspace/project/resource, or from CLI commands such as:
+For normal CLI usage, choose workspace/project by name and save that selection once:
 
 ```bash
-sourcebrief --json resource list --workspace-id "$WORKSPACE_ID" --project-id "$PROJECT_ID"
-sourcebrief --json agent profile --workspace-id "$WORKSPACE_ID" --project-id "$PROJECT_ID"
+sourcebrief use --workspace "SourceBrief CLI Demo" --project "First useful moment"
+sourcebrief --json resource list
+sourcebrief --json agent profile
 ```
+
+IDs remain available as advanced/debug escape hatches when you need to script against exact API identifiers.
 
 ## Install and use MCP
 
@@ -266,10 +269,10 @@ Core tools an agent should expect:
 | Follow resource/file/symbol relationships | `sourcebrief.graph_query`, `sourcebrief.graph_path` |
 | Propose changes without direct mutation | `sourcebrief.generate_patch`, `sourcebrief.open_pr` when explicitly enabled |
 
-The MCP endpoint is project scoped:
+The MCP endpoint is project scoped. The URL may contain resolved internal IDs because MCP clients need a stable transport endpoint, but users should choose the workspace and project by name through the UI, `sourcebrief use --workspace ... --project ...`, or a generated runtime plan rather than copying IDs manually:
 
 ```text
-http://localhost:18000/mcp/<workspace-id>/<project-id>
+http://localhost:18000/mcp/<resolved-workspace-id>/<resolved-project-id>
 ```
 
 Use a scoped bearer token in the `Authorization` header. In the examples below, `<auth-header>` means the full authorization header for your runtime token, and `<bearer-header-value>` means the header value built from the bearer scheme plus that token.
