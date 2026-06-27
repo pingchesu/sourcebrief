@@ -1297,7 +1297,8 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
 
     snapshot.status = "succeeded"
     snapshot.indexed_at = datetime.now(UTC)
-    graph_stats = build_graph_index(session, resource, snapshot, docs_for_index)
+    graph_symbol_limit = symbols_created if symbol_budget_exceeded else None
+    graph_stats = build_graph_index(session, resource, snapshot, docs_for_index, max_symbols=graph_symbol_limit)
     if rtype in FOLDER_BUNDLE_TYPES | GIT_TYPES:
         if rtype in FOLDER_BUNDLE_TYPES:
             if chunk_budget_exceeded:

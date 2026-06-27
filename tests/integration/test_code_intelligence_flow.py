@@ -9,12 +9,12 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 from redis import Redis
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 
 from sourcebrief_api.main import app
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
-from sourcebrief_shared.models import IndexRun
+from sourcebrief_shared.models import GraphNode, IndexRun
 from sourcebrief_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
@@ -358,6 +358,16 @@ def test_symbol_budget_partial_snapshot_is_recorded() -> None:
     assert run_body["status"] == "succeeded"
     assert run_body["symbols_created"] == 2
     assert run_body["snapshot_id"]
+    session = get_sessionmaker()()
+    try:
+        graph_symbol_count = session.scalar(
+            select(func.count())
+            .select_from(GraphNode)
+            .where(GraphNode.source_snapshot_id == UUID(run_body["snapshot_id"]), GraphNode.node_type == "symbol")
+        )
+    finally:
+        session.close()
+    assert graph_symbol_count == 2
     resource_response = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", headers=headers)
     assert resource_response.status_code == 200, resource_response.text
     resource_body = resource_response.json()

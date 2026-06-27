@@ -120,7 +120,14 @@ def _edge(
     return edge
 
 
-def build_graph_index(session: Session, resource: Resource, snapshot: SourceSnapshot, docs: list[dict]) -> GraphBuildStats:
+def build_graph_index(
+    session: Session,
+    resource: Resource,
+    snapshot: SourceSnapshot,
+    docs: list[dict],
+    *,
+    max_symbols: int | None = None,
+) -> GraphBuildStats:
     """Build a deterministic repo/document graph for one resource snapshot.
 
     This is intentionally not a full Graphify/LightRAG clone. It gives SourceBrief
@@ -143,6 +150,7 @@ def build_graph_index(session: Session, resource: Resource, snapshot: SourceSnap
 
     directory_nodes: dict[str, GraphNode] = {}
     file_nodes: dict[str, GraphNode] = {}
+    graph_symbols_created = 0
     for doc in docs:
         path = _file_label(doc.get("path"), doc.get("title"))
         parent = resource_node
@@ -202,6 +210,8 @@ def build_graph_index(session: Session, resource: Resource, snapshot: SourceSnap
             edges_created += 1
 
         for symbol in extract_code_symbols(doc.get("path"), doc["content"]):
+            if max_symbols is not None and graph_symbols_created >= max_symbols:
+                break
             symbol_node = _node(
                 session,
                 resource=resource,
@@ -219,6 +229,7 @@ def build_graph_index(session: Session, resource: Resource, snapshot: SourceSnap
                 },
             )
             nodes_created += 1
+            graph_symbols_created += 1
             _edge(
                 session,
                 resource=resource,
