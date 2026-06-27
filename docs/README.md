@@ -7,10 +7,11 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | Step | Doc | Why read it |
 | --- | --- | --- |
 | 1 | [README](../README.md) | Product promise, diagrams, trust boundaries, and local start. |
-| 2 | [Product walkthrough](WALKTHROUGH.md) | Real UI screenshots and captured `agent-context` output before installing. |
-| 3 | [Concepts](CONCEPTS.md) | Source -> Snapshot -> Evidence -> Review -> Runtime mental model. |
-| 4 | [Quick start](QUICKSTART.md) | Run the local stack and reach the first cited answer. |
-| 5 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Connect Hermes, Claude Code, Codex, Cursor, or MCP clients. |
+| 2 | [Install and use](INSTALL_AND_USE.md) | Short product-led path: install, add/update resources, ask questions, connect a runtime, and understand embedding/rerank limits. |
+| 3 | [Product walkthrough](WALKTHROUGH.md) | Real UI screenshots and captured `agent-context` output before installing. |
+| 4 | [Concepts](CONCEPTS.md) | Source -> Snapshot -> Evidence -> Review -> Runtime mental model. |
+| 5 | [Quick start](QUICKSTART.md) | Run the local stack and reach the first cited answer. |
+| 6 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Long-form operator guide for Hermes, Claude Code, Codex, Cursor, MCP clients, scopes, skills, and failure modes. |
 | Reference | [Default credential policy](DEFAULT_CREDENTIAL_POLICY.md) | Why SourceBrief has no universal `changeme` login and how local demos authenticate. |
 
 ## Proof and demos
@@ -40,6 +41,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | Doc | Status | Use it for |
 | --- | --- | --- |
 | [Architecture](ARCHITECTURE.md) | Active reference | FastAPI, Postgres/pgvector, Redis/RQ, Next.js, agent-context, MCP, graph/code-symbol retrieval, tenant boundaries. |
+| [Install and use](INSTALL_AND_USE.md) | User guide | Short install/use path, resource CRUD commands, product advantages, and embedding/rerank test boundaries. |
 | [Guide](GUIDE.md) | API/CLI reference | Hands-on API/CLI walkthroughs beyond the quick start. |
 | [Eval manifests](EVAL_MANIFESTS.md) | Eval/release reference | Structured real-corpus eval manifests, hashable question artifacts, max-10 batching, and grading schema. |
 | [Alpha release notes](ALPHA_RELEASE_NOTES.md) | Release reference | Alpha capability summary and explicit boundaries. |

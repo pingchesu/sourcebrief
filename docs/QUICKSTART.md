@@ -4,6 +4,8 @@ This guide gets SourceBrief running locally and gets you to the first useful pro
 
 For the full contributor/release gate, skip to [Full verification](#full-verification). It is intentionally heavier than the quick start.
 
+Want the shorter product-led guide before this command-by-command quickstart? Read [Install and use](INSTALL_AND_USE.md). It explains why SourceBrief is useful, how to add/update resources from the CLI, how to ask questions, how to connect an agent, and what the embedding/rerank defaults do and do not prove.
+
 Want to see the intended result before running the stack yourself? Open the [product walkthrough](WALKTHROUGH.md), [proof artifacts manifest](PROOF_ARTIFACTS.md), and captured [agent-context output](examples/agent-context-output.md). These were generated from real local SourceBrief runs.
 
 If your goal is to use SourceBrief from Hermes, Claude Code, Codex, Cursor, MCP, or generated skills, read [Agent runtime usage](AGENT_RUNTIME_USAGE.md) after the stack is running.

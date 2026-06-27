@@ -362,12 +362,17 @@ def _command_uses_selected_scope(args: argparse.Namespace) -> bool:
         "add-repo",
         "add-upload",
         "add-url",
+        "archive",
+        "delete",
+        "get",
         "list",
         "refresh",
         "restore",
         "purge",
         "schedule-due",
         "graph",
+        "update",
+        "update-git",
     }:
         return True
     return args.command == "runtime" and getattr(args, "runtime_command", None) in {"plan", "setup"}
@@ -805,6 +810,78 @@ def cmd_resource_refresh(client: SourceBriefClient, args: argparse.Namespace) ->
 def cmd_resource_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     _require_scope(args)
     return client.request("GET", f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources")
+
+
+def cmd_resource_get(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
+    return client.request("GET", f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}")
+
+
+def cmd_resource_update(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
+    body: dict[str, Any] = {}
+    for field in ("name", "uri", "update_frequency", "retrieval_enabled", "stale_after_days"):
+        value = getattr(args, field, None)
+        if value is not None:
+            body[field] = value
+    if args.source_config_json:
+        try:
+            parsed = json.loads(args.source_config_json)
+        except json.JSONDecodeError as exc:
+            raise SourceBriefCliError("--source-config-json must be valid JSON") from exc
+        if not isinstance(parsed, dict):
+            raise SourceBriefCliError("--source-config-json must be a JSON object")
+        body["source_config"] = parsed
+    if not body:
+        raise SourceBriefCliError("resource update requires at least one field to change")
+    return client.request(
+        "PATCH",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}",
+        body=body,
+    )
+
+
+def cmd_resource_update_git(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
+    body: dict[str, Any] = {}
+    mapping = {
+        "branch": "branch",
+        "auth_token_env": "auth_token_env",
+        "clone_timeout": "clone_timeout",
+        "max_file_bytes": "max_file_bytes",
+        "max_files": "max_repo_files",
+        "max_repo_bytes": "max_repo_bytes",
+        "update_frequency": "update_frequency",
+    }
+    for arg_name, field_name in mapping.items():
+        value = getattr(args, arg_name, None)
+        if value is not None:
+            body[field_name] = value
+    if not body:
+        raise SourceBriefCliError("resource update-git requires at least one git setting to change")
+    return client.request(
+        "PATCH",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}/git-env",
+        body=body,
+    )
+
+
+def cmd_resource_archive(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}/archive",
+    )
+
+
+def cmd_resource_delete(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    _require_scope(args)
+    client.request(
+        "DELETE",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources/{args.resource_id}",
+        expected={204},
+    )
+    return {"status": "deleted", "resource_id": args.resource_id}
 
 
 def cmd_resource_restore(client: SourceBriefClient, args: argparse.Namespace) -> Any:
@@ -1446,6 +1523,60 @@ def build_parser() -> argparse.ArgumentParser:
     list_resources.add_argument("--project", help="project name; defaults to sourcebrief use selection")
     list_resources.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     list_resources.set_defaults(func=cmd_resource_list)
+
+    get_resource = resources.add_parser("get", help="show one resource")
+    get_resource.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    get_resource.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    get_resource.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    get_resource.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
+    get_resource.add_argument("--resource-id", required=True)
+    get_resource.set_defaults(func=cmd_resource_get)
+
+    update_resource = resources.add_parser("update", help="update resource metadata or retrieval settings")
+    update_resource.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    update_resource.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    update_resource.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    update_resource.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
+    update_resource.add_argument("--resource-id", required=True)
+    update_resource.add_argument("--name")
+    update_resource.add_argument("--uri")
+    update_resource.add_argument("--update-frequency")
+    update_resource.add_argument("--retrieval-enabled", dest="retrieval_enabled", action="store_true", default=None)
+    update_resource.add_argument("--no-retrieval-enabled", dest="retrieval_enabled", action="store_false")
+    update_resource.add_argument("--stale-after-days", type=int)
+    update_resource.add_argument("--source-config-json", help="advanced: replace source_config with this JSON object")
+    update_resource.set_defaults(func=cmd_resource_update)
+
+    update_git = resources.add_parser("update-git", help="update common git resource import settings")
+    update_git.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    update_git.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    update_git.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    update_git.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
+    update_git.add_argument("--resource-id", required=True)
+    update_git.add_argument("--branch")
+    update_git.add_argument("--auth-token-env")
+    update_git.add_argument("--clone-timeout", type=int)
+    update_git.add_argument("--max-files", type=int)
+    update_git.add_argument("--max-file-bytes", type=int)
+    update_git.add_argument("--max-repo-bytes", type=int)
+    update_git.add_argument("--update-frequency")
+    update_git.set_defaults(func=cmd_resource_update_git)
+
+    archive = resources.add_parser("archive", help="archive a resource and disable retrieval")
+    archive.add_argument("--workspace", help="workspace name or slug")
+    archive.add_argument("--workspace-id", help="advanced: workspace ID")
+    archive.add_argument("--project", help="project name")
+    archive.add_argument("--project-id", help="advanced: project ID")
+    archive.add_argument("--resource-id", required=True)
+    archive.set_defaults(func=cmd_resource_archive)
+
+    delete_resource = resources.add_parser("delete", help="soft-delete a resource and disable retrieval")
+    delete_resource.add_argument("--workspace", help="workspace name or slug")
+    delete_resource.add_argument("--workspace-id", help="advanced: workspace ID")
+    delete_resource.add_argument("--project", help="project name")
+    delete_resource.add_argument("--project-id", help="advanced: project ID")
+    delete_resource.add_argument("--resource-id", required=True)
+    delete_resource.set_defaults(func=cmd_resource_delete)
 
     restore = resources.add_parser("restore", help="restore an archived or soft-deleted resource")
     restore.add_argument("--workspace", help="workspace name or slug")

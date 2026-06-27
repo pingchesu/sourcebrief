@@ -8,7 +8,7 @@ SourceBrief turns repos, docs, runbooks, URLs, uploads, and folder bundles into 
 
 Use it when you need agents to answer with evidence, not vibes.
 
-[See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [View examples](examples/awesome-agent-harness-50q/README.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
+[Install and use](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [View examples](examples/awesome-agent-harness-50q/README.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
 
 <img src="docs/assets/sourcebrief-mental-model.svg" alt="SourceBrief mental model from sources to snapshots to reviewed evidence to MCP/API agent access" width="100%" />
 
@@ -105,6 +105,7 @@ For runtime setup, prompts, token scopes, remote-code safety, generated skills, 
 
 | I want to... | Start here |
 | --- | --- |
+| Understand the product value and use it end-to-end | [Install and use](docs/INSTALL_AND_USE.md) |
 | See the product before installing | [Product walkthrough](docs/WALKTHROUGH.md) |
 | Try a deterministic 5-minute demo | [5-minute demo](docs/DEMO.md) |
 | Run the full local stack | [Quick start](docs/QUICKSTART.md) |
