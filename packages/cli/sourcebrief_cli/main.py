@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import shlex
@@ -12,10 +13,14 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from dotenv import dotenv_values
+
 from sourcebrief_cli import runtime_apply
 
 DEFAULT_API_URL = "http://localhost:18000"
 DEFAULT_EMAIL = "demo@example.com"
+SESSION_TOKEN_CONFIG_KEY = "session_token"
+SESSION_EMAIL_CONFIG_KEY = "session_email"
 CONTEXT_RUNTIME_SCOPES = ["project:read", "project:query", "resource:read", "review:read"]
 READ_CODE_RUNTIME_SCOPES = [*CONTEXT_RUNTIME_SCOPES, "code:read"]
 
@@ -136,13 +141,116 @@ def _load_cli_config() -> dict[str, Any]:
 def _save_cli_config(config: dict[str, Any]) -> Path:
     path = _config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    payload = json.dumps(config, indent=2, sort_keys=True) + "\n"
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+        temp_path.chmod(0o600)
+        os.replace(temp_path, path)
+        path.chmod(0o600)
+    finally:
+        temp_path.unlink(missing_ok=True)
     return path
 
 
 def _selected_value(config: dict[str, Any], key: str) -> str | None:
     value = config.get(key)
     return value if isinstance(value, str) and value else None
+
+
+def _dotenv_path() -> Path:
+    override = os.getenv("SOURCEBRIEF_DOTENV_PATH")
+    return Path(override).expanduser() if override else Path(".env")
+
+
+def _dotenv_value(name: str) -> str | None:
+    path = _dotenv_path()
+    if not path.exists():
+        return None
+    value = dotenv_values(path).get(name)
+    return value if isinstance(value, str) and value else None
+
+
+def _first_env(*names: str) -> str | None:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    for name in names:
+        value = _dotenv_value(name)
+        if value:
+            return value
+    return None
+
+
+def _env_login_email(args: argparse.Namespace) -> str | None:
+    explicit_email = getattr(args, "email", None) if getattr(args, "_email_explicit", False) else None
+    return explicit_email or _first_env(
+        "SOURCEBRIEF_ADMIN_EMAIL",
+        "SOURCEBRIEF_EMAIL",
+        "CONTEXTSMITH_ADMIN_EMAIL",
+        "CONTEXTSMITH_EMAIL",
+    ) or getattr(args, "email", None)
+
+
+def _env_login_password() -> str | None:
+    return _first_env(
+        "SOURCEBRIEF_ADMIN_PASSWORD",
+        "SOURCEBRIEF_PASSWORD",
+        "CONTEXTSMITH_ADMIN_PASSWORD",
+        "CONTEXTSMITH_PASSWORD",
+    )
+
+
+def _resolve_auth(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    args._auth_mode = "email_header"
+    args._session_email = None
+    args._session_login_password = None
+    if args.token:
+        args._auth_mode = "bearer_token"
+        return
+    saved_session = _selected_value(config, SESSION_TOKEN_CONFIG_KEY)
+    if saved_session:
+        args.token = saved_session
+        args._auth_mode = "saved_session"
+        args._session_email = _selected_value(config, SESSION_EMAIL_CONFIG_KEY)
+        return
+    password = _env_login_password()
+    if password:
+        args._auth_mode = "session_login_env"
+        args._session_email = _env_login_email(args)
+        args._session_login_password = password
+
+
+def _login_with_password(client: SourceBriefClient, email: str, password: str) -> str:
+    login = client.request("POST", "/auth/login", body={"email": email, "password": password})
+    session_token = login.get("session_token") if isinstance(login, dict) else None
+    if not isinstance(session_token, str) or not session_token:
+        raise SourceBriefCliError("/auth/login response did not include session_token")
+    return session_token
+
+
+def _command_uses_authenticated_api(args: argparse.Namespace) -> bool:
+    if args.command in {"health", "use", "status", "login", "logout"}:
+        return False
+    if args.command == "runtime" and getattr(args, "runtime_command", None) in {"detect", "apply", "rollback", "validate"}:
+        return False
+    return True
+
+
+def _maybe_session_login(client: SourceBriefClient, args: argparse.Namespace) -> None:
+    if getattr(args, "_auth_mode", None) != "session_login_env":
+        return
+    if not _command_uses_authenticated_api(args):
+        return
+    email = getattr(args, "_session_email", None) or args.email
+    password = getattr(args, "_session_login_password", None)
+    if not password:
+        return
+    client.token = _login_with_password(client, email, password)
+    args.token = client.token
 
 
 def _command_uses_selected_scope(args: argparse.Namespace) -> bool:
@@ -173,6 +281,11 @@ def _resolve_api_url(args: argparse.Namespace, config: dict[str, Any]) -> None:
     explicit_api_url = args.api_url is not None
     args._api_url_explicit = explicit_api_url
     args.api_url = args.api_url or env_api_url or _selected_value(config, "api_url") or DEFAULT_API_URL
+
+
+def _resolve_email(args: argparse.Namespace) -> None:
+    args._email_explicit = args.email is not None
+    args.email = args.email or _first_env("SOURCEBRIEF_EMAIL", "CONTEXTSMITH_EMAIL") or DEFAULT_EMAIL
 
 
 def _require_scope(args: argparse.Namespace, *, workspace: bool = True, project: bool = True) -> None:
@@ -233,10 +346,55 @@ def cmd_status(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
         "api_url": args.api_url.rstrip("/"),
         "workspace_id": _selected_value(config, "workspace_id"),
         "project_id": _selected_value(config, "project_id"),
-        "auth_mode": "bearer_token" if args.token else "email_header",
-        "email": None if args.token else args.email,
+        "auth_mode": getattr(args, "_auth_mode", "bearer_token" if args.token else "email_header"),
+        "email": getattr(args, "_session_email", None) if getattr(args, "_auth_mode", None) in {"saved_session", "session_login_env"} else (None if args.token else args.email),
         "token_set": bool(args.token),
+        "password_env_set": bool(getattr(args, "_session_login_password", None)),
     }
+
+
+def _login_password_from_args(args: argparse.Namespace) -> str:
+    env_name = getattr(args, "password_env", None)
+    if env_name:
+        value = os.getenv(env_name) or _dotenv_value(env_name)
+        if not value:
+            raise SourceBriefCliError(f"password environment variable or .env key {env_name} is not set")
+        return value
+    env_password = _env_login_password()
+    if env_password:
+        return env_password
+    return getpass.getpass("SourceBrief password: ")
+
+
+def cmd_login(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    email = getattr(args, "login_email", None) or _env_login_email(args)
+    if not email:
+        raise SourceBriefCliError("login requires --email or SOURCEBRIEF_ADMIN_EMAIL/SOURCEBRIEF_EMAIL")
+    password = _login_password_from_args(args)
+    client = SourceBriefClient(args.api_url, email, token=None)
+    session_token = _login_with_password(client, email, password)
+    config = dict(getattr(args, "_sourcebrief_config", {}) or {})
+    config[SESSION_TOKEN_CONFIG_KEY] = session_token
+    config[SESSION_EMAIL_CONFIG_KEY] = email
+    if getattr(args, "_api_url_explicit", False) or "api_url" not in config:
+        config["api_url"] = args.api_url.rstrip("/")
+    path = _save_cli_config(config)
+    return {
+        "status": "logged_in",
+        "config_path": str(path),
+        "api_url": config.get("api_url"),
+        "email": email,
+        "auth_mode": "saved_session",
+        "token_set": True,
+    }
+
+
+def cmd_logout(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    config = dict(getattr(args, "_sourcebrief_config", {}) or {})
+    had_session = bool(config.pop(SESSION_TOKEN_CONFIG_KEY, None))
+    config.pop(SESSION_EMAIL_CONFIG_KEY, None)
+    path = _save_cli_config(config)
+    return {"status": "logged_out", "config_path": str(path), "removed_session": had_session}
 
 
 def _check_result(name: str, status: str, **extra: Any) -> dict[str, Any]:
@@ -264,14 +422,15 @@ def cmd_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     except SourceBriefCliError as exc:
         checks.append(_check_result("api", "failed", api_url=args.api_url.rstrip("/"), error=str(exc)))
 
-    auth_mode = "bearer_token" if args.token else "email_header"
+    auth_mode = getattr(args, "_auth_mode", "bearer_token" if args.token else "email_header")
     checks.append(
         _check_result(
             "auth_mode",
             "info",
             mode=auth_mode,
-            email=None if args.token else args.email,
+            email=getattr(args, "_session_email", None) if auth_mode in {"saved_session", "session_login_env"} else (None if args.token else args.email),
             token_set=bool(args.token),
+            password_env_set=bool(getattr(args, "_session_login_password", None)),
             message="auth mode selected; authenticated project/MCP checks below prove access",
         )
     )
@@ -896,11 +1055,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--email",
-        default=os.getenv("SOURCEBRIEF_EMAIL", os.getenv("CONTEXTSMITH_EMAIL", DEFAULT_EMAIL)),
+        default=None,
     )
     parser.add_argument(
         "--token",
-        default=os.getenv("SOURCEBRIEF_TOKEN", os.getenv("CONTEXTSMITH_TOKEN")),
+        default=_first_env("SOURCEBRIEF_TOKEN", "CONTEXTSMITH_TOKEN"),
         help="Bearer API token; overrides --email dev auth",
     )
     parser.add_argument("--json", action="store_true", help="print full JSON response")
@@ -923,6 +1082,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     status = sub.add_parser("status", help="show selected CLI defaults and auth mode without secrets")
     status.set_defaults(func=cmd_status)
+
+    login = sub.add_parser("login", help="log in with email/password and save a session token")
+    login.add_argument("--email", dest="login_email", help="login email; defaults to SOURCEBRIEF_ADMIN_EMAIL/SOURCEBRIEF_EMAIL")
+    login.add_argument("--password-env", help="name of an environment variable containing the password; otherwise prompts")
+    login.set_defaults(func=cmd_login)
+
+    logout = sub.add_parser("logout", help="remove the saved SourceBrief session token")
+    logout.set_defaults(func=cmd_logout)
 
     quickstart = sub.add_parser(
         "quickstart-demo",
@@ -1245,7 +1412,7 @@ def _print_default(command: str | None, data: Any) -> None:
             print(f"- {data.get('next_command')}")
             print(f"- {data.get('cleanup')}")
             return
-        if command in {"agent-context", "mcp-context", "ask", "agent", "token", "runtime", "use", "status", "doctor"}:
+        if command in {"agent-context", "mcp-context", "ask", "agent", "token", "runtime", "use", "status", "doctor", "login", "logout"}:
             _print_json(data)
             return
     _print_json(data)
@@ -1267,12 +1434,15 @@ def main(argv: list[str] | None = None) -> int:
                 raise
         args._sourcebrief_config = config
         _resolve_api_url(args, config)
+        _resolve_email(args)
+        _resolve_auth(args, config)
         _apply_selected_defaults(args, config)
     except SourceBriefCliError as exc:
         print(f"sourcebrief: error: {exc}", file=sys.stderr)
         return 1
     client = SourceBriefClient(args.api_url, args.email, token=args.token)
     try:
+        _maybe_session_login(client, args)
         data = args.func(client, args)
     except (SourceBriefCliError, runtime_apply.RuntimeApplyError) as exc:
         print(f"sourcebrief: error: {exc}", file=sys.stderr)

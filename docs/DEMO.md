@@ -12,26 +12,16 @@ It is intentionally deterministic. Use it when you want to show the product idea
 
 - The local stack is already running. See [Quick start](QUICKSTART.md).
 - The CLI is on your path.
-- Local dev header auth is enabled for this demo.
+- You can log in with the admin email/password from `.env`.
 
-The default quickstart keeps `SOURCEBRIEF_DEV_AUTH=false`. For this local-only CLI demo, set `SOURCEBRIEF_DEV_AUTH=true` in `.env` before startup, or restart the stack after changing it:
-
-```bash
-# in .env
-SOURCEBRIEF_DEV_AUTH=true
-
-make compose-down
-make compose-up
-```
-
-Then configure the CLI demo environment:
+Configure the CLI demo environment and save a local session token:
 
 ```bash
 export SOURCEBRIEF_API_URL=http://localhost:18000
-export SOURCEBRIEF_EMAIL=demo@example.com
+sourcebrief login --password-env SOURCEBRIEF_ADMIN_PASSWORD
 ```
 
-For shared or production-like deployments, use bearer tokens instead of dev auth.
+For agents/CI or shared deployments, use a scoped bearer token instead of a saved human session.
 
 ## 1. Create a tiny source
 

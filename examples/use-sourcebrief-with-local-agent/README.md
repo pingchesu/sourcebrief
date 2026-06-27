@@ -29,10 +29,12 @@ Until `sourcebrief skill install` lands, run the current local stack and runtime
 ```bash
 cp .env.example .env
 # Edit SOURCEBRIEF_ADMIN_PASSWORD before startup.
-# Temporary current-state note: quickstart-demo still uses local dev header auth.
-# Set SOURCEBRIEF_DEV_AUTH=true only for this disposable local CLI demo until issue #133 lands.
 make compose-up
 make quickstart-ready
+make venv
+export PATH="$PWD/.venv/bin:$PATH"
+export SOURCEBRIEF_API_URL="$(make -s print-api-url)"
+sourcebrief login --password-env SOURCEBRIEF_ADMIN_PASSWORD
 ```
 
 ### 2. Create a small demo project and indexed source

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import stat
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,7 +34,11 @@ class FakeClient:
         expected: set[int] | None = None,
     ) -> Any:
         self.calls.append((method, path, body, expected))
+        if method == "POST" and path == "/auth/login":
+            assert body is not None
+            return {"session_token": f"session-for-{body['email']}"}
         if method == "POST" and path.endswith("/resources"):
+            assert body is not None
             return {
                 "id": "res-1",
                 "name": body["name"],
@@ -53,6 +58,7 @@ class FakeClient:
                 "embeddings_created": 4,
             }
         if method == "POST" and path.endswith("/search"):
+            assert body is not None
             return {
                 "query": body["query"],
                 "count": 1,
@@ -186,10 +192,21 @@ def patch_client(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def isolate_cli_config_env(monkeypatch):
+def isolate_cli_config_env(monkeypatch, tmp_path):
     monkeypatch.delenv("SOURCEBRIEF_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("SOURCEBRIEF_DOTENV_PATH", str(tmp_path / "missing.env"))
     monkeypatch.delenv("SOURCEBRIEF_API_URL", raising=False)
     monkeypatch.delenv("CONTEXTSMITH_API_URL", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_TOKEN", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_TOKEN", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_ADMIN_EMAIL", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_ADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_EMAIL", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_PASSWORD", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_ADMIN_EMAIL", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_ADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_EMAIL", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_PASSWORD", raising=False)
 
 
 def test_add_repo_builds_git_resource_and_waits(monkeypatch, capsys):
@@ -348,6 +365,208 @@ def test_cli_use_status_and_ask_defaults(monkeypatch, capsys, tmp_path):
         },
         None,
     )
+
+
+def test_cli_login_saves_session_token_and_logout_removes_it(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("SOURCEBRIEF_LOGIN_PASSWORD", "local-password")
+
+    assert cli_main(["--api-url", "http://api.example", "--json", "login", "--email", "admin@sourcebrief.local", "--password-env", "SOURCEBRIEF_LOGIN_PASSWORD"]) == 0
+    login = json.loads(capsys.readouterr().out)
+    assert login["status"] == "logged_in"
+    assert login["auth_mode"] == "saved_session"
+    assert "session-for-admin@sourcebrief.local" not in json.dumps(login)
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["session_token"] == "session-for-admin@sourcebrief.local"
+    assert saved["session_email"] == "admin@sourcebrief.local"
+    assert saved["api_url"] == "http://api.example"
+    assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
+
+    assert cli_main(["--json", "status"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["auth_mode"] == "saved_session"
+    assert status["email"] == "admin@sourcebrief.local"
+    assert status["token_set"] is True
+    assert "session-for-admin@sourcebrief.local" not in json.dumps(status)
+
+    assert cli_main(["--json", "logout"]) == 0
+    logout = json.loads(capsys.readouterr().out)
+    assert logout == {"config_path": str(config_path), "removed_session": True, "status": "logged_out"}
+    assert "session_token" not in json.loads(config_path.read_text(encoding="utf-8"))
+
+
+def test_cli_login_replaces_existing_permissive_config_with_private_file(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("SOURCEBRIEF_LOGIN_PASSWORD", "local-password")
+    config_path.write_text(json.dumps({"workspace_id": "ws-1"}), encoding="utf-8")
+    config_path.chmod(0o644)
+
+    assert cli_main(["--json", "login", "--email", "admin@sourcebrief.local", "--password-env", "SOURCEBRIEF_LOGIN_PASSWORD"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "logged_in"
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["workspace_id"] == "ws-1"
+    assert saved["session_token"] == "session-for-admin@sourcebrief.local"
+    assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
+
+
+def test_cli_env_password_logs_in_before_command(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "sourcebrief-config.json"))
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", "admin@sourcebrief.local")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", "local-password")
+
+    assert cli_main(["--json", "search", "--workspace-id", "ws-1", "--project-id", "proj-1", "--query", "demo"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["query"] == "demo"
+    client = FakeClient.instances[0]
+    assert client.calls[0] == (
+        "POST",
+        "/auth/login",
+        {"email": "admin@sourcebrief.local", "password": "local-password"},
+        None,
+    )
+    assert client.token == "session-for-admin@sourcebrief.local"
+    assert client.calls[1][0:2] == ("POST", "/workspaces/ws-1/projects/proj-1/search")
+
+
+def test_cli_env_password_global_email_overrides_admin_env(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "sourcebrief-config.json"))
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", "admin@sourcebrief.local")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", "local-password")
+
+    assert cli_main([
+        "--email",
+        "global@sourcebrief.local",
+        "--json",
+        "search",
+        "--workspace-id",
+        "ws-1",
+        "--project-id",
+        "proj-1",
+        "--query",
+        "demo",
+    ]) == 0
+    assert json.loads(capsys.readouterr().out)["query"] == "demo"
+    client = FakeClient.instances[-1]
+    assert client.calls[0] == (
+        "POST",
+        "/auth/login",
+        {"email": "global@sourcebrief.local", "password": "local-password"},
+        None,
+    )
+    assert client.token == "session-for-global@sourcebrief.local"
+
+
+def test_cli_login_reads_email_and_password_from_dotenv_file(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    dotenv_path = tmp_path / ".env"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("SOURCEBRIEF_DOTENV_PATH", str(dotenv_path))
+    dotenv_path.write_text(
+        'SOURCEBRIEF_ADMIN_EMAIL="admin@sourcebrief.local"\n'
+        'SOURCEBRIEF_ADMIN_PASSWORD="password with spaces"\n',
+        encoding="utf-8",
+    )
+
+    assert cli_main(["--api-url", "http://api.example", "--json", "login", "--password-env", "SOURCEBRIEF_ADMIN_PASSWORD"]) == 0
+    login = json.loads(capsys.readouterr().out)
+    assert login["status"] == "logged_in"
+    assert login["email"] == "admin@sourcebrief.local"
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["session_token"] == "session-for-admin@sourcebrief.local"
+    client = FakeClient.instances[1]
+    assert client.calls[0] == (
+        "POST",
+        "/auth/login",
+        {"email": "admin@sourcebrief.local", "password": "password with spaces"},
+        None,
+    )
+
+
+def test_cli_auth_precedence_token_over_saved_session_over_env_password(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"session_token": "saved-session", "session_email": "saved@example.com"}), encoding="utf-8")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", "admin@sourcebrief.local")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", "local-password")
+
+    assert cli_main(["--json", "status"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["auth_mode"] == "saved_session"
+    assert status["email"] == "saved@example.com"
+    assert status["password_env_set"] is False
+
+    assert cli_main(["--token", "explicit-token", "--json", "status"]) == 0
+    explicit = json.loads(capsys.readouterr().out)
+    assert explicit["auth_mode"] == "bearer_token"
+    assert explicit["email"] is None
+    assert "explicit-token" not in json.dumps(explicit)
+
+
+def test_cli_dotenv_token_takes_precedence_over_dotenv_password(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    dotenv_path = tmp_path / ".env"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("SOURCEBRIEF_DOTENV_PATH", str(dotenv_path))
+    dotenv_path.write_text(
+        "SOURCEBRIEF_TOKEN=dotenv-token\n"
+        "SOURCEBRIEF_ADMIN_EMAIL=admin@sourcebrief.local\n"
+        "SOURCEBRIEF_ADMIN_PASSWORD=local-password\n",
+        encoding="utf-8",
+    )
+
+    assert cli_main(["--json", "status"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["auth_mode"] == "bearer_token"
+    assert status["token_set"] is True
+    assert status["password_env_set"] is False
+    assert "dotenv-token" not in json.dumps(status)
+
+    assert cli_main(["--json", "search", "--workspace-id", "ws-1", "--project-id", "proj-1", "--query", "demo"]) == 0
+    assert json.loads(capsys.readouterr().out)["query"] == "demo"
+    client = FakeClient.instances[-1]
+    assert client.token == "dotenv-token"
+    assert client.calls[0][0:2] == ("POST", "/workspaces/ws-1/projects/proj-1/search")
+
+
+def test_cli_login_accepts_global_email(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("SOURCEBRIEF_LOGIN_PASSWORD", "local-password")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", "admin@sourcebrief.local")
+
+    assert cli_main(["--api-url", "http://api.example", "--email", "global@sourcebrief.local", "--json", "login", "--password-env", "SOURCEBRIEF_LOGIN_PASSWORD"]) == 0
+    login = json.loads(capsys.readouterr().out)
+    assert login["email"] == "global@sourcebrief.local"
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["session_token"] == "session-for-global@sourcebrief.local"
+
+
+def test_cli_env_password_does_not_login_for_health_or_use(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", "admin@sourcebrief.local")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", "local-password")
+
+    assert cli_main(["--json", "health"]) == 0
+    assert FakeClient.instances[-1].calls == [("GET", "/readyz", None, None)]
+    capsys.readouterr()
+
+    assert cli_main(["use", "--workspace-id", "ws-1", "--project-id", "proj-1"]) == 0
+    assert FakeClient.instances[-1].calls == []
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["workspace_id"] == "ws-1"
+    assert "session_token" not in saved
 
 
 def test_cli_selected_defaults_apply_to_search_and_resource_list(monkeypatch, capsys, tmp_path):

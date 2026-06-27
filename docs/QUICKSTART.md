@@ -127,28 +127,19 @@ Postgres and Redis are intentionally published on loopback only so remote or sha
 
 ## 3. CLI first useful moment
 
-For a local CLI demo, enable dev header auth before startup. The default keeps this off because shared deployments should use bearer tokens instead:
-
-```env
-SOURCEBRIEF_DEV_AUTH=true
-```
-
-If you changed `.env` after starting the stack, restart it:
-
-```bash
-make compose-down
-make compose-up
-make quickstart-ready
-```
-
-Then run the deterministic CLI demo. It creates an isolated workspace/project, adds a tiny runbook, indexes it, saves workspace/project defaults locally, and ends with a cited human answer:
+CLI now supports the same admin email/password you use for the web console. Export the local `.env` values, then save a session token locally with `sourcebrief login`:
 
 ```bash
 make venv
 export PATH="$PWD/.venv/bin:$PATH"
 export SOURCEBRIEF_API_URL="$(make -s print-api-url)"
-export SOURCEBRIEF_EMAIL=demo@example.com
 
+sourcebrief login --password-env SOURCEBRIEF_ADMIN_PASSWORD
+```
+
+Then run the deterministic CLI demo. It creates an isolated workspace/project, adds a tiny runbook, indexes it, saves workspace/project defaults locally, and ends with a cited human answer:
+
+```bash
 sourcebrief quickstart-demo
 ```
 
@@ -328,10 +319,11 @@ make test-integration
 
 ### CLI returns `authentication required`
 
-You are probably using `SOURCEBRIEF_EMAIL` while `SOURCEBRIEF_DEV_AUTH=false`. Either:
+You are probably unauthenticated or using the wrong auth mode. Prefer one of:
 
-- use `SOURCEBRIEF_TOKEN`, or
-- set `SOURCEBRIEF_DEV_AUTH=true` in `.env`, restart the stack, and use `SOURCEBRIEF_EMAIL` only for local demos.
+- `sourcebrief login --email "$SOURCEBRIEF_ADMIN_EMAIL" --password-env SOURCEBRIEF_ADMIN_PASSWORD` for human/local CLI use;
+- `SOURCEBRIEF_TOKEN=<scoped-token>` for agents/CI/runtime clients;
+- `SOURCEBRIEF_DEV_AUTH=true` only for disposable local dev-header experiments.
 
 ### Frontend dependency warnings
 
