@@ -709,6 +709,24 @@ def test_cli_review_gate_invalid_schema_writes_rejected_result(monkeypatch, caps
     assert saved["checks"]["schema_valid"] == "fail"
 
 
+def test_cli_review_mvp_smoke_runs_full_local_path(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    out_dir = tmp_path / "mvp-smoke"
+
+    assert cli_main(["--json", "review", "mvp-smoke", "--out-dir", str(out_dir)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "completed"
+    assert payload["gate_decision"] == "accept"
+    assert payload["no_silent_mutation"] is True
+    assert Path(payload["bundle_path"]).exists()
+    assert Path(payload["report_path"]).exists()
+    assert Path(payload["proposal_path"]).exists()
+    assert Path(payload["gate_result_path"]).exists()
+    assert Path(payload["stage_receipt_path"]).exists()
+    assert Path(payload["history_summary_path"]).exists()
+    assert payload["history_metrics"]["record_count"] >= 5
+
+
 def test_cli_review_history_list_and_show_are_redacted(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     history_dir = tmp_path / "history"
