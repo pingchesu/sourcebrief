@@ -86,7 +86,7 @@ Reviewer agents are evidence generators, not authorities. Findings still need va
 
 A finding is a structured reviewer result.
 
-Suggested fields:
+Suggested fields are type-backed by [Reviewer finding taxonomy](REVIEW_FINDING_TAXONOMY.md):
 
 ```json
 {
@@ -294,7 +294,7 @@ Revisit this design if:
 - [#159](https://github.com/pingchesu/sourcebrief/issues/159) bundle schema; implementation baseline: [Review bundle schema](REVIEW_BUNDLE_SCHEMA.md)
 - [#160](https://github.com/pingchesu/sourcebrief/issues/160) bundle capture
 - [#161](https://github.com/pingchesu/sourcebrief/issues/161) reviewer runner
-- [#162](https://github.com/pingchesu/sourcebrief/issues/162) finding taxonomy
+- [#162](https://github.com/pingchesu/sourcebrief/issues/162) finding taxonomy; implementation baseline: [Reviewer finding taxonomy](REVIEW_FINDING_TAXONOMY.md)
 - [#163](https://github.com/pingchesu/sourcebrief/issues/163) regression proposals
 - [#164](https://github.com/pingchesu/sourcebrief/issues/164) validation gate
 - [#165](https://github.com/pingchesu/sourcebrief/issues/165) staged adoption

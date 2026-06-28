@@ -1,0 +1,95 @@
+{
+  "schema_version": "sourcebrief.review-report.v1",
+  "report_id": "report-demo-taxonomy-001",
+  "bundle_id": "rb-demo-pr-review-001",
+  "reviewer_backend": "mock",
+  "reviewer_lenses": ["citation_support", "scope", "product_dx", "safety", "regression"],
+  "generated_at": "2026-06-28T17:20:00Z",
+  "findings": [
+    {
+      "schema_version": "sourcebrief.review-finding.v1",
+      "finding_id": "finding-blocker-citation-mismatch",
+      "bundle_id": "rb-demo-pr-review-001",
+      "severity": "blocker",
+      "type": "citation_mismatch",
+      "summary": "Citation label exists but does not support the answer's external-egress claim.",
+      "claim": "Private bundles can be sent to any external LLM by default.",
+      "claim_ids": ["claim-external-llm-default"],
+      "evidence_refs": ["cite-security-intro"],
+      "impact": "Would permit unsafe reviewer egress and mislead users about privacy boundaries.",
+      "suggested_fix": "State that private evidence requires approved reviewer backend policy and explicit opt-in.",
+      "regression_candidate": true,
+      "confidence": "high",
+      "reviewer_lens": "citation_support",
+      "proposal_eligibility": "candidate"
+    },
+    {
+      "schema_version": "sourcebrief.review-finding.v1",
+      "finding_id": "finding-major-overclaim",
+      "bundle_id": "rb-demo-pr-review-001",
+      "severity": "major",
+      "type": "overclaim",
+      "summary": "Docs imply a reviewer runner is already shipped when only schema/security baselines exist.",
+      "claim": "The autonomous reviewer runner is available now.",
+      "claim_ids": ["claim-reviewer-runner-shipped"],
+      "evidence_refs": ["issue-161", "docs-SELF_IMPROVEMENT.md#M4"],
+      "impact": "Product docs would misrepresent planned work as current behavior.",
+      "suggested_fix": "Move the statement to future-work language and link #161.",
+      "regression_candidate": true,
+      "confidence": "medium",
+      "reviewer_lens": "scope",
+      "proposal_eligibility": "candidate"
+    },
+    {
+      "schema_version": "sourcebrief.review-finding.v1",
+      "finding_id": "finding-learning-quickstart-gap",
+      "bundle_id": "rb-demo-pr-review-001",
+      "severity": "learning",
+      "type": "quickstart_dx_failure",
+      "summary": "A recurring quickstart failure should become a regression candidate.",
+      "claim": "Users can run the quickstart without an auth setup step.",
+      "claim_ids": ["claim-quickstart-auth"],
+      "evidence_refs": ["proof-quickstart-smoke"],
+      "impact": "Future docs could regress by omitting auth setup again.",
+      "suggested_fix": "Add a golden quickstart/auth fixture before product docs claim one-command setup.",
+      "regression_candidate": true,
+      "confidence": "medium",
+      "reviewer_lens": "product_dx",
+      "proposal_eligibility": "candidate"
+    },
+    {
+      "schema_version": "sourcebrief.review-finding.v1",
+      "finding_id": "finding-rejected-learning-nightly-optimizer",
+      "bundle_id": "rb-demo-pr-review-001",
+      "severity": "rejected_learning",
+      "type": "rejected_proposal",
+      "summary": "Reject a proposed rule that would always claim nightly optimizer support.",
+      "claim": "SourceBrief always has a nightly optimizer that updates skills automatically.",
+      "claim_ids": ["claim-nightly-optimizer-shipped"],
+      "evidence_refs": ["gate-reject-llm-judge-only-learning"],
+      "impact": "The rule encodes unsupported future-work as shipped behavior.",
+      "suggested_fix": "Keep the rejected proposal as negative feedback for future gates.",
+      "regression_candidate": false,
+      "confidence": "high",
+      "reviewer_lens": "regression",
+      "proposal_eligibility": "not_eligible"
+    }
+  ],
+  "aggregate": {
+    "total": 4,
+    "by_severity": {
+      "blocker": 1,
+      "learning": 1,
+      "major": 1,
+      "rejected_learning": 1
+    },
+    "by_type": {
+      "citation_mismatch": 1,
+      "overclaim": 1,
+      "quickstart_dx_failure": 1,
+      "rejected_proposal": 1
+    },
+    "blocks_adoption": true,
+    "proposal_candidate_count": 3
+  }
+}

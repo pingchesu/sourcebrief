@@ -6,18 +6,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from sourcebrief_shared.review_bundle import ReviewBundle, load_review_bundle
+from sourcebrief_shared.review_findings import FindingSeverity, FindingType
 from sourcebrief_shared.self_improvement_security import redact_review_artifact
 
 GOLDEN_FIXTURE_SCHEMA_VERSION = "sourcebrief.self-improvement-golden.v1"
-
-FindingSeverity = Literal["blocker", "major", "minor", "learning", "rejected_learning"]
-FindingType = Literal[
-    "unsupported_claim",
-    "citation_mismatch",
-    "missing_evidence",
-    "safe_passing_answer",
-    "rejected_proposal",
-]
 
 
 class GoldenFixtureError(ValueError):
