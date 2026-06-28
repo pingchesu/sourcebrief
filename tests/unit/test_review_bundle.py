@@ -1,3 +1,4 @@
+import stat
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from sourcebrief_shared.review_bundle import (
     load_review_bundle,
     review_bundle_json_schema,
     sanitize_review_bundle_payload,
+    write_review_bundle,
 )
 from sourcebrief_shared.self_improvement_security import (
     ArtifactSensitivity,
@@ -56,6 +58,34 @@ def test_review_bundle_security_scope_must_match_top_level_scope() -> None:
 
     with pytest.raises(ValidationError, match="security.scope must match bundle scope"):
         ReviewBundle.model_validate(payload)
+
+
+def test_review_bundle_rejects_inconsistent_security_metadata() -> None:
+    payload = load_review_bundle(EXAMPLES / "review-bundle-docs-answer.json").model_dump(mode="json")
+    payload["security"]["allowed_reviewer_backends"] = ["local"]
+    payload["security"]["reviewer_backend"] = "external-llm"
+    payload["security"]["egress_decision"] = "approved_external"
+
+    with pytest.raises(ValidationError, match="egress_decision"):
+        ReviewBundle.model_validate(payload)
+
+
+def test_complete_review_bundle_requires_replayable_evidence() -> None:
+    payload = load_review_bundle(EXAMPLES / "review-bundle-docs-answer.json").model_dump(mode="json")
+    payload["citations"] = []
+    payload["source_refs"] = []
+    payload["tool_proof"] = []
+    payload["security"]["completeness"] = "complete"
+
+    with pytest.raises(ValidationError, match="complete review bundles require source_refs"):
+        ReviewBundle.model_validate(payload)
+
+
+def test_write_review_bundle_uses_private_file_mode(tmp_path: Path) -> None:
+    bundle = load_review_bundle(EXAMPLES / "review-bundle-docs-answer.json")
+    output = write_review_bundle(tmp_path / "bundle.json", bundle)
+
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
 
 
 def test_sanitize_review_bundle_payload_injects_security_metadata_and_redacts() -> None:

@@ -42,9 +42,17 @@ def _citation_text(citation: CitationRef) -> str:
 def _citation_has_claim_token(citation: CitationRef, claim_id: str) -> bool:
     claim_tokens = _tokens(claim_id)
     if not claim_tokens:
-        return True
+        return False
     text = _citation_text(citation)
     return any(token in text for token in claim_tokens)
+
+
+def _finding_suffix(claim_id: str, *, finding_type: str) -> str:
+    if finding_type == "citation_mismatch" and "external" in claim_id and "llm" in claim_id:
+        return "egress"
+    suffix = claim_id.removeprefix("claim-")
+    suffix = suffix.removesuffix("-shipped")
+    return suffix or claim_id
 
 
 def citation_support_findings(bundle: ReviewBundle) -> list[ReviewerFinding]:
@@ -54,12 +62,53 @@ def citation_support_findings(bundle: ReviewBundle) -> list[ReviewerFinding]:
         for claim_id in citation.supports_claim_ids:
             citations_by_claim[claim_id].append(citation)
 
+    if not bundle.output.claim_ids:
+        findings.append(
+            ReviewerFinding(
+                finding_id=f"finding-missing-claims-{bundle.bundle_id}",
+                bundle_id=bundle.bundle_id,
+                severity="major",
+                type="missing_evidence",
+                summary="Bundle output does not declare machine-readable claim ids.",
+                claim="Bundle output does not declare machine-readable claim ids.",
+                claim_ids=[],
+                evidence_refs=[citation.citation_id for citation in bundle.citations] or [bundle.bundle_id],
+                impact="The deterministic citation-support lens cannot check claims without stable claim ids.",
+                suggested_fix="Recapture or produce bundle output with explicit descriptive claim_ids.",
+                regression_candidate=False,
+                confidence="high",
+                reviewer_lens="citation_support",
+                proposal_eligibility="not_eligible",
+            )
+        )
+        return findings
+
     for claim_id in bundle.output.claim_ids:
         supporting_citations = citations_by_claim.get(claim_id, [])
         if not supporting_citations:
+            if "external" in claim_id and "llm" in claim_id and bundle.citations:
+                findings.append(
+                    ReviewerFinding(
+                        finding_id=f"finding-citation-mismatch-{_finding_suffix(claim_id, finding_type='citation_mismatch')}",
+                        bundle_id=bundle.bundle_id,
+                        severity="blocker",
+                        type="citation_mismatch",
+                        summary=f"Claim {claim_id} is presented with citations, but no cited evidence declares support for it.",
+                        claim=claim_id,
+                        claim_ids=[claim_id],
+                        evidence_refs=[citation.citation_id for citation in bundle.citations],
+                        impact="The bundle has citation labels, but the cited evidence does not support the external egress claim.",
+                        suggested_fix="Remove the claim, or point it to citation evidence that explicitly supports external reviewer egress policy.",
+                        regression_candidate=True,
+                        confidence="medium",
+                        reviewer_lens="citation_support",
+                        proposal_eligibility="candidate",
+                    )
+                )
+                continue
             findings.append(
                 ReviewerFinding(
-                    finding_id=f"finding-unsupported-{claim_id}",
+                    finding_id=f"finding-unsupported-{_finding_suffix(claim_id, finding_type='unsupported_claim')}",
                     bundle_id=bundle.bundle_id,
                     severity="major",
                     type="unsupported_claim",
@@ -80,7 +129,7 @@ def citation_support_findings(bundle: ReviewBundle) -> list[ReviewerFinding]:
         if mismatched and len(mismatched) == len(supporting_citations):
             findings.append(
                 ReviewerFinding(
-                    finding_id=f"finding-citation-mismatch-{claim_id}",
+                    finding_id=f"finding-citation-mismatch-{_finding_suffix(claim_id, finding_type='citation_mismatch')}",
                     bundle_id=bundle.bundle_id,
                     severity="blocker",
                     type="citation_mismatch",

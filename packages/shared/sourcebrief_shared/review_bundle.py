@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from sourcebrief_shared.self_improvement_security import (
+    ArtifactSensitivity,
     BundleCompleteness,
     RedactionReport,
     ReviewArtifactPolicy,
@@ -43,6 +46,20 @@ class ReviewBundleSecurity(StrictModel):
     completeness: Literal["complete", "redacted_partial", "insufficient_evidence"]
     redaction_counts: dict[str, int] = Field(default_factory=dict)
     scope: ReviewBundleScope
+
+    @model_validator(mode="after")
+    def egress_metadata_matches_policy(self) -> ReviewBundleSecurity:
+        policy = ReviewArtifactPolicy(
+            sensitivity=ArtifactSensitivity(self.sensitivity),
+            retention_days=self.retention_days,
+            allowed_reviewer_backends=tuple(self.allowed_reviewer_backends),
+            external_reviewer_opt_in=self.external_reviewer_opt_in,
+            purge_derived_artifacts=self.purge_derived_artifacts,
+        )
+        expected = policy.egress_for_backend(self.reviewer_backend).value
+        if self.egress_decision != expected:
+            raise ValueError("security.egress_decision must match reviewer backend policy")
+        return self
 
 
 class SourceRef(StrictModel):
@@ -145,6 +162,33 @@ class ReviewBundle(StrictModel):
         if scope is not None and security.scope != scope:
             raise ValueError("security.scope must match bundle scope")
         return security
+    @model_validator(mode="after")
+    def complete_bundles_need_replayable_evidence(self) -> ReviewBundle:
+        if self.security.completeness != "complete":
+            return self
+        if not self.source_refs:
+            raise ValueError("complete review bundles require source_refs")
+        has_runtime_metadata = bool(
+            self.runtime.sourcebrief_commit
+            or self.runtime.runtime
+            or self.runtime.model_backend
+            or self.runtime.skill_or_agent_pack_version
+        )
+        if not has_runtime_metadata:
+            raise ValueError("complete review bundles require runtime or producer metadata")
+        replayable_citation = any(
+            citation.snippet
+            or citation.snippet_hash
+            or citation.source_ref.content_hash
+            or citation.source_ref.source_snapshot_id
+            or citation.source_ref.commit_sha
+            or (citation.source_ref.path and citation.source_ref.line_start is not None)
+            for citation in self.citations
+        )
+        passed_tool_proof = any(proof.status == "passed" for proof in self.tool_proof)
+        if not replayable_citation and not passed_tool_proof:
+            raise ValueError("complete review bundles require replayable citation evidence or passed tool proof")
+        return self
 
 
 def sanitize_review_bundle_payload(
@@ -189,6 +233,17 @@ def _stable_token(value: str) -> str:
 
     slug = "-".join(part for part in re.split(r"[^a-z0-9]+", value.lower()) if part)
     return slug[:64].strip("-") or "answer"
+
+
+def _citation_has_replayable_proof(citation: CitationRef) -> bool:
+    return bool(
+        citation.snippet
+        or citation.snippet_hash
+        or citation.source_ref.content_hash
+        or citation.source_ref.source_snapshot_id
+        or citation.source_ref.commit_sha
+        or (citation.source_ref.path and citation.source_ref.line_start is not None)
+    )
 
 
 def _context_excerpt_for_citation(agent_context: dict[str, Any], citation: dict[str, Any]) -> str | None:
@@ -243,16 +298,11 @@ def build_review_bundle_from_agent_context(
 
     raw_answer = agent_context.get("answer")
     answer: dict[str, Any] = raw_answer if isinstance(raw_answer, dict) else {}
-    answer_text = str(answer.get("text") or agent_context.get("context") or "").strip()
+    answer_text = str(answer.get("text") or "").strip()
     summary = answer_text.split("\n", 1)[0][:240] or "SourceBrief answer capture"
     citations = [citation for citation in agent_context.get("citations") or [] if isinstance(citation, dict)]
     cited_claim_ids = answer.get("claim_ids") if isinstance(answer.get("claim_ids"), list) else None
-    if cited_claim_ids:
-        claim_ids = [str(claim_id) for claim_id in cited_claim_ids if str(claim_id).strip()]
-    elif citations and answer_text:
-        claim_ids = [f"claim-{_stable_token(answer_text)}"]
-    else:
-        claim_ids = []
+    claim_ids = [str(claim_id) for claim_id in (cited_claim_ids or []) if str(claim_id).strip()]
 
     bundle_scope = ReviewBundleScope(
         workspace_id=workspace_id,
@@ -285,7 +335,12 @@ def build_review_bundle_from_agent_context(
             )
         )
 
-    completeness = BundleCompleteness.COMPLETE if answer_text and citation_refs else BundleCompleteness.INSUFFICIENT_EVIDENCE
+    replayable_citation = any(_citation_has_replayable_proof(citation) for citation in citation_refs)
+    completeness = (
+        BundleCompleteness.COMPLETE
+        if answer_text and citation_refs and replayable_citation
+        else BundleCompleteness.INSUFFICIENT_EVIDENCE
+    )
     if not resource_ids:
         resource_ids = sorted({citation.source_ref.resource_id for citation in citation_refs if citation.source_ref.resource_id != "unknown-resource"})
         bundle_scope = ReviewBundleScope(
@@ -303,7 +358,7 @@ def build_review_bundle_from_agent_context(
 
     raw_payload = {
         "schema_version": REVIEW_BUNDLE_SCHEMA_VERSION,
-        "bundle_id": f"rb-{_stable_token(kind)}-{_stable_token(query)}",
+        "bundle_id": f"rb-{_stable_token(kind)}-{datetime.now().astimezone().strftime('%Y%m%d%H%M%S%f')}",
         "kind": kind,
         "created_at": datetime.now().astimezone().isoformat(),
         "input": {
@@ -330,8 +385,8 @@ def build_review_bundle_from_agent_context(
                 "proof_id": "proof-sourcebrief-agent-context",
                 "kind": "api",
                 "command": command or [],
-                "status": "passed" if answer_text and citation_refs else "not_run",
-                "exit_code": 0 if answer_text and citation_refs else None,
+                "status": "passed" if completeness is BundleCompleteness.COMPLETE else "not_run",
+                "exit_code": 0 if completeness is BundleCompleteness.COMPLETE else None,
                 "stdout_excerpt": summary,
                 "stderr_excerpt": None,
                 "artifact_uri": None,
@@ -362,5 +417,16 @@ def build_review_bundle_from_agent_context(
 def write_review_bundle(path: str | Path, bundle: ReviewBundle) -> Path:
     output_path = Path(path).expanduser()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(bundle.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    payload = bundle.model_dump_json(indent=2) + "\n"
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{output_path.name}.", suffix=".tmp", dir=output_path.parent)
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, output_path)
+        os.chmod(output_path, 0o600)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
     return output_path

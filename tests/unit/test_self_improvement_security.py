@@ -43,8 +43,8 @@ def test_redact_review_artifact_removes_secret_keys_recursively() -> None:
 
     redacted, report = redact_review_artifact(payload)
 
-    assert redacted["headers"]["Authorization"].startswith("[REDACTED:Authorization]")
-    assert redacted["nested"]["api_key"].startswith("[REDACTED:api_key]")
+    assert redacted["headers"]["[REDACTED:secret_key]"] == "[REDACTED:secret_value]"
+    assert redacted["nested"]["[REDACTED:secret_key]"] == "[REDACTED:secret_value]"
     assert "/Users/bob" not in redacted["tool_logs"][0]
     assert report.counts["secret_key"] == 2
     assert report.counts["local_path"] == 1
@@ -74,6 +74,41 @@ def test_review_artifact_scope_preserves_workspace_project_and_resource_boundary
             project_id="project-a",
             resource_ids=["resource-1"],
         )
+    with pytest.raises(ReviewArtifactSecurityError):
+        scope.require_allows(
+            workspace_id="workspace-a",
+            project_id="project-a",
+            resource_ids=[],
+        )
+
+
+def test_external_reviewer_backends_are_denied_without_opt_in() -> None:
+    policy = ReviewArtifactPolicy(
+        sensitivity=ArtifactSensitivity.INTERNAL,
+        allowed_reviewer_backends=("local", "external-llm"),
+        external_reviewer_opt_in=False,
+    )
+
+    assert policy.egress_for_backend("external-llm") == EgressDecision.DENIED
+    assert policy.egress_for_backend("internal") == EgressDecision.DENIED
+
+
+def test_redaction_scrubs_secret_keys_and_short_assignments() -> None:
+    payload = {
+        "api_key_abc123": "value",
+        "body": "password=hunter2 api_key=abc123 token=shorttok",
+        "token=abcdefghijklmnopqrstuvwxyz12345": "bad",
+    }
+
+    redacted, report = redact_review_artifact(payload)
+    serialized = str(redacted)
+    assert "api_key_abc123" not in serialized
+    assert "hunter2" not in serialized
+    assert "abc123" not in serialized
+    assert "shorttok" not in serialized
+    assert "abcdefghijklmnopqrstuvwxyz12345" not in serialized
+    assert report.counts["secret_key"] >= 2
+    assert report.counts["generic_secret_assignment"] >= 3
 
 
 def test_review_artifact_policy_denies_unapproved_external_egress() -> None:

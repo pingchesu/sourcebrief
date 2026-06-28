@@ -31,7 +31,7 @@ class ReviewRunnerError(ValueError):
 
 @dataclass(frozen=True)
 class ReviewRunOptions:
-    backend: str = "deterministic"
+    backend: str = "local"
     allow_incomplete: bool = False
 
 
@@ -65,8 +65,12 @@ def _incomplete_bundle_findings(bundle: ReviewBundle) -> list[ReviewerFinding]:
 
 def run_review_bundle(bundle: ReviewBundle, *, options: ReviewRunOptions | None = None) -> ReviewerReport:
     options = options or ReviewRunOptions()
-    if options.backend not in {"deterministic", "mock"}:
+    if options.backend not in {"local", "deterministic", "mock"}:
         raise ReviewRunnerError(f"unsupported reviewer backend for local runner: {options.backend}")
+    if options.backend not in bundle.security.allowed_reviewer_backends:
+        raise ReviewRunnerError(f"reviewer backend {options.backend} is not allowed by bundle policy")
+    if bundle.security.egress_decision == "denied":
+        raise ReviewRunnerError("bundle policy denies reviewer egress for the selected backend")
     if bundle.security.completeness != "complete" and not options.allow_incomplete:
         raise ReviewRunnerError(
             f"bundle {bundle.bundle_id} is {bundle.security.completeness}; recapture it or pass allow_incomplete for diagnostic review"

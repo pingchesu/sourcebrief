@@ -81,7 +81,7 @@
       },
       "snippet": "Self-improvement artifacts are governed product artifacts, not arbitrary transcript dumps.",
       "snippet_hash": "sha256:golden-snippet-security-intro",
-      "supports_claim_ids": ["claim-external-llm-default"]
+      "supports_claim_ids": []
     }
   ],
   "tool_proof": [],

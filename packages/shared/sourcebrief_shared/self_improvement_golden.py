@@ -6,7 +6,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from sourcebrief_shared.review_bundle import ReviewBundle, load_review_bundle
-from sourcebrief_shared.review_findings import FindingSeverity, FindingType
+from sourcebrief_shared.review_findings import (
+    FindingSeverity,
+    FindingType,
+    severity_blocks_adoption,
+)
 from sourcebrief_shared.self_improvement_security import redact_review_artifact
 
 GOLDEN_FIXTURE_SCHEMA_VERSION = "sourcebrief.self-improvement-golden.v1"
@@ -58,10 +62,19 @@ def _read_manifest(path: str | Path) -> GoldenManifest:
     return GoldenManifest.model_validate_json(Path(path).read_text(encoding="utf-8"))
 
 
-def _ensure_public_safe(bundle: ReviewBundle, *, context: str) -> None:
-    _, report = redact_review_artifact(bundle.model_dump(mode="json"))
+def _ensure_public_safe(value: Any, *, context: str) -> None:
+    _, report = redact_review_artifact(value.model_dump(mode="json") if isinstance(value, BaseModel) else value)
     if report.counts:
         raise GoldenFixtureError(f"{context} contains redactable content: {report.counts}")
+
+
+def _bundle_evidence_refs(bundle: ReviewBundle) -> set[str]:
+    refs = {bundle.bundle_id}
+    refs.update(citation.citation_id for citation in bundle.citations)
+    refs.update(proof.proof_id for proof in bundle.tool_proof)
+    refs.update(log.artifact_uri for log in bundle.verification_logs if log.artifact_uri)
+    refs.update(ref.resource_id for ref in bundle.source_refs)
+    return refs
 
 
 def validate_golden_manifest(path: str | Path) -> dict[str, Any]:
@@ -92,11 +105,26 @@ def validate_golden_manifest(path: str | Path) -> dict[str, Any]:
         has_safe_passing = has_safe_passing or case.expected_verdict == "pass"
         for finding in case.expected_findings:
             finding_types.add(finding.type)
-            if finding.claim_ids:
-                missing_claims = set(finding.claim_ids) - set(bundle.output.claim_ids)
-                if missing_claims:
-                    raise GoldenFixtureError(f"{case.case_id} finding references unknown claim ids: {sorted(missing_claims)}")
+            if not finding.claim_ids:
+                raise GoldenFixtureError(f"{case.case_id} finding must declare claim_ids")
+            if severity_blocks_adoption(finding.severity) and not finding.evidence_refs:
+                raise GoldenFixtureError(f"{case.case_id} blocker/major expected findings require evidence_refs")
+            missing_claims = set(finding.claim_ids) - set(bundle.output.claim_ids)
+            if missing_claims:
+                raise GoldenFixtureError(f"{case.case_id} finding references unknown claim ids: {sorted(missing_claims)}")
+            missing_evidence = set(finding.evidence_refs) - _bundle_evidence_refs(bundle)
+            if missing_evidence:
+                raise GoldenFixtureError(f"{case.case_id} finding references unknown evidence refs: {sorted(missing_evidence)}")
+            if finding.type == "citation_mismatch":
+                for evidence_ref in finding.evidence_refs:
+                    for citation in bundle.citations:
+                        if citation.citation_id == evidence_ref and set(finding.claim_ids) & set(citation.supports_claim_ids):
+                            raise GoldenFixtureError(
+                                f"{case.case_id} citation_mismatch evidence must not declare support for the mismatched claim"
+                            )
 
+    for gate_case in manifest.gate_cases:
+        _ensure_public_safe(gate_case, context=gate_case.case_id)
     gate_decisions = {case.expected_gate_decision for case in manifest.gate_cases}
     if not has_safe_passing:
         raise GoldenFixtureError("golden suite must include a safe passing answer control")
@@ -105,6 +133,8 @@ def validate_golden_manifest(path: str | Path) -> dict[str, Any]:
             raise GoldenFixtureError(f"golden suite missing required finding type: {required}")
     if "reject" not in gate_decisions:
         raise GoldenFixtureError("golden suite must include a rejected proposal gate case")
+    if not gate_decisions.intersection({"accept", "accept_new_best"}):
+        raise GoldenFixtureError("golden suite must include an accepted proposal gate case")
     return {
         "schema_version": manifest.schema_version,
         "bundle_case_count": len(manifest.bundle_cases),
