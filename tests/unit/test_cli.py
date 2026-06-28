@@ -575,6 +575,44 @@ def test_quickstart_demo_can_write_review_bundle(monkeypatch, capsys, tmp_path):
     assert bundle.verification_logs[0].status == "passed"
 
 
+def test_cli_review_pr_bundle_from_fixture_and_run_report(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "sourcebrief-config.json"))
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", "local-password")
+    fixture = Path(__file__).resolve().parents[2] / "docs" / "examples" / "self-improvement" / "pr-review-metadata-fixture.json"
+    bundle_path = tmp_path / "pr-bundle.json"
+    report_path = tmp_path / "pr-report.json"
+
+    assert cli_main([
+        "--json",
+        "review",
+        "pr-bundle",
+        "--metadata-fixture",
+        str(fixture),
+        "--workspace-id",
+        "ws",
+        "--project-id",
+        "proj",
+        "--bundle-out",
+        str(bundle_path),
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "pr_review_bundle_written"
+    assert payload["changed_paths"] == [
+        "docs/STAGED_ADOPTION.md",
+        "packages/shared/sourcebrief_shared/staged_adoption.py",
+        "tests/unit/test_staged_adoption.py",
+    ]
+    assert FakeClient.instances[-1].calls == []
+
+    assert cli_main(["--json", "review", "run", "--bundle", str(bundle_path), "--report-out", str(report_path)]) == 0
+    report_payload = json.loads(capsys.readouterr().out)
+    assert report_payload["verdict"] == "PASS"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["subject_refs"][0]["ref_id"] == "pingchesu/sourcebrief#187"
+    assert report["subject_refs"][0]["head_sha"] == "e174ea09b9edee97e1965c92b709d60f4f8d5160"
+
+
 def test_cli_review_run_writes_report(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     bundle_path = Path(__file__).resolve().parents[2] / "docs" / "examples" / "self-improvement" / "golden" / "review-bundle-citation-mismatch.json"

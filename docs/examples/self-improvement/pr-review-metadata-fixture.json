@@ -1,0 +1,28 @@
+{
+  "repo": "pingchesu/sourcebrief",
+  "number": 187,
+  "title": "feat: add staged adoption workflow",
+  "body": "Implements review-stage artifacts without automatic apply or merge.",
+  "url": "https://github.com/pingchesu/sourcebrief/pull/187",
+  "headRefOid": "e174ea09b9edee97e1965c92b709d60f4f8d5160",
+  "headRefName": "feat/staged-adoption-workflow",
+  "baseRefName": "main",
+  "changed_paths": [
+    "docs/STAGED_ADOPTION.md",
+    "packages/shared/sourcebrief_shared/staged_adoption.py",
+    "tests/unit/test_staged_adoption.py"
+  ],
+  "diff_summary": "Adds staged adoption receipt generation, explicit git apply / rollback commands, and tests that no GitHub/API mutation occurs during staging.",
+  "verification_logs": [
+    {
+      "command": "make test",
+      "status": "passed",
+      "output_excerpt": "323 passed, 3 warnings"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "output_excerpt": "no whitespace errors"
+    }
+  ]
+}

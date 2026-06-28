@@ -86,6 +86,8 @@ Reviewer reports carry a deterministic verdict and aggregate:
 
 Aggregation is implemented by `aggregate_findings(...)` so later reviewer runners and observability surfaces do not invent their own severity math.
 
+PR review reports may also carry `subject_refs[]` entries such as `kind="github_pr"`, `ref_id="owner/repo#123"`, head SHA, URL, and changed paths. This keeps the report linked to the reviewed PR without embedding raw chat history.
+
 ## Verification
 
 ```bash

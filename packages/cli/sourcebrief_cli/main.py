@@ -16,6 +16,12 @@ from urllib.request import Request, urlopen
 from dotenv import dotenv_values
 
 from sourcebrief_cli import runtime_apply, skill_install
+from sourcebrief_shared.github_pr_review import (
+    GitHubPRBundleError,
+    build_review_bundle_from_github_pr_metadata,
+    fetch_github_pr_metadata,
+    load_pr_metadata_fixture,
+)
 from sourcebrief_shared.regression_proposal import (
     RegressionProposalError,
     load_reviewer_report,
@@ -1210,6 +1216,35 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
     return result
 
 
+def cmd_review_pr_bundle(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    try:
+        if args.metadata_fixture:
+            metadata = load_pr_metadata_fixture(args.metadata_fixture)
+            metadata.setdefault("repo", args.repo or metadata.get("repo") or metadata.get("repository"))
+        else:
+            if args.pr is None:
+                raise GitHubPRBundleError("--pr is required when --metadata-fixture is not provided")
+            metadata = fetch_github_pr_metadata(repo=args.repo or "", pr_number=args.pr)
+        bundle = build_review_bundle_from_github_pr_metadata(
+            metadata,
+            workspace_id=args.workspace_id,
+            project_id=args.project_id,
+            reviewer_backend=args.reviewer_backend,
+        )
+        written = write_review_bundle(args.bundle_out, bundle)
+    except (OSError, ValueError) as exc:
+        raise SourceBriefCliError(str(exc)) from exc
+    subject = bundle.reviewer_notes[0] if bundle.reviewer_notes else ""
+    return {
+        "status": "pr_review_bundle_written",
+        "bundle_path": str(written),
+        "bundle_id": bundle.bundle_id,
+        "subject": subject,
+        "changed_paths": [source_ref.path for source_ref in bundle.source_refs if source_ref.path],
+        "bundle": bundle.model_dump(mode="json"),
+    }
+
+
 def cmd_review_run(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
     options = ReviewRunOptions(backend=args.backend, allow_incomplete=args.allow_incomplete)
     try:
@@ -1836,6 +1871,15 @@ def build_parser() -> argparse.ArgumentParser:
     mcp.set_defaults(func=cmd_mcp_context)
 
     review = sub.add_parser("review", help="self-improvement review bundle commands").add_subparsers(dest="review_command")
+    review_pr_bundle = review.add_parser("pr-bundle", help="create a review bundle from GitHub PR metadata")
+    review_pr_bundle.add_argument("--repo", help="GitHub repository in owner/name form; required unless fixture includes repo")
+    review_pr_bundle.add_argument("--pr", type=int, help="GitHub pull request number; required unless --metadata-fixture is used")
+    review_pr_bundle.add_argument("--metadata-fixture", help="local PR metadata JSON fixture for offline/dry-run bundle creation")
+    review_pr_bundle.add_argument("--workspace-id", default="github", help="workspace ID to record in the bundle scope")
+    review_pr_bundle.add_argument("--project-id", default="github-pr", help="project ID to record in the bundle scope")
+    review_pr_bundle.add_argument("--reviewer-backend", default="local", choices=["local", "mock"])
+    review_pr_bundle.add_argument("--bundle-out", required=True, help="write the sourcebrief.review-bundle.v1 PR bundle to this path")
+    review_pr_bundle.set_defaults(func=cmd_review_pr_bundle)
     review_run = review.add_parser("run", help="run a local reviewer over a review bundle")
     review_run.add_argument("--bundle", required=True, help="path to a sourcebrief.review-bundle.v1 JSON file")
     review_run.add_argument("--report-out", help="write the sourcebrief.review-report.v1 JSON report to this path")

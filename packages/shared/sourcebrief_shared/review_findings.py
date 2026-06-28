@@ -98,6 +98,14 @@ class ReviewerFinding(StrictModel):
         return self
 
 
+class ReportSubjectRef(StrictModel):
+    kind: Literal["github_pr"]
+    ref_id: str = Field(min_length=1)
+    url: str | None = None
+    head_sha: str | None = None
+    changed_paths: list[str] = Field(default_factory=list)
+
+
 class ReviewerReportAggregate(StrictModel):
     total: int = Field(ge=0)
     by_severity: dict[str, int] = Field(default_factory=dict)
@@ -116,6 +124,7 @@ class ReviewerReport(StrictModel):
     verdict: ReviewVerdict
     findings: list[ReviewerFinding] = Field(default_factory=list)
     aggregate: ReviewerReportAggregate
+    subject_refs: list[ReportSubjectRef] = Field(default_factory=list)
 
     @field_validator("findings")
     @classmethod
@@ -179,6 +188,7 @@ def build_reviewer_report(
     reviewer_lenses: list[ReviewerLens],
     generated_at: datetime,
     findings: list[ReviewerFinding],
+    subject_refs: list[ReportSubjectRef] | None = None,
 ) -> ReviewerReport:
     return ReviewerReport(
         report_id=report_id,
@@ -189,4 +199,5 @@ def build_reviewer_report(
         verdict=verdict_for_findings(findings),
         findings=findings,
         aggregate=aggregate_findings(findings),
+        subject_refs=subject_refs or [],
     )
