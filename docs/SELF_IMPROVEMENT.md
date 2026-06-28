@@ -296,7 +296,7 @@ Revisit this design if:
 - [#161](https://github.com/pingchesu/sourcebrief/issues/161) reviewer runner; implementation baseline: [Review bundle runner](REVIEW_BUNDLE_RUNNER.md)
 - [#162](https://github.com/pingchesu/sourcebrief/issues/162) finding taxonomy; implementation baseline: [Reviewer finding taxonomy](REVIEW_FINDING_TAXONOMY.md)
 - [#163](https://github.com/pingchesu/sourcebrief/issues/163) regression proposals; implementation baseline: [Regression proposal artifacts](REGRESSION_PROPOSALS.md)
-- [#164](https://github.com/pingchesu/sourcebrief/issues/164) validation gate
+- [#164](https://github.com/pingchesu/sourcebrief/issues/164) validation gate; implementation baseline: [Validation gate](VALIDATION_GATE.md)
 - [#165](https://github.com/pingchesu/sourcebrief/issues/165) staged adoption
 - [#166](https://github.com/pingchesu/sourcebrief/issues/166) GitHub PR integration
 - [#167](https://github.com/pingchesu/sourcebrief/issues/167) citation support checks; MVP deterministic check: [Citation-support check](CITATION_SUPPORT_CHECK.md)

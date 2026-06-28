@@ -32,6 +32,11 @@ from sourcebrief_shared.review_runner import (
     run_review_bundle_path,
     write_reviewer_report,
 )
+from sourcebrief_shared.validation_gate import (
+    load_regression_proposal,
+    validate_regression_proposal,
+    write_validation_gate_result,
+)
 
 DEFAULT_API_URL = "http://localhost:18000"
 DEFAULT_EMAIL = "demo@example.com"
@@ -1233,6 +1238,20 @@ def cmd_review_propose(_client: SourceBriefClient, args: argparse.Namespace) -> 
     return proposal.model_dump(mode="json")
 
 
+def cmd_review_gate(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    proposal = load_regression_proposal(args.proposal)
+    result = validate_regression_proposal(proposal)
+    if args.result_out:
+        written = write_validation_gate_result(args.result_out, result)
+        return {
+            "status": "gate_evaluated",
+            "decision": result.decision,
+            "result_path": str(written),
+            "result": result.model_dump(mode="json"),
+        }
+    return result.model_dump(mode="json")
+
+
 def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
     _require_scope(args)
     plan = client.request(
@@ -1806,6 +1825,10 @@ def build_parser() -> argparse.ArgumentParser:
     review_propose.add_argument("--proposal-out", help="write the sourcebrief.regression-proposal.v1 artifact to this path")
     review_propose.add_argument("--owner", default="unassigned")
     review_propose.set_defaults(func=cmd_review_propose)
+    review_gate = review.add_parser("gate", help="validate a regression proposal with the deterministic MVP gate")
+    review_gate.add_argument("--proposal", required=True, help="path to a sourcebrief.regression-proposal.v1 JSON file")
+    review_gate.add_argument("--result-out", help="write the sourcebrief.validation-gate-result.v1 artifact to this path")
+    review_gate.set_defaults(func=cmd_review_gate)
 
     runtime = sub.add_parser("runtime", help="agent runtime install and validation commands").add_subparsers(dest="runtime_command")
     runtime_plan = runtime.add_parser("plan", help="generate a dry-run runtime install plan")

@@ -617,6 +617,20 @@ def test_cli_review_propose_writes_regression_proposal(monkeypatch, capsys, tmp_
     assert saved["owner"] == "qa"
 
 
+def test_cli_review_gate_writes_validation_result(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    proposal_path = Path(__file__).resolve().parents[2] / "docs" / "examples" / "self-improvement" / "regression-proposal-example.json"
+    result_path = tmp_path / "gate.json"
+
+    assert cli_main(["--json", "review", "gate", "--proposal", str(proposal_path), "--result-out", str(result_path)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "gate_evaluated"
+    assert payload["decision"] == "accept"
+    saved = json.loads(result_path.read_text(encoding="utf-8"))
+    assert saved["schema_version"] == "sourcebrief.validation-gate-result.v1"
+    assert saved["decision"] == "accept"
+
+
 def test_explicit_workspace_id_does_not_inherit_saved_project(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     config_path = tmp_path / "sourcebrief-config.json"

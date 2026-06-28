@@ -1,0 +1,21 @@
+{
+  "schema_version": "sourcebrief.validation-gate-result.v1",
+  "gate_result_id": "gate-proposal-finding-learning-quickstart-gap",
+  "proposal_id": "proposal-finding-learning-quickstart-gap",
+  "decision": "accept",
+  "baseline_score": 1.0,
+  "candidate_score": 1.0,
+  "checks": {
+    "schema_valid": "pass",
+    "has_evidence_refs": "pass",
+    "not_previously_rejected": "pass",
+    "harmful_auto_learning_guard": "pass",
+    "target_surface_known": "pass"
+  },
+  "evidence_refs": [
+    "proof-quickstart-smoke"
+  ],
+  "reason": "Accepted by deterministic MVP gate: schema, evidence refs, status, target surface, and harmful-learning guard passed.",
+  "rejected_learning": null,
+  "created_at": "2026-06-28T17:41:03.294372Z"
+}
