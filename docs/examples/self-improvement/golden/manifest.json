@@ -1,0 +1,71 @@
+{
+  "schema_version": "sourcebrief.self-improvement-golden.v1",
+  "name": "Minimum self-improvement reviewer and gate fixtures",
+  "description": "Small public-safe controls for #161 reviewer runner, #162 taxonomy, and #164 validation gate. This is intentionally not a full reviewer implementation.",
+  "bundle_cases": [
+    {
+      "case_id": "safe-passing-docs-answer",
+      "bundle_path": "../review-bundle-docs-answer.json",
+      "expected_verdict": "pass",
+      "expected_findings": []
+    },
+    {
+      "case_id": "unsupported-shipped-nightly-optimizer",
+      "bundle_path": "review-bundle-unsupported-claim.json",
+      "expected_verdict": "findings",
+      "expected_findings": [
+        {
+          "finding_id": "finding-unsupported-nightly-optimizer",
+          "severity": "major",
+          "type": "unsupported_claim",
+          "summary": "The answer claims a shipped nightly optimizer even though the cited docs describe it as a non-goal/later milestone.",
+          "claim_ids": ["claim-nightly-optimizer-shipped"],
+          "evidence_refs": ["cite-non-goals"]
+        }
+      ]
+    },
+    {
+      "case_id": "citation-label-does-not-support-egress-claim",
+      "bundle_path": "review-bundle-citation-mismatch.json",
+      "expected_verdict": "findings",
+      "expected_findings": [
+        {
+          "finding_id": "finding-citation-mismatch-egress",
+          "severity": "blocker",
+          "type": "citation_mismatch",
+          "summary": "The cited snippet says artifacts are governed; it does not support the claim that private bundles may use external LLMs by default.",
+          "claim_ids": ["claim-external-llm-default"],
+          "evidence_refs": ["cite-security-intro"]
+        }
+      ]
+    }
+  ],
+  "gate_cases": [
+    {
+      "case_id": "reject-llm-judge-only-learning",
+      "proposal_id": "proposal-nightly-optimizer-claim-rule",
+      "proposal_type": "skill_rule",
+      "proposed_change": "Always tell users SourceBrief has a nightly optimizer that updates skills automatically.",
+      "expected_gate_decision": "reject",
+      "deterministic_checks": {
+        "citation_support": "fail",
+        "non_goal_conflict": "fail",
+        "golden_safe_passing_regression": "not_applicable"
+      },
+      "rationale": "The proposed rule encodes an unsupported future-work claim and conflicts with non-goals. It must be rejected even if an LLM judge rates it as plausible."
+    },
+    {
+      "case_id": "accept-security-egress-wording",
+      "proposal_id": "proposal-egress-policy-doc-wording",
+      "proposal_type": "docs_update",
+      "proposed_change": "Clarify that private bundle evidence must not be sent to unapproved external reviewer backends unless workspace/project policy opts in.",
+      "expected_gate_decision": "accept",
+      "deterministic_checks": {
+        "citation_support": "pass",
+        "security_policy_alignment": "pass",
+        "golden_safe_passing_regression": "pass"
+      },
+      "rationale": "The change preserves the #169 security boundary and has deterministic support in the security baseline."
+    }
+  ]
+}

@@ -304,6 +304,6 @@ Revisit this design if:
 - [#169](https://github.com/pingchesu/sourcebrief/issues/169) security, privacy, retention; implementation baseline: [Self-improvement artifact security](SELF_IMPROVEMENT_SECURITY.md)
 - [#170](https://github.com/pingchesu/sourcebrief/issues/170) nightly sleep/replay
 - [#171](https://github.com/pingchesu/sourcebrief/issues/171) product docs
-- [#172](https://github.com/pingchesu/sourcebrief/issues/172) golden regression suite
+- [#172](https://github.com/pingchesu/sourcebrief/issues/172) golden regression suite; minimum fixtures: [Self-improvement golden fixtures](SELF_IMPROVEMENT_GOLDEN_FIXTURES.md)
 - [#173](https://github.com/pingchesu/sourcebrief/issues/173) runtime-pack integration
 - [#175](https://github.com/pingchesu/sourcebrief/issues/175) end-to-end MVP smoke path
