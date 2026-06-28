@@ -292,7 +292,7 @@ Revisit this design if:
 - [#157](https://github.com/pingchesu/sourcebrief/issues/157) roadmap tracker
 - [#158](https://github.com/pingchesu/sourcebrief/issues/158) this spec
 - [#159](https://github.com/pingchesu/sourcebrief/issues/159) bundle schema; implementation baseline: [Review bundle schema](REVIEW_BUNDLE_SCHEMA.md)
-- [#160](https://github.com/pingchesu/sourcebrief/issues/160) bundle capture
+- [#160](https://github.com/pingchesu/sourcebrief/issues/160) bundle capture; implementation baseline: [Review bundle capture](REVIEW_BUNDLE_CAPTURE.md)
 - [#161](https://github.com/pingchesu/sourcebrief/issues/161) reviewer runner
 - [#162](https://github.com/pingchesu/sourcebrief/issues/162) finding taxonomy; implementation baseline: [Reviewer finding taxonomy](REVIEW_FINDING_TAXONOMY.md)
 - [#163](https://github.com/pingchesu/sourcebrief/issues/163) regression proposals

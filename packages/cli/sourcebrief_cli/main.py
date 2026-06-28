@@ -16,6 +16,10 @@ from urllib.request import Request, urlopen
 from dotenv import dotenv_values
 
 from sourcebrief_cli import runtime_apply, skill_install
+from sourcebrief_shared.review_bundle import (
+    build_review_bundle_from_agent_context,
+    write_review_bundle,
+)
 
 DEFAULT_API_URL = "http://localhost:18000"
 DEFAULT_EMAIL = "demo@example.com"
@@ -1024,11 +1028,52 @@ def _human_answer_brief(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _capture_review_bundle(
+    *,
+    agent_context: dict[str, Any],
+    args: argparse.Namespace,
+    query: str,
+    kind: str = "answer",
+    task_brief: str = "Capture a cited SourceBrief answer for autonomous review.",
+) -> dict[str, Any] | None:
+    output_path = getattr(args, "review_bundle_out", None)
+    if not output_path:
+        return None
+    bundle = build_review_bundle_from_agent_context(
+        agent_context=agent_context,
+        workspace_id=args.workspace_id,
+        project_id=args.project_id,
+        query=query,
+        runtime=getattr(args, "runtime", "api"),
+        top_k=getattr(args, "top_k", 8),
+        max_chars=getattr(args, "max_chars", 12000),
+        kind=kind,  # type: ignore[arg-type]
+        command=["sourcebrief", *list(getattr(args, "_sourcebrief_argv", []) or [])],
+        resource_ids=_resource_ids(getattr(args, "resource_id", None)),
+        task_brief=task_brief,
+    )
+    written = write_review_bundle(output_path, bundle)
+    return {
+        "path": str(written),
+        "bundle_id": bundle.bundle_id,
+        "schema_version": bundle.schema_version,
+        "completeness": bundle.security.completeness,
+        "citation_count": len(bundle.citations),
+        "claim_count": len(bundle.output.claim_ids),
+    }
+
+
 def cmd_ask(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     data = cmd_agent_context(client, args)
+    review_bundle = _capture_review_bundle(agent_context=data, args=args, query=args.query)
     if args.json:
+        if review_bundle:
+            data = {**data, "review_bundle": review_bundle}
         return data
-    return _human_answer_brief(data)
+    answer = _human_answer_brief(data)
+    if review_bundle:
+        answer["review_bundle"] = review_bundle
+    return answer
 
 
 def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> Any:
@@ -1106,7 +1151,27 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
         }
     )
     config_path = _save_cli_config(saved_config)
-    return {
+    review_bundle = None
+    if getattr(args, "review_bundle_out", None):
+        review_args = argparse.Namespace(
+            **{
+                **vars(args),
+                "workspace_id": workspace["id"],
+                "project_id": project["id"],
+                "runtime": "api",
+                "top_k": 3,
+                "max_chars": 6000,
+                "resource_id": [resource["id"]],
+            }
+        )
+        review_bundle = _capture_review_bundle(
+            agent_context=answer_packet,
+            args=review_args,
+            query="What should an operator do when a payment job hits retryable upstream errors?",
+            kind="cli_demo",
+            task_brief="Capture the deterministic quickstart demo answer for autonomous review.",
+        )
+    result = {
         "status": "indexed_and_ready_for_retrieval",
         "health": health,
         "workspace_id": workspace["id"],
@@ -1122,6 +1187,9 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
         "next_command": 'sourcebrief ask --resource "Payment retry runbook" "What should an operator do when payment retries fail?"',
         "cleanup": "Delete the demo workspace from the web console when finished, or keep it for CLI experiments.",
     }
+    if review_bundle:
+        result["review_bundle"] = review_bundle
+    return result
 
 
 def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
@@ -1404,6 +1472,7 @@ def build_parser() -> argparse.ArgumentParser:
     quickstart.add_argument("--project-name", default="First useful moment")
     quickstart.add_argument("--slug", help="workspace slug; defaults to a timestamped sourcebrief-demo-* slug")
     quickstart.add_argument("--timeout", type=int, default=120, help="seconds to wait for indexing")
+    quickstart.add_argument("--review-bundle-out", help="write an opt-in self-improvement review bundle JSON for the demo answer")
     quickstart.add_argument("--validate-mcp", action="store_true", help="also call the MCP context tool and report pass/fail")
     quickstart.set_defaults(func=cmd_quickstart_demo)
 
@@ -1652,6 +1721,7 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("--resource", action="append", help="resource ID or unambiguous resource ref/name")
     ask.add_argument("--top-k", type=int, default=8)
     ask.add_argument("--max-chars", type=int, default=12000)
+    ask.add_argument("--review-bundle-out", help="write an opt-in self-improvement review bundle JSON for this answer")
     ask.add_argument("--no-code-symbols", dest="include_code_symbols", action="store_false")
     ask.set_defaults(func=cmd_ask, include_code_symbols=True)
 
@@ -1819,6 +1889,8 @@ def _print_default(command: str | None, data: Any) -> None:
                 print("Missing evidence / warnings:")
                 for warning in data.get("missing_evidence", []):
                     print(f"- {warning}")
+            if data.get("review_bundle"):
+                print(f"Review bundle: {(data.get('review_bundle') or {}).get('path')}")
             print(data.get("raw_packet_hint"))
             return
         if command == "quickstart-demo" and data.get("status") == "indexed_and_ready_for_retrieval":
@@ -1832,6 +1904,8 @@ def _print_default(command: str | None, data: Any) -> None:
                 print(f"  mcp_validation: {(data.get('mcp_validation') or {}).get('status')}")
             answer = data.get("answer") or {}
             print(f"Answer: {answer.get('answer')}")
+            if data.get("review_bundle"):
+                print(f"  review_bundle: {(data.get('review_bundle') or {}).get('path')}")
             print("Citations:")
             for citation in answer.get("citations_used", []):
                 print(f"- {citation.get('label')} {citation.get('path')} score={citation.get('score')}")
@@ -1848,6 +1922,7 @@ def _print_default(command: str | None, data: Any) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    args._sourcebrief_argv = list(argv) if argv is not None else sys.argv[1:]
     if args.func is None:
         parser.print_help(sys.stderr)
         return 2

@@ -11,6 +11,8 @@ from typing import Any
 import pytest
 import yaml  # type: ignore[import-untyped]
 
+from sourcebrief_shared.review_bundle import load_review_bundle
+
 cli = importlib.import_module("sourcebrief_cli.main")
 skill_install = importlib.import_module("sourcebrief_cli.skill_install")
 cli_main = cli.main
@@ -530,6 +532,49 @@ def test_cli_use_status_and_ask_defaults(monkeypatch, capsys, tmp_path):
     )
 
 
+def test_cli_ask_can_write_valid_review_bundle(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    config_path = tmp_path / "sourcebrief-config.json"
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(config_path))
+    config_path.write_text(json.dumps({"api_url": "http://api.example", "workspace_id": "ws-1", "project_id": "proj-1"}), encoding="utf-8")
+    bundle_path = tmp_path / "review-bundles" / "ask.json"
+
+    assert cli_main(["ask", "Where is retry policy?", "--json", "--resource-id", "res-1", "--review-bundle-out", str(bundle_path)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["review_bundle"]["path"] == str(bundle_path)
+    assert payload["review_bundle"]["completeness"] == "complete"
+
+    bundle = load_review_bundle(bundle_path)
+    assert bundle.kind == "answer"
+    assert bundle.scope.workspace_id == "ws-1"
+    assert bundle.scope.project_id == "proj-1"
+    assert bundle.scope.resource_ids == ["res-1"]
+    assert bundle.input.original_query == "Where is retry policy?"
+    assert bundle.security.egress_decision == "local_only"
+    assert bundle.security.completeness == "complete"
+    assert bundle.citations[0].source_ref.resource_id == "res-1"
+    assert bundle.citations[0].supports_claim_ids == bundle.output.claim_ids
+    assert bundle.tool_proof[0].kind == "api"
+    assert "cs_" not in bundle_path.read_text(encoding="utf-8")
+
+
+def test_quickstart_demo_can_write_review_bundle(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "sourcebrief-config.json"))
+    bundle_path = tmp_path / "quickstart-bundle.json"
+
+    assert cli_main(["--json", "quickstart-demo", "--slug", "sourcebrief-demo-test", "--review-bundle-out", str(bundle_path)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["review_bundle"]["path"] == str(bundle_path)
+
+    bundle = load_review_bundle(bundle_path)
+    assert bundle.kind == "cli_demo"
+    assert bundle.scope.resource_ids == ["res-1"]
+    assert bundle.input.task_brief.startswith("Capture the deterministic quickstart demo")
+    assert bundle.security.completeness == "complete"
+    assert bundle.verification_logs[0].status == "passed"
+
+
 def test_explicit_workspace_id_does_not_inherit_saved_project(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     config_path = tmp_path / "sourcebrief-config.json"
@@ -545,6 +590,7 @@ def test_explicit_workspace_id_does_not_inherit_saved_project(monkeypatch, capsy
 
 def test_resource_add_commands_require_scope_before_reading_local_inputs(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "sourcebrief-config.json"))
     upload = tmp_path / "upload.md"
     upload.write_text("secret local content\n", encoding="utf-8")
 
