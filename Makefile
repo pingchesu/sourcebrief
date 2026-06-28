@@ -67,10 +67,10 @@ typecheck: venv web-deps
 	npm --prefix apps/web run lint
 
 test: venv
-	$(BIN)/pytest tests/unit -q
+	$(BIN)/python -m pytest tests/unit -q
 
 test-integration: venv
-	SOURCEBRIEF_DEV_AUTH=true $(BIN)/pytest tests/integration -q
+	SOURCEBRIEF_DEV_AUTH=true $(BIN)/python -m pytest tests/integration -q
 
 prepare-qa-fixtures:
 	mkdir -p tmp/qa-git-fixtures

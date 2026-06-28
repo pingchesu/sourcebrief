@@ -81,7 +81,7 @@ SourceBrief exists so agents can ask the project for cited, permission-scoped ev
 
 This walkthrough was captured from a real local SourceBrief stack with live API, workers, Postgres, Redis, two indexed resources, and a real `agent-context` response. See the full [product walkthrough](docs/WALKTHROUGH.md) and the captured [agent-context output](docs/examples/agent-context-output.md).
 
-For launch proof, use the screenshot-backed [50Q walkthrough](docs/evaluations/sourcebrief-launch-50q-20260627.md). It documents the exact command path, created workspace/project/resource, MCP/CLI scenarios, 50-question result, follow-up issues, and seven committed screenshots under [`docs/assets/screenshots/launch-50q/`](docs/assets/screenshots/launch-50q/).
+For 50Q launch proof with screenshots, use the screenshot-backed [50Q walkthrough](docs/evaluations/sourcebrief-launch-50q-20260627.md). It documents the exact command path, created workspace/project/resource, MCP/CLI scenarios, 50-question result, follow-up issues, and seven committed screenshots under [`docs/assets/screenshots/launch-50q/`](docs/assets/screenshots/launch-50q/).
 
 A useful SourceBrief answer looks like this:
 
