@@ -8,10 +8,11 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | --- | --- | --- |
 | 1 | [README](../README.md) | Product promise, diagrams, trust boundaries, and local start. |
 | 2 | [Install and use](INSTALL_AND_USE.md) | Short product-led path: install, add/update resources, ask questions, connect a runtime, and understand embedding/rerank limits. |
-| 3 | [Product walkthrough](WALKTHROUGH.md) | Real UI screenshots and captured `agent-context` output before installing. |
-| 4 | [Concepts](CONCEPTS.md) | Source -> Snapshot -> Evidence -> Review -> Runtime mental model. |
-| 5 | [Quick start](QUICKSTART.md) | Run the local stack and reach the first cited answer. |
-| 6 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Long-form operator guide for Hermes, Claude Code, Codex, Cursor, MCP clients, scopes, skills, and failure modes. |
+| 3 | [Recipes](RECIPES.md) | Choose a user workflow such as repo onboarding, PR review, incident runbooks, API services, frontend product work, or multi-repo platforms. |
+| 4 | [Product walkthrough](WALKTHROUGH.md) | Real UI screenshots and captured `agent-context` output before installing. |
+| 5 | [Concepts](CONCEPTS.md) | Source -> Snapshot -> Evidence -> Review -> Runtime mental model. |
+| 6 | [Quick start](QUICKSTART.md) | Run the local stack and reach the first cited answer. |
+| 7 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Long-form operator guide for Hermes, Claude Code, Codex, Cursor, MCP clients, scopes, skills, and failure modes. |
 | Reference | [Default credential policy](DEFAULT_CREDENTIAL_POLICY.md) | Why SourceBrief has no universal `changeme` login and how local demos authenticate. |
 
 ## Proof and demos
@@ -47,6 +48,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Alpha release notes](ALPHA_RELEASE_NOTES.md) | Release reference | Alpha capability summary and explicit boundaries. |
 | [Roadmap](ROADMAP.md) | Planning reference | Finite alpha roadmap and future work. |
 | [Git repo import product gaps](GIT_REPO_IMPORT_PRODUCT_GAPS.md) | Product backlog | Enterprise Git onboarding gaps. |
+| [Out-of-box product plan](OUT_OF_BOX_PRODUCT_PLAN.md) | Productization backlog | More attractive first-use experience and recipe/agent-pack roadmap. |
 
 ## Deep specs
 
