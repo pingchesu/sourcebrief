@@ -1,0 +1,28 @@
+{
+  "schema_version": "sourcebrief.regression-proposal.v1",
+  "proposal_id": "proposal-finding-learning-quickstart-gap",
+  "source_report_id": "report-demo-taxonomy-001",
+  "source_bundle_id": "rb-demo-pr-review-001",
+  "source_finding_id": "finding-learning-quickstart-gap",
+  "failure_mode": "A recurring quickstart failure should become a regression candidate.",
+  "target_surface": "docs",
+  "proposed_check": "Reproduce finding `finding-learning-quickstart-gap` for bundle `rb-demo-pr-review-001` and assert that `quickstart_dx_failure` does not recur without an explicit rejected-proposal rationale.",
+  "acceptance": [
+    "The regression check fails on the source finding `finding-learning-quickstart-gap` before the fix.",
+    "The check passes after the smallest scoped fix or remains explicitly rejected with rationale.",
+    "Evidence refs remain tied to the original review bundle/report."
+  ],
+  "fixture_refs": [
+    "finding:finding-learning-quickstart-gap"
+  ],
+  "bundle_refs": [
+    "rb-demo-pr-review-001"
+  ],
+  "evidence_refs": [
+    "proof-quickstart-smoke"
+  ],
+  "owner": "qa",
+  "status": "proposed",
+  "rationale": "Future docs could regress by omitting auth setup again.",
+  "created_at": "2026-06-28T17:36:18.096524Z"
+}

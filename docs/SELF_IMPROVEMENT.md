@@ -295,7 +295,7 @@ Revisit this design if:
 - [#160](https://github.com/pingchesu/sourcebrief/issues/160) bundle capture; implementation baseline: [Review bundle capture](REVIEW_BUNDLE_CAPTURE.md)
 - [#161](https://github.com/pingchesu/sourcebrief/issues/161) reviewer runner; implementation baseline: [Review bundle runner](REVIEW_BUNDLE_RUNNER.md)
 - [#162](https://github.com/pingchesu/sourcebrief/issues/162) finding taxonomy; implementation baseline: [Reviewer finding taxonomy](REVIEW_FINDING_TAXONOMY.md)
-- [#163](https://github.com/pingchesu/sourcebrief/issues/163) regression proposals
+- [#163](https://github.com/pingchesu/sourcebrief/issues/163) regression proposals; implementation baseline: [Regression proposal artifacts](REGRESSION_PROPOSALS.md)
 - [#164](https://github.com/pingchesu/sourcebrief/issues/164) validation gate
 - [#165](https://github.com/pingchesu/sourcebrief/issues/165) staged adoption
 - [#166](https://github.com/pingchesu/sourcebrief/issues/166) GitHub PR integration

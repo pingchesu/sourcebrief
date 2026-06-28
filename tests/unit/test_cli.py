@@ -590,6 +590,33 @@ def test_cli_review_run_writes_report(monkeypatch, capsys, tmp_path):
     assert saved["findings"][0]["type"] == "citation_mismatch"
 
 
+def test_cli_review_propose_writes_regression_proposal(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    report_path = Path(__file__).resolve().parents[2] / "docs" / "examples" / "self-improvement" / "reviewer-report-example.json"
+    proposal_path = tmp_path / "proposal.json"
+
+    assert cli_main([
+        "--json",
+        "review",
+        "propose",
+        "--report",
+        str(report_path),
+        "--finding-id",
+        "finding-learning-quickstart-gap",
+        "--owner",
+        "qa",
+        "--proposal-out",
+        str(proposal_path),
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "proposal_written"
+    assert payload["proposal_path"] == str(proposal_path)
+    saved = json.loads(proposal_path.read_text(encoding="utf-8"))
+    assert saved["schema_version"] == "sourcebrief.regression-proposal.v1"
+    assert saved["source_finding_id"] == "finding-learning-quickstart-gap"
+    assert saved["owner"] == "qa"
+
+
 def test_explicit_workspace_id_does_not_inherit_saved_project(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     config_path = tmp_path / "sourcebrief-config.json"
