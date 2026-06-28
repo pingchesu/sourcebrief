@@ -7,6 +7,7 @@ from pathlib import Path
 from sourcebrief_shared.citation_support import citation_support_findings
 from sourcebrief_shared.review_bundle import ReviewBundle, load_review_bundle
 from sourcebrief_shared.review_findings import (
+    ReportSubjectRef,
     ReviewerFinding,
     ReviewerReport,
     build_reviewer_report,
@@ -63,6 +64,33 @@ def _incomplete_bundle_findings(bundle: ReviewBundle) -> list[ReviewerFinding]:
     ]
 
 
+def _subject_refs_for_bundle(bundle: ReviewBundle) -> list[ReportSubjectRef]:
+    if bundle.kind != "pr_review":
+        return []
+    for note in bundle.reviewer_notes:
+        if not note.startswith("github_pr "):
+            continue
+        fields: dict[str, str] = {}
+        for part in note[len("github_pr ") :].split():
+            if "=" not in part:
+                continue
+            key, value = part.split("=", 1)
+            fields[key] = value
+        repo = fields.get("repo") or "unknown/repo"
+        number = fields.get("number") or "unknown"
+        changed_paths = [path for path in (fields.get("changed_paths") or "").split(",") if path]
+        return [
+            ReportSubjectRef(
+                kind="github_pr",
+                ref_id=f"{repo}#{number}",
+                url=fields.get("url"),
+                head_sha=fields.get("head_sha"),
+                changed_paths=changed_paths,
+            )
+        ]
+    return []
+
+
 def run_review_bundle(bundle: ReviewBundle, *, options: ReviewRunOptions | None = None) -> ReviewerReport:
     options = options or ReviewRunOptions()
     if options.backend not in {"local", "deterministic", "mock"}:
@@ -85,6 +113,7 @@ def run_review_bundle(bundle: ReviewBundle, *, options: ReviewRunOptions | None 
         reviewer_lenses=["citation_support", "missing_evidence"],
         generated_at=bundle.created_at,
         findings=findings,
+        subject_refs=_subject_refs_for_bundle(bundle),
     )
 
 

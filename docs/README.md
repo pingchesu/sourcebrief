@@ -56,6 +56,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Regression proposals](REGRESSION_PROPOSALS.md) | Proposal artifacts | Convert reviewer findings into reviewable regression proposal artifacts without applying them. |
 | [Validation gate](VALIDATION_GATE.md) | Safety gate | Deterministic MVP gate for proposal acceptance/rejection before staged adoption. |
 | [Staged adoption](STAGED_ADOPTION.md) | Adoption boundary | Stage accepted proposals as human-reviewable patches and receipts without mutating production behavior. |
+| [GitHub PR review bundles](GITHUB_PR_REVIEW.md) | PR review integration | Create PR-scoped review bundles and reports from bounded GitHub metadata, changed paths, and verification logs. |
 | [Reviewer finding taxonomy](REVIEW_FINDING_TAXONOMY.md) | Reviewer contract | Severity policy, finding types, report schema, aggregation, and proposal eligibility. |
 | [Citation-support check](CITATION_SUPPORT_CHECK.md) | Deterministic reviewer lens | MVP unsupported-claim and citation-mismatch check over review bundles and golden fixtures. |
 | [Self-improvement golden fixtures](SELF_IMPROVEMENT_GOLDEN_FIXTURES.md) | Regression baseline | Minimum reviewer/gate fixtures for unsupported claims, citation mismatch, safe passing answers, and rejected proposals. |

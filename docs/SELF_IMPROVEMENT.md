@@ -298,7 +298,7 @@ Revisit this design if:
 - [#163](https://github.com/pingchesu/sourcebrief/issues/163) regression proposals; implementation baseline: [Regression proposal artifacts](REGRESSION_PROPOSALS.md)
 - [#164](https://github.com/pingchesu/sourcebrief/issues/164) validation gate; implementation baseline: [Validation gate](VALIDATION_GATE.md)
 - [#165](https://github.com/pingchesu/sourcebrief/issues/165) staged adoption; implementation baseline: [Staged adoption](STAGED_ADOPTION.md)
-- [#166](https://github.com/pingchesu/sourcebrief/issues/166) GitHub PR integration
+- [#166](https://github.com/pingchesu/sourcebrief/issues/166) GitHub PR integration; implementation baseline: [GitHub PR review bundles](GITHUB_PR_REVIEW.md)
 - [#167](https://github.com/pingchesu/sourcebrief/issues/167) citation support checks; MVP deterministic check: [Citation-support check](CITATION_SUPPORT_CHECK.md)
 - [#168](https://github.com/pingchesu/sourcebrief/issues/168) history and observability
 - [#169](https://github.com/pingchesu/sourcebrief/issues/169) security, privacy, retention; implementation baseline: [Self-improvement artifact security](SELF_IMPROVEMENT_SECURITY.md)
