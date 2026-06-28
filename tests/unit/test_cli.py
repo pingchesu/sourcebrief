@@ -709,6 +709,38 @@ def test_cli_review_gate_invalid_schema_writes_rejected_result(monkeypatch, caps
     assert saved["checks"]["schema_valid"] == "fail"
 
 
+def test_cli_review_sleep_dry_run_mines_recurring_candidates(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    source_dir = tmp_path / "history"
+    source_dir.mkdir()
+    proposal = json.loads((Path(__file__).resolve().parents[2] / "docs" / "examples" / "self-improvement" / "regression-proposal-example.json").read_text(encoding="utf-8"))
+    for suffix in ["a", "b"]:
+        item = {**proposal, "proposal_id": f"proposal-{suffix}", "status": "proposed"}
+        (source_dir / f"proposal-{suffix}.json").write_text(json.dumps(item), encoding="utf-8")
+    out_dir = tmp_path / "sleep-out"
+    summary_out = tmp_path / "sleep-summary.json"
+
+    assert cli_main([
+        "--json",
+        "review",
+        "sleep",
+        "--dir",
+        str(source_dir),
+        "--out-dir",
+        str(out_dir),
+        "--summary-out",
+        str(summary_out),
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["schema_version"] == "sourcebrief.sleep-replay-summary.v1"
+    assert payload["dry_run"] is True
+    assert len(payload["candidates"]) == 1
+    assert payload["candidates"][0]["gate_decision"] == "accept"
+    assert Path(payload["candidates"][0]["proposal_path"]).exists()
+    assert summary_out.exists()
+
+
 def test_cli_review_mvp_smoke_runs_full_local_path(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     out_dir = tmp_path / "mvp-smoke"

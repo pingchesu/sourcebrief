@@ -302,7 +302,7 @@ Revisit this design if:
 - [#167](https://github.com/pingchesu/sourcebrief/issues/167) citation support checks; MVP deterministic check: [Citation-support check](CITATION_SUPPORT_CHECK.md)
 - [#168](https://github.com/pingchesu/sourcebrief/issues/168) history and observability; implementation baseline: [Review history](REVIEW_HISTORY.md)
 - [#169](https://github.com/pingchesu/sourcebrief/issues/169) security, privacy, retention; implementation baseline: [Self-improvement artifact security](SELF_IMPROVEMENT_SECURITY.md)
-- [#170](https://github.com/pingchesu/sourcebrief/issues/170) nightly sleep/replay
+- [#170](https://github.com/pingchesu/sourcebrief/issues/170) nightly sleep/replay; dry-run baseline: [Sleep/replay dry-run loop](SLEEP_REPLAY_LOOP.md)
 - [#171](https://github.com/pingchesu/sourcebrief/issues/171) product docs
 - [#172](https://github.com/pingchesu/sourcebrief/issues/172) golden regression suite; minimum fixtures: [Self-improvement golden fixtures](SELF_IMPROVEMENT_GOLDEN_FIXTURES.md)
 - [#173](https://github.com/pingchesu/sourcebrief/issues/173) runtime-pack integration; generated artifact contract: [Runtime-pack review loop](RUNTIME_PACK_REVIEW_LOOP.md)

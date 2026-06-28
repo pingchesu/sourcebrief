@@ -42,6 +42,11 @@ from sourcebrief_shared.review_runner import (
     run_review_bundle_path,
     write_reviewer_report,
 )
+from sourcebrief_shared.self_improvement_sleep import (
+    SleepReplayError,
+    run_sleep_replay,
+    write_sleep_replay_summary,
+)
 from sourcebrief_shared.staged_adoption import stage_regression_proposal
 from sourcebrief_shared.validation_gate import (
     validate_regression_proposal,
@@ -1384,6 +1389,22 @@ def cmd_review_mvp_smoke(_client: SourceBriefClient, args: argparse.Namespace) -
     return smoke_summary
 
 
+def cmd_review_sleep(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    try:
+        summary = run_sleep_replay(
+            args.dir,
+            out_dir=args.out_dir,
+            min_occurrences=args.min_occurrences,
+            max_artifacts=args.max_artifacts,
+            dry_run=True,
+        )
+        if args.summary_out:
+            write_sleep_replay_summary(args.summary_out, summary)
+    except (OSError, SleepReplayError) as exc:
+        raise SourceBriefCliError(str(exc)) from exc
+    return summary.model_dump(mode="json")
+
+
 def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
     _require_scope(args)
     plan = client.request(
@@ -1989,6 +2010,13 @@ def build_parser() -> argparse.ArgumentParser:
     review_mvp_smoke.add_argument("--owner", default="qa")
     review_mvp_smoke.add_argument("--out-dir", required=True, help="directory where smoke artifacts should be written")
     review_mvp_smoke.set_defaults(func=cmd_review_mvp_smoke)
+    review_sleep = review.add_parser("sleep", help="dry-run recurring-learning mining over bounded review artifacts")
+    review_sleep.add_argument("--dir", required=True, help="directory of review/proposal artifacts to scan recursively")
+    review_sleep.add_argument("--out-dir", help="write dry-run candidate proposal/gate artifacts to this directory")
+    review_sleep.add_argument("--summary-out", help="write the sourcebrief.sleep-replay-summary.v1 artifact")
+    review_sleep.add_argument("--min-occurrences", type=int, default=2)
+    review_sleep.add_argument("--max-artifacts", type=int, default=100)
+    review_sleep.set_defaults(func=cmd_review_sleep)
 
     runtime = sub.add_parser("runtime", help="agent runtime install and validation commands").add_subparsers(dest="runtime_command")
     runtime_plan = runtime.add_parser("plan", help="generate a dry-run runtime install plan")

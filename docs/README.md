@@ -60,6 +60,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Review history](REVIEW_HISTORY.md) | Observability | Inspect redacted local bundle/report/proposal/gate/staged history and provenance without opening raw JSON by hand. |
 | [Self-improvement MVP smoke](SELF_IMPROVEMENT_MVP_SMOKE.md) | End-to-end proof | One-command local bundle → report → proposal → gate → staged receipt → history smoke path. |
 | [Runtime-pack review loop](RUNTIME_PACK_REVIEW_LOOP.md) | Generated agent-pack contract | Keep generated skills/agent packs aligned with review/proposal/gate/staged-adoption boundaries without patching installed runtimes. |
+| [Sleep/replay dry-run loop](SLEEP_REPLAY_LOOP.md) | Recurring learning mining | Dry-run recurrence mining over bounded proposal artifacts with deterministic gate results and no auto-adoption. |
 | [Reviewer finding taxonomy](REVIEW_FINDING_TAXONOMY.md) | Reviewer contract | Severity policy, finding types, report schema, aggregation, and proposal eligibility. |
 | [Citation-support check](CITATION_SUPPORT_CHECK.md) | Deterministic reviewer lens | MVP unsupported-claim and citation-mismatch check over review bundles and golden fixtures. |
 | [Self-improvement golden fixtures](SELF_IMPROVEMENT_GOLDEN_FIXTURES.md) | Regression baseline | Minimum reviewer/gate fixtures for unsupported claims, citation mismatch, safe passing answers, and rejected proposals. |
