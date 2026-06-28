@@ -709,6 +709,35 @@ def test_cli_review_gate_invalid_schema_writes_rejected_result(monkeypatch, caps
     assert saved["checks"]["schema_valid"] == "fail"
 
 
+def test_cli_review_history_list_and_show_are_redacted(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+    proposal = json.loads((Path(__file__).resolve().parents[2] / "docs" / "examples" / "self-improvement" / "regression-proposal-example.json").read_text(encoding="utf-8"))
+    proposal["rationale"] = "token=abcdefghijklmnopqrstuvwxyz12345 should be redacted"
+    (history_dir / "proposal.json").write_text(json.dumps(proposal), encoding="utf-8")
+
+    assert cli_main(["--json", "review", "history", "list", "--dir", str(history_dir)]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed["metrics"]["proposal_count"] == 1
+    assert listed["records"][0]["artifact_id"] == "proposal-finding-learning-quickstart-gap"
+
+    assert cli_main([
+        "--json",
+        "review",
+        "history",
+        "show",
+        "proposal-finding-learning-quickstart-gap",
+        "--dir",
+        str(history_dir),
+    ]) == 0
+    shown_text = capsys.readouterr().out
+    assert "abcdefghijklmnopqrstuvwxyz12345" not in shown_text
+    shown = json.loads(shown_text)
+    assert shown["record"]["kind"] == "proposal"
+    assert shown["redaction_counts"]
+
+
 def test_cli_review_stage_writes_receipt_patch_and_does_not_login(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "sourcebrief-config.json"))
