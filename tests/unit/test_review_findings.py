@@ -73,13 +73,36 @@ def test_proposal_eligibility_requires_regression_candidate() -> None:
     with pytest.raises(ValidationError, match="proposal candidates must set regression_candidate=true"):
         _finding(regression_candidate=False, proposal_eligibility="candidate")
 
+    with pytest.raises(ValidationError, match="proposal_eligibility must be candidate"):
+        _finding(proposal_eligibility="not_eligible")
+
+    with pytest.raises(ValidationError, match="proposal_eligibility must be not_eligible"):
+        _finding(severity="rejected_learning", type="rejected_proposal", regression_candidate=True, proposal_eligibility="candidate")
+
+
+def test_reviewer_report_rejects_inconsistent_aggregate() -> None:
+    finding = _finding()
+    aggregate = aggregate_findings([finding]).model_copy(update={"total": 999})
+
+    with pytest.raises(ValidationError, match="aggregate must equal"):
+        ReviewerReport(
+            report_id="report-1",
+            bundle_id="bundle-1",
+            reviewer_backend="mock",
+            reviewer_lenses=["scope"],
+            generated_at=datetime.now(UTC),
+            verdict="BLOCK",
+            findings=[finding],
+            aggregate=aggregate,
+        )
+
 
 def test_finding_to_proposal_rule_and_severity_blocks() -> None:
     assert severity_blocks_adoption("blocker") is True
     assert severity_blocks_adoption("major") is True
     assert severity_blocks_adoption("learning") is False
     assert finding_to_proposal_rule(_finding(confidence="high")) == "candidate"
-    assert finding_to_proposal_rule(_finding(confidence="low")) == "requires_human_review"
+    assert finding_to_proposal_rule(_finding(confidence="low", proposal_eligibility="requires_human_review")) == "requires_human_review"
     assert (
         finding_to_proposal_rule(
             _finding(severity="rejected_learning", type="rejected_proposal", regression_candidate=False, proposal_eligibility="not_eligible")

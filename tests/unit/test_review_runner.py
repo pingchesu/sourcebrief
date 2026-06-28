@@ -59,3 +59,10 @@ def test_runner_fails_closed_on_incomplete_bundle_unless_allowed() -> None:
     report = run_review_bundle(incomplete, options=ReviewRunOptions(allow_incomplete=True))
     assert report.verdict == "BLOCK"
     assert report.findings[0].type == "missing_evidence"
+
+
+def test_runner_enforces_bundle_backend_policy() -> None:
+    bundle = load_review_bundle(EXAMPLES / "review-bundle-docs-answer.json")
+
+    with pytest.raises(ReviewRunnerError, match="not allowed by bundle policy"):
+        run_review_bundle(bundle, options=ReviewRunOptions(backend="deterministic"))

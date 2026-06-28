@@ -4,7 +4,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 REVIEW_FINDING_SCHEMA_VERSION = "sourcebrief.review-finding.v1"
 REVIEW_REPORT_SCHEMA_VERSION = "sourcebrief.review-report.v1"
@@ -90,6 +90,12 @@ class ReviewerFinding(StrictModel):
         if value in {"candidate", "requires_human_review"} and not info.data.get("regression_candidate"):
             raise ValueError("proposal candidates must set regression_candidate=true")
         return value
+    @model_validator(mode="after")
+    def proposal_eligibility_matches_rule(self) -> ReviewerFinding:
+        expected = finding_to_proposal_rule(self)
+        if self.proposal_eligibility != expected:
+            raise ValueError(f"proposal_eligibility must be {expected} for this finding")
+        return self
 
 
 class ReviewerReportAggregate(StrictModel):
@@ -120,6 +126,13 @@ class ReviewerReport(StrictModel):
                 if finding.bundle_id != bundle_id:
                     raise ValueError("all findings must match report bundle_id")
         return value
+
+    @model_validator(mode="after")
+    def aggregate_must_match_findings(self) -> ReviewerReport:
+        expected = aggregate_findings(self.findings)
+        if self.aggregate != expected:
+            raise ValueError("aggregate must equal deterministic aggregate_findings(findings)")
+        return self
 
 
 def severity_blocks_adoption(severity: str) -> bool:

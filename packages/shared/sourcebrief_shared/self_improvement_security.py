@@ -31,7 +31,8 @@ class ReviewArtifactSecurityError(ValueError):
     """Raised when a self-improvement artifact would cross a safety boundary."""
 
 
-_LOCAL_REVIEWER_BACKENDS = {"local", "mock", "offline"}
+_LOCAL_REVIEWER_BACKENDS = {"local", "mock", "offline", "deterministic", "deterministic-citation-support"}
+_INTERNAL_REVIEWER_BACKENDS = {"internal", "internal-reviewer"}
 _SECRET_KEY_RE = re.compile(r"(?i)(authorization|cookie|password|passwd|secret|token|api[_-]?key|session)")
 _LOCAL_PATH_RE = re.compile(r"(?<![\w:/.-])(?:file://)?/(?:home|Users)/[A-Za-z0-9._-]+/[^\s)\]}'\"]+")
 _BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}")
@@ -41,7 +42,7 @@ _SLACK_TOKEN_RE = re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")
 _OPENAI_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")
 _AWS_ACCESS_KEY_RE = re.compile(r"\bAKIA[0-9A-Z]{16}\b")
 _GENERIC_ASSIGNMENT_RE = re.compile(
-    r"(?i)\b(api[_-]?key|token|secret|password|session[_-]?token)\s*[:=]\s*['\"]?([^\s'\"]{12,})"
+    r"(?i)\b(api[_-]?key|token|secret|password|passwd|session[_-]?token)\s*[:=]\s*['\"]?([^\s'\"]+)"
 )
 
 _SECRET_VALUE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -91,6 +92,8 @@ class ReviewArtifactScope:
             return False
         if not self.resource_ids:
             return True
+        if not resource_ids:
+            return False
         return set(resource_ids).issubset(set(self.resource_ids))
 
     def require_allows(
@@ -125,13 +128,13 @@ class ReviewArtifactPolicy:
             return EgressDecision.DENIED
         if backend in _LOCAL_REVIEWER_BACKENDS:
             return EgressDecision.LOCAL_ONLY
-        if self.sensitivity in {ArtifactSensitivity.PRIVATE, ArtifactSensitivity.SECRET} and not self.external_reviewer_opt_in:
+        if backend in _INTERNAL_REVIEWER_BACKENDS:
+            return EgressDecision.APPROVED_INTERNAL
+        if not self.external_reviewer_opt_in:
             return EgressDecision.DENIED
-        return (
-            EgressDecision.APPROVED_EXTERNAL
-            if self.external_reviewer_opt_in
-            else EgressDecision.APPROVED_INTERNAL
-        )
+        if self.sensitivity is ArtifactSensitivity.SECRET:
+            return EgressDecision.DENIED
+        return EgressDecision.APPROVED_EXTERNAL
 
     def require_backend_allowed(self, backend: str) -> EgressDecision:
         decision = self.egress_for_backend(backend)
@@ -170,12 +173,16 @@ def redact_review_artifact(value: Any) -> tuple[Any, RedactionReport]:
         output: dict[Any, Any] = {}
         for key, item in value.items():
             key_str = str(key)
+            redacted_key, key_report = redact_text(key_str)
+            report.merge(key_report)
+            output_key = redacted_key
             if _SECRET_KEY_RE.search(key_str):
-                output[key] = f"[REDACTED:{key_str}]"
+                output_key = "[REDACTED:secret_key]"
+                output[output_key] = "[REDACTED:secret_value]"
                 report.add("secret_key")
                 continue
             redacted_item, child_report = redact_review_artifact(item)
-            output[key] = redacted_item
+            output[output_key] = redacted_item
             report.merge(child_report)
         return output, report
     if isinstance(value, Sequence) and not isinstance(value, bytes | bytearray):

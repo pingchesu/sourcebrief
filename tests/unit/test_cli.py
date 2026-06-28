@@ -587,7 +587,34 @@ def test_cli_review_run_writes_report(monkeypatch, capsys, tmp_path):
     assert payload["report_path"] == str(report_path)
     saved = json.loads(report_path.read_text(encoding="utf-8"))
     assert saved["schema_version"] == "sourcebrief.review-report.v1"
+    assert saved["reviewer_backend"] == "local"
     assert saved["findings"][0]["type"] == "citation_mismatch"
+
+
+def test_cli_review_commands_do_not_login_with_env_password(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    monkeypatch.setenv("SOURCEBRIEF_CONFIG_PATH", str(tmp_path / "sourcebrief-config.json"))
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_EMAIL", "admin@sourcebrief.local")
+    monkeypatch.setenv("SOURCEBRIEF_ADMIN_PASSWORD", "local-password")
+    bundle_path = Path(__file__).resolve().parents[2] / "docs" / "examples" / "self-improvement" / "golden" / "review-bundle-citation-mismatch.json"
+    report_path = tmp_path / "review-report.json"
+
+    assert cli_main(["--json", "review", "run", "--bundle", str(bundle_path), "--report-out", str(report_path)]) == 0
+    assert FakeClient.instances[-1].calls == []
+    capsys.readouterr()
+
+
+def test_cli_review_run_incomplete_bundle_returns_actionable_error(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    bundle = load_review_bundle(Path(__file__).resolve().parents[2] / "docs" / "examples" / "self-improvement" / "review-bundle-docs-answer.json")
+    data = bundle.model_dump(mode="json")
+    data["security"]["completeness"] = "insufficient_evidence"
+    incomplete = tmp_path / "incomplete.json"
+    incomplete.write_text(json.dumps(data), encoding="utf-8")
+
+    assert cli_main(["--json", "review", "run", "--bundle", str(incomplete)]) == 1
+    err = capsys.readouterr().err
+    assert "allow_incomplete" in err or "allow-incomplete" in err
 
 
 def test_cli_review_propose_writes_regression_proposal(monkeypatch, capsys, tmp_path):
@@ -629,6 +656,19 @@ def test_cli_review_gate_writes_validation_result(monkeypatch, capsys, tmp_path)
     saved = json.loads(result_path.read_text(encoding="utf-8"))
     assert saved["schema_version"] == "sourcebrief.validation-gate-result.v1"
     assert saved["decision"] == "accept"
+
+
+def test_cli_review_gate_invalid_schema_writes_rejected_result(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    bad = tmp_path / "bad-proposal.json"
+    bad.write_text('{"proposal_id":"proposal-bad"}\n', encoding="utf-8")
+    result_path = tmp_path / "gate.json"
+
+    assert cli_main(["--json", "review", "gate", "--proposal", str(bad), "--result-out", str(result_path)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["decision"] == "reject"
+    saved = json.loads(result_path.read_text(encoding="utf-8"))
+    assert saved["checks"]["schema_valid"] == "fail"
 
 
 def test_explicit_workspace_id_does_not_inherit_saved_project(monkeypatch, capsys, tmp_path):

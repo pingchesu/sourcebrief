@@ -28,13 +28,13 @@ from sourcebrief_shared.review_bundle import (
     write_review_bundle,
 )
 from sourcebrief_shared.review_runner import (
+    ReviewRunnerError,
     ReviewRunOptions,
     run_review_bundle_path,
     write_reviewer_report,
 )
 from sourcebrief_shared.validation_gate import (
-    load_regression_proposal,
-    validate_regression_proposal,
+    validate_regression_proposal_file,
     write_validation_gate_result,
 )
 
@@ -347,7 +347,7 @@ def _login_with_password(client: SourceBriefClient, email: str, password: str) -
 def _command_uses_authenticated_api(args: argparse.Namespace) -> bool:
     if args.command == "use":
         return bool(getattr(args, "workspace", None) or getattr(args, "project", None))
-    if args.command in {"health", "status", "login", "logout"}:
+    if args.command in {"health", "status", "login", "logout", "review"}:
         return False
     if args.command == "runtime" and getattr(args, "runtime_command", None) in {"detect", "apply", "rollback", "validate"}:
         return False
@@ -1211,7 +1211,10 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
 
 def cmd_review_run(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
     options = ReviewRunOptions(backend=args.backend, allow_incomplete=args.allow_incomplete)
-    report = run_review_bundle_path(args.bundle, options=options)
+    try:
+        report = run_review_bundle_path(args.bundle, options=options)
+    except ReviewRunnerError as exc:
+        raise SourceBriefCliError(str(exc)) from exc
     output_path = args.report_out
     if output_path:
         written = write_reviewer_report(output_path, report)
@@ -1239,8 +1242,7 @@ def cmd_review_propose(_client: SourceBriefClient, args: argparse.Namespace) -> 
 
 
 def cmd_review_gate(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    proposal = load_regression_proposal(args.proposal)
-    result = validate_regression_proposal(proposal)
+    result = validate_regression_proposal_file(args.proposal)
     if args.result_out:
         written = write_validation_gate_result(args.result_out, result)
         return {
@@ -1816,7 +1818,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_run = review.add_parser("run", help="run a local reviewer over a review bundle")
     review_run.add_argument("--bundle", required=True, help="path to a sourcebrief.review-bundle.v1 JSON file")
     review_run.add_argument("--report-out", help="write the sourcebrief.review-report.v1 JSON report to this path")
-    review_run.add_argument("--backend", default="deterministic", choices=["deterministic", "mock"])
+    review_run.add_argument("--backend", default="local", choices=["local", "deterministic", "mock"])
     review_run.add_argument("--allow-incomplete", action="store_true", help="diagnose incomplete/redacted bundles instead of failing closed")
     review_run.set_defaults(func=cmd_review_run)
     review_propose = review.add_parser("propose", help="create a regression proposal from a reviewer report finding")

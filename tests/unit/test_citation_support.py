@@ -51,3 +51,20 @@ def test_citation_support_report_aggregates_findings() -> None:
     assert report.aggregate.blocks_adoption is True
     assert report.aggregate.by_type == {"citation_mismatch": 1}
     assert report.aggregate.proposal_candidate_count == 1
+
+
+def test_opaque_or_missing_claim_ids_fail_closed() -> None:
+    bundle = load_review_bundle(EXAMPLES / "review-bundle-docs-answer.json")
+    data = bundle.model_dump(mode="json")
+    data["output"]["claim_ids"] = ["claim-1"]
+    data["citations"][0]["supports_claim_ids"] = ["claim-1"]
+    opaque = type(bundle).model_validate(data)
+
+    findings = build_citation_support_report(opaque).findings
+    assert findings[0].type == "citation_mismatch"
+
+    data["output"]["claim_ids"] = []
+    data["citations"][0]["supports_claim_ids"] = []
+    missing = type(bundle).model_validate(data)
+    findings = build_citation_support_report(missing).findings
+    assert findings[0].type == "missing_evidence"

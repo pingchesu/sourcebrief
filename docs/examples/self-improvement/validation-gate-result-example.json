@@ -9,13 +9,16 @@
     "schema_valid": "pass",
     "has_evidence_refs": "pass",
     "not_previously_rejected": "pass",
+    "target_surface_known": "pass",
     "harmful_auto_learning_guard": "pass",
-    "target_surface_known": "pass"
+    "no_llm_judge_only_learning": "pass",
+    "security_policy_alignment": "pass",
+    "golden_negative_controls": "pass"
   },
   "evidence_refs": [
     "proof-quickstart-smoke"
   ],
-  "reason": "Accepted by deterministic MVP gate: schema, evidence refs, status, target surface, and harmful-learning guard passed.",
+  "reason": "Accepted by deterministic MVP gate: schema, evidence refs, status, target surface, security alignment, and golden negative controls passed.",
   "rejected_learning": null,
-  "created_at": "2026-06-28T17:41:03.294372Z"
+  "created_at": "2026-06-28T18:00:51.226140Z"
 }

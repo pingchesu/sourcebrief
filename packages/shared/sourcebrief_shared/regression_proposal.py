@@ -29,6 +29,15 @@ class RegressionProposal(StrictModel):
     source_bundle_id: str = Field(min_length=1)
     source_finding_id: str = Field(min_length=1)
     failure_mode: str = Field(min_length=1)
+    finding_type: str | None = None
+    finding_severity: str | None = None
+    claim: str | None = None
+    claim_ids: list[str] = Field(default_factory=list)
+    suggested_fix: str | None = None
+    confidence: str | None = None
+    reviewer_lens: str | None = None
+    proposal_eligibility: str | None = None
+    negative_learning: str | None = None
     target_surface: TargetSurface = "unknown"
     proposed_check: str = Field(min_length=1)
     acceptance: list[str] = Field(min_length=1)
@@ -67,8 +76,9 @@ def proposal_from_finding(report: ReviewerReport, finding: ReviewerFinding, *, o
     status = _status_for_finding(finding)
     proposed_check = (
         f"Reproduce finding `{finding.finding_id}` for bundle `{report.bundle_id}` and assert that `{finding.type}` "
-        "does not recur without an explicit rejected-proposal rationale."
+        f"does not recur after applying the suggested fix: {finding.suggested_fix}"
     )
+    negative_learning = finding.claim if status == "rejected" else None
     rationale = finding.impact if status == "proposed" else f"Rejected as durable learning: {finding.impact}"
     return RegressionProposal(
         proposal_id=f"proposal-{finding.finding_id}",
@@ -76,6 +86,15 @@ def proposal_from_finding(report: ReviewerReport, finding: ReviewerFinding, *, o
         source_bundle_id=report.bundle_id,
         source_finding_id=finding.finding_id,
         failure_mode=finding.summary,
+        finding_type=finding.type,
+        finding_severity=finding.severity,
+        claim=finding.claim,
+        claim_ids=finding.claim_ids,
+        suggested_fix=finding.suggested_fix,
+        confidence=finding.confidence,
+        reviewer_lens=finding.reviewer_lens,
+        proposal_eligibility=finding.proposal_eligibility,
+        negative_learning=negative_learning,
         target_surface=_target_surface_for_finding(finding),
         proposed_check=proposed_check,
         acceptance=[

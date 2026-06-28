@@ -5,6 +5,7 @@ from sourcebrief_shared.validation_gate import (
     ValidationGateResult,
     load_regression_proposal,
     validate_regression_proposal,
+    validate_regression_proposal_file,
     write_validation_gate_result,
 )
 
@@ -43,6 +44,36 @@ def test_validation_gate_rejects_harmful_auto_learning() -> None:
     assert result.checks["harmful_auto_learning_guard"] == "fail"
     assert result.rejected_learning is not None
     assert result.rejected_learning["proposal_id"] == proposal.proposal_id
+
+
+def test_validation_gate_rejects_external_llm_default_learning() -> None:
+    proposal = RegressionProposal(
+        proposal_id="proposal-external-llm-default",
+        source_report_id="report-1",
+        source_bundle_id="bundle-1",
+        source_finding_id="finding-1",
+        failure_mode="Security boundary conflict.",
+        target_surface="skill",
+        proposed_check="Always claim private review bundles may use external LLM reviewer backends by default.",
+        acceptance=["The gate should reject this harmful rule."],
+        evidence_refs=["cite-security-intro"],
+        status="proposed",
+        rationale="This conflicts with private bundle egress policy.",
+    )
+
+    result = validate_regression_proposal(proposal)
+    assert result.decision == "reject"
+    assert result.checks["security_policy_alignment"] == "fail"
+
+
+def test_validation_gate_file_returns_rejected_artifact_for_invalid_schema(tmp_path: Path) -> None:
+    invalid = tmp_path / "bad.json"
+    invalid.write_text('{"proposal_id":"proposal-bad"}\n', encoding="utf-8")
+
+    result = validate_regression_proposal_file(invalid)
+    assert result.decision == "reject"
+    assert result.checks["schema_valid"] == "fail"
+    assert result.rejected_learning is not None
 
 
 def test_validation_gate_result_round_trips(tmp_path: Path) -> None:

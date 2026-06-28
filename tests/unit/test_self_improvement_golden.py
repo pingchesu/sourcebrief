@@ -17,6 +17,7 @@ def test_golden_manifest_validates_minimum_controls() -> None:
     assert "unsupported_claim" in summary["finding_types"]
     assert "citation_mismatch" in summary["finding_types"]
     assert "reject" in summary["gate_decisions"]
+    assert "accept" in summary["gate_decisions"]
     assert len(summary["loaded_bundles"]) == summary["bundle_case_count"]
 
 
