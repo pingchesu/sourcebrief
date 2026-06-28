@@ -37,9 +37,9 @@ The receipt records:
 - source proposal, report, bundle, finding, and gate result IDs;
 - target surface;
 - staged proposal, gate result, patch, and summary files with `sha256:<64 hex>` digests;
-- explicit apply command;
-- explicit rollback command;
-- discard command for removing the staged directory;
+- explicit apply command and structured `apply_args`;
+- explicit rollback command and structured `rollback_args`;
+- shell-quoted discard command plus structured `discard_stage_args` for removing the staged directory;
 - `human_review_required=true`.
 
 ## Safety boundary
@@ -49,10 +49,13 @@ The receipt records:
 - mutate prompts, skills, runtime packs, docs, tests, or code;
 - push a branch or open/merge a PR;
 - accept rejected gate results;
+- accept gate results that claim `accept` while any check is `fail`;
+- stage accepted gate results that still contain `rejected_learning`;
 - stage proposals whose gate result does not match the proposal ID;
-- stage proposals with `target_surface="unknown"`.
+- stage proposals with `target_surface="unknown"`;
+- silently overwrite an existing non-empty staged directory.
 
-The generated `proposal.patch` is intentionally human-readable. Applying it is a separate explicit action, and the receipt includes a `git apply -R ...` rollback command.
+The generated `proposal.patch` is intentionally human-readable. Applying it is a separate explicit action, and the receipt includes a shell-quoted `git apply -R ...` rollback command plus structured args for automation.
 
 ## Verification
 

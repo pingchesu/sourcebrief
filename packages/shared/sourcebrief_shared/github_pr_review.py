@@ -5,7 +5,7 @@ import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from sourcebrief_shared.review_bundle import (
     REVIEW_BUNDLE_SCHEMA_VERSION,
@@ -31,6 +31,13 @@ from sourcebrief_shared.self_improvement_security import (
 
 class GitHubPRBundleError(ValueError):
     """User-facing PR bundle creation error."""
+
+
+MAX_PR_BODY_CHARS = 8000
+MAX_DIFF_SUMMARY_CHARS = 12000
+MAX_CHANGED_PATHS = 200
+MAX_CHANGED_PATH_CHARS = 512
+MetadataSource = Literal["live", "fixture"]
 
 
 def sha256_text(value: str) -> str:
@@ -99,6 +106,13 @@ def _metadata_str(metadata: dict[str, Any], *keys: str, default: str = "") -> st
     return default
 
 
+def _metadata_required_str(metadata: dict[str, Any], *keys: str, label: str) -> str:
+    value = _metadata_str(metadata, *keys, default="")
+    if not value:
+        raise GitHubPRBundleError(f"PR metadata must include {label}")
+    return value
+
+
 def _metadata_int(metadata: dict[str, Any], key: str) -> int:
     value = metadata.get(key)
     if value is None:
@@ -127,7 +141,13 @@ def _changed_paths(metadata: dict[str, Any]) -> list[str]:
             paths.append(text)
     if not paths:
         raise GitHubPRBundleError("PR metadata must include at least one changed path")
-    return sorted(dict.fromkeys(paths))
+    paths = sorted(dict.fromkeys(paths))
+    if len(paths) > MAX_CHANGED_PATHS:
+        raise GitHubPRBundleError(f"PR changed_paths exceeds limit: {len(paths)} > {MAX_CHANGED_PATHS}")
+    long_paths = [path for path in paths if len(path) > MAX_CHANGED_PATH_CHARS]
+    if long_paths:
+        raise GitHubPRBundleError(f"PR changed path exceeds {MAX_CHANGED_PATH_CHARS} characters: {long_paths[0][:80]}")
+    return paths
 
 
 def _verification_logs(metadata: dict[str, Any]) -> list[VerificationLog]:
@@ -156,16 +176,23 @@ def build_review_bundle_from_github_pr_metadata(
     project_id: str,
     reviewer_backend: str = "local",
     policy: ReviewArtifactPolicy | None = None,
+    metadata_source: MetadataSource = "live",
 ) -> ReviewBundle:
     pr_number = _metadata_int(metadata, "number")
-    repo = _metadata_str(metadata, "repo", "repository", default="unknown/repo")
+    repo = _metadata_required_str(metadata, "repo", "repository", label="repo/repository")
     title = _metadata_str(metadata, "title", default=f"PR #{pr_number}")
     body = _metadata_str(metadata, "body", default="")
+    if len(body) > MAX_PR_BODY_CHARS:
+        raise GitHubPRBundleError(f"PR body exceeds limit: {len(body)} > {MAX_PR_BODY_CHARS}")
     url = _metadata_str(metadata, "url", "html_url", default=f"https://github.com/{repo}/pull/{pr_number}")
-    head_sha = _metadata_str(metadata, "head_sha", "headRefOid", "head_ref_oid", default="unknown-head-sha")
+    head_sha = _metadata_required_str(metadata, "head_sha", "headRefOid", "head_ref_oid", label="head SHA")
     base_ref = _metadata_str(metadata, "base_ref", "baseRefName", default="unknown-base")
     head_ref = _metadata_str(metadata, "head_ref", "headRefName", default="unknown-head")
     diff_summary = _metadata_str(metadata, "diff_summary", default="No diff summary provided.")
+    if len(diff_summary) > MAX_DIFF_SUMMARY_CHARS:
+        raise GitHubPRBundleError(
+            f"PR diff_summary exceeds limit: {len(diff_summary)} > {MAX_DIFF_SUMMARY_CHARS}"
+        )
     paths = _changed_paths(metadata)
     resource_id = _metadata_str(metadata, "resource_id", default=f"github-pr:{repo}#{pr_number}")
     claim_ids = [
@@ -194,8 +221,8 @@ def build_review_bundle_from_github_pr_metadata(
         for idx, source_ref in enumerate(source_refs, start=1)
     ]
     verification_logs = _verification_logs(metadata)
-    tool_proof = [
-        ToolProof(
+    if metadata_source == "live":
+        metadata_proof = ToolProof(
             proof_id="proof-pr-metadata",
             kind="git",
             command=["gh", "pr", "view", str(pr_number), "--repo", repo],
@@ -203,7 +230,17 @@ def build_review_bundle_from_github_pr_metadata(
             stdout_excerpt=f"PR #{pr_number} {head_sha} changed {len(paths)} path(s).",
             artifact_uri=url,
         )
-    ]
+    else:
+        fixture_path = _metadata_str(metadata, "fixture_path", default="metadata fixture")
+        metadata_proof = ToolProof(
+            proof_id="proof-pr-metadata-fixture",
+            kind="other",
+            command=["metadata-fixture", fixture_path],
+            status="not_run",
+            stdout_excerpt=f"Loaded PR #{pr_number} {head_sha} metadata from fixture; gh was not executed.",
+            artifact_uri=fixture_path,
+        )
+    tool_proof = [metadata_proof]
     if verification_logs:
         tool_proof.extend(
             ToolProof(
@@ -225,6 +262,14 @@ def build_review_bundle_from_github_pr_metadata(
         allowed_reviewer_backends=("local", "mock"),
         external_reviewer_opt_in=False,
     )
+    subject_metadata = {
+        "kind": "github_pr",
+        "repo": repo,
+        "number": pr_number,
+        "head_sha": head_sha,
+        "url": url,
+        "changed_paths": paths,
+    }
     raw_payload = {
         "schema_version": REVIEW_BUNDLE_SCHEMA_VERSION,
         "bundle_id": f"rb-pr-{repo.replace('/', '-')}-{pr_number}-{head_sha[:12]}",
@@ -254,9 +299,7 @@ def build_review_bundle_from_github_pr_metadata(
         "citations": [citation.model_dump(mode="json") for citation in citations],
         "tool_proof": [proof.model_dump(mode="json") for proof in tool_proof],
         "verification_logs": [log.model_dump(mode="json") for log in verification_logs],
-        "reviewer_notes": [
-            f"github_pr repo={repo} number={pr_number} head_sha={head_sha} url={url} changed_paths={','.join(paths)}"
-        ],
+        "reviewer_notes": ["github_pr_json " + json.dumps(subject_metadata, sort_keys=True, separators=(",", ":"))],
     }
     sanitized, _report = sanitize_review_bundle_payload(
         raw_payload,
@@ -275,11 +318,13 @@ def write_github_pr_review_bundle(
     workspace_id: str,
     project_id: str,
     reviewer_backend: str = "local",
+    metadata_source: MetadataSource = "live",
 ) -> Path:
     bundle = build_review_bundle_from_github_pr_metadata(
         metadata,
         workspace_id=workspace_id,
         project_id=project_id,
         reviewer_backend=reviewer_backend,
+        metadata_source=metadata_source,
     )
     return write_review_bundle(path, bundle)

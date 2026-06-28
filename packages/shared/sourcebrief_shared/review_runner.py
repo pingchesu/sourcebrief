@@ -68,6 +68,26 @@ def _subject_refs_for_bundle(bundle: ReviewBundle) -> list[ReportSubjectRef]:
     if bundle.kind != "pr_review":
         return []
     for note in bundle.reviewer_notes:
+        if note.startswith("github_pr_json "):
+            try:
+                raw = json.loads(note[len("github_pr_json ") :])
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(raw, dict):
+                continue
+            repo = str(raw.get("repo") or "unknown/repo")
+            number = str(raw.get("number") or "unknown")
+            raw_paths = raw.get("changed_paths") or []
+            changed_paths = [str(path) for path in raw_paths] if isinstance(raw_paths, list) else []
+            return [
+                ReportSubjectRef(
+                    kind="github_pr",
+                    ref_id=f"{repo}#{number}",
+                    url=str(raw["url"]) if raw.get("url") else None,
+                    head_sha=str(raw["head_sha"]) if raw.get("head_sha") else None,
+                    changed_paths=changed_paths,
+                )
+            ]
         if not note.startswith("github_pr "):
             continue
         fields: dict[str, str] = {}
@@ -85,6 +105,17 @@ def _subject_refs_for_bundle(bundle: ReviewBundle) -> list[ReportSubjectRef]:
                 ref_id=f"{repo}#{number}",
                 url=fields.get("url"),
                 head_sha=fields.get("head_sha"),
+                changed_paths=changed_paths,
+            )
+        ]
+    if bundle.source_refs:
+        first = bundle.source_refs[0]
+        changed_paths = [source_ref.path for source_ref in bundle.source_refs if source_ref.path]
+        return [
+            ReportSubjectRef(
+                kind="github_pr",
+                ref_id=first.resource_id.removeprefix("github-pr:"),
+                head_sha=first.commit_sha,
                 changed_paths=changed_paths,
             )
         ]

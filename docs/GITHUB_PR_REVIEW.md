@@ -4,6 +4,8 @@ This document describes the GitHub PR review-bundle integration for SourceBrief 
 
 The goal is to review pull-request outcomes from bounded PR evidence instead of raw Slack/chat history. The first slice creates a `sourcebrief.review-bundle.v1` artifact with PR metadata, head SHA, changed paths, diff summary, and verification logs. The existing local reviewer runner can then produce a structured report.
 
+PR metadata is intentionally bounded. The command rejects missing repo/head SHA, empty changed paths, oversized PR body/diff summaries, too many changed paths, and path strings above the configured path-length limit.
+
 ## Offline fixture / dry run
 
 ```bash
@@ -44,8 +46,8 @@ The PR bundle records:
 - `output.body` with PR number, URL, head SHA, refs, changed paths, PR body, and diff summary;
 - `source_refs[]` for each changed path with the PR head SHA;
 - `citations[]` for changed-path evidence;
-- `tool_proof[]` for PR metadata and verification logs;
-- `reviewer_notes[]` containing a machine-readable `github_pr ...` subject line.
+- `tool_proof[]` for PR metadata and verification logs. Fixture mode records `kind="other"`, `status="not_run"`, and the fixture path/hash context rather than claiming `gh` executed;
+- `reviewer_notes[]` containing a machine-readable `github_pr_json ...` subject line. The JSON form preserves changed paths that contain spaces, commas, or other valid Git path characters.
 
 When the local reviewer runs over a PR bundle, the report includes `subject_refs[]` with:
 

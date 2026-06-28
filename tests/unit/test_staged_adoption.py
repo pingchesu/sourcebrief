@@ -1,3 +1,4 @@
+import shlex
 from pathlib import Path
 
 import pytest
@@ -23,8 +24,10 @@ def test_stage_regression_proposal_writes_patch_receipt_and_copies_sources(tmp_p
     assert receipt.proposal_id == "proposal-finding-learning-quickstart-gap"
     assert receipt.gate_decision == "accept"
     assert receipt.human_review_required is True
-    assert "git apply" in receipt.apply_command
-    assert "git apply -R" in receipt.rollback_command
+    assert shlex.split(receipt.apply_command) == receipt.apply_args
+    assert shlex.split(receipt.rollback_command) == receipt.rollback_args
+    assert shlex.split(receipt.discard_stage_command) == receipt.discard_stage_args
+    assert receipt.apply_args == ["git", "apply", receipt.patch_path]
 
     stage_dir = Path(receipt.stage_dir)
     assert (stage_dir / "proposal.json").exists()
@@ -44,6 +47,43 @@ def test_stage_regression_proposal_writes_patch_receipt_and_copies_sources(tmp_p
     assert "docs/self-improvement/staged-proposals/proposal-finding-learning-quickstart-gap.md" in patch_text
     assert "Applying it does not change runtime behavior" in patch_text
     assert "proposal-finding-learning-quickstart-gap" in patch_text
+
+
+def test_stage_quotes_shell_commands_with_spaces(tmp_path: Path) -> None:
+    out_dir = tmp_path / "stage dir with spaces"
+
+    receipt = stage_regression_proposal(proposal_path=PROPOSAL, gate_result_path=GATE, out_dir=out_dir)
+
+    assert "'" in receipt.apply_command
+    assert shlex.split(receipt.apply_command) == ["git", "apply", receipt.patch_path]
+    assert shlex.split(receipt.rollback_command) == ["git", "apply", "-R", receipt.patch_path]
+    assert shlex.split(receipt.discard_stage_command) == ["rm", "-rf", receipt.stage_dir]
+
+
+def test_stage_refuses_to_overwrite_existing_stage_dir(tmp_path: Path) -> None:
+    receipt = stage_regression_proposal(proposal_path=PROPOSAL, gate_result_path=GATE, out_dir=tmp_path)
+    readme = Path(receipt.stage_dir) / "README.md"
+    readme.write_text("human review notes\n", encoding="utf-8")
+
+    with pytest.raises(StagedAdoptionError, match="already exists and is not empty"):
+        stage_regression_proposal(proposal_path=PROPOSAL, gate_result_path=GATE, out_dir=tmp_path)
+    assert readme.read_text(encoding="utf-8") == "human review notes\n"
+
+
+def test_stage_rejects_inconsistent_accepted_gate_result() -> None:
+    proposal = load_regression_proposal(PROPOSAL)
+    gate = load_validation_gate_result(GATE).model_copy(update={"checks": {"schema_valid": "fail"}})
+
+    with pytest.raises(StagedAdoptionError, match="failed checks"):
+        validate_stage_inputs(proposal, gate)
+
+
+def test_stage_rejects_accepted_gate_with_rejected_learning() -> None:
+    proposal = load_regression_proposal(PROPOSAL)
+    gate = load_validation_gate_result(GATE).model_copy(update={"rejected_learning": {"proposal_id": proposal.proposal_id}})
+
+    with pytest.raises(StagedAdoptionError, match="must not contain rejected_learning"):
+        validate_stage_inputs(proposal, gate)
 
 
 def test_stage_requires_accepted_gate_result() -> None:

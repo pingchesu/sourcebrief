@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -1227,9 +1227,12 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
 
 def cmd_review_pr_bundle(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
     try:
+        metadata_source: Literal["live", "fixture"] = "live"
         if args.metadata_fixture:
+            metadata_source = "fixture"
             metadata = load_pr_metadata_fixture(args.metadata_fixture)
             metadata.setdefault("repo", args.repo or metadata.get("repo") or metadata.get("repository"))
+            metadata["fixture_path"] = str(Path(args.metadata_fixture).expanduser())
         else:
             if args.pr is None:
                 raise GitHubPRBundleError("--pr is required when --metadata-fixture is not provided")
@@ -1239,6 +1242,7 @@ def cmd_review_pr_bundle(_client: SourceBriefClient, args: argparse.Namespace) -
             workspace_id=args.workspace_id,
             project_id=args.project_id,
             reviewer_backend=args.reviewer_backend,
+            metadata_source=metadata_source,
         )
         written = write_review_bundle(args.bundle_out, bundle)
     except (OSError, ValueError) as exc:
