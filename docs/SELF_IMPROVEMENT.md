@@ -306,4 +306,4 @@ Revisit this design if:
 - [#171](https://github.com/pingchesu/sourcebrief/issues/171) product docs
 - [#172](https://github.com/pingchesu/sourcebrief/issues/172) golden regression suite; minimum fixtures: [Self-improvement golden fixtures](SELF_IMPROVEMENT_GOLDEN_FIXTURES.md)
 - [#173](https://github.com/pingchesu/sourcebrief/issues/173) runtime-pack integration
-- [#175](https://github.com/pingchesu/sourcebrief/issues/175) end-to-end MVP smoke path
+- [#175](https://github.com/pingchesu/sourcebrief/issues/175) end-to-end MVP smoke path; proof command: [Self-improvement MVP smoke](SELF_IMPROVEMENT_MVP_SMOKE.md)

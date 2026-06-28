@@ -31,17 +31,20 @@ from sourcebrief_shared.regression_proposal import (
 )
 from sourcebrief_shared.review_bundle import (
     build_review_bundle_from_agent_context,
+    load_review_bundle,
     write_review_bundle,
 )
 from sourcebrief_shared.review_history import scan_review_history, show_review_history_record
 from sourcebrief_shared.review_runner import (
     ReviewRunnerError,
     ReviewRunOptions,
+    run_review_bundle,
     run_review_bundle_path,
     write_reviewer_report,
 )
 from sourcebrief_shared.staged_adoption import stage_regression_proposal
 from sourcebrief_shared.validation_gate import (
+    validate_regression_proposal,
     validate_regression_proposal_file,
     write_validation_gate_result,
 )
@@ -1326,6 +1329,61 @@ def cmd_review_history_show(_client: SourceBriefClient, args: argparse.Namespace
         raise SourceBriefCliError(str(exc)) from exc
 
 
+def _default_mvp_smoke_bundle() -> Path:
+    return Path("docs/examples/self-improvement/golden/review-bundle-unsupported-claim.json")
+
+
+def cmd_review_mvp_smoke(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    try:
+        out_dir = Path(args.out_dir).expanduser()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        bundle_path = Path(args.bundle).expanduser() if args.bundle else _default_mvp_smoke_bundle()
+        bundle = load_review_bundle(bundle_path)
+        bundle_out = write_review_bundle(out_dir / "review-bundle.json", bundle)
+        report = run_review_bundle(bundle)
+        report_out = write_reviewer_report(out_dir / "review-report.json", report)
+        finding = select_finding(report, args.finding_id)
+        proposal = proposal_from_finding(report, finding, owner=args.owner)
+        proposal_out = write_regression_proposal(out_dir / "regression-proposal.json", proposal)
+        gate = validate_regression_proposal(proposal)
+        gate_out = write_validation_gate_result(out_dir / "validation-gate-result.json", gate)
+        staged_receipt = None
+        if gate.decision in {"accept", "accept_new_best"}:
+            staged_receipt = stage_regression_proposal(
+                proposal_path=proposal_out,
+                gate_result_path=gate_out,
+                out_dir=out_dir / "staged",
+            )
+        history = scan_review_history(out_dir)
+        history_out = out_dir / "history-summary.json"
+        history_out.write_text(json.dumps(history.model_dump(mode="json"), indent=2) + "\n", encoding="utf-8")
+        smoke_summary = {
+            "schema_version": "sourcebrief.self-improvement-mvp-smoke.v1",
+            "status": "completed",
+            "roadmap_issue": "https://github.com/pingchesu/sourcebrief/issues/157",
+            "owner_issue": "https://github.com/pingchesu/sourcebrief/issues/175",
+            "out_dir": str(out_dir),
+            "bundle_path": str(bundle_out),
+            "report_path": str(report_out),
+            "proposal_path": str(proposal_out),
+            "gate_result_path": str(gate_out),
+            "stage_receipt_path": str(Path(staged_receipt.stage_dir) / "receipt.json") if staged_receipt else None,
+            "history_summary_path": str(history_out),
+            "bundle_id": bundle.bundle_id,
+            "report_id": report.report_id,
+            "finding_id": finding.finding_id,
+            "proposal_id": proposal.proposal_id,
+            "gate_decision": gate.decision,
+            "history_metrics": history.metrics,
+            "no_silent_mutation": True,
+        }
+        summary_out = out_dir / "mvp-smoke-summary.json"
+        summary_out.write_text(json.dumps(smoke_summary, indent=2) + "\n", encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        raise SourceBriefCliError(str(exc)) from exc
+    return smoke_summary
+
+
 def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
     _require_scope(args)
     plan = client.request(
@@ -1925,6 +1983,12 @@ def build_parser() -> argparse.ArgumentParser:
     review_history_show.add_argument("artifact", help="artifact id or path relative to --dir")
     review_history_show.add_argument("--dir", required=True, help="artifact directory to scan recursively")
     review_history_show.set_defaults(func=cmd_review_history_show)
+    review_mvp_smoke = review.add_parser("mvp-smoke", help="run the local end-to-end self-improvement MVP smoke path")
+    review_mvp_smoke.add_argument("--bundle", help="review bundle fixture/path; defaults to the public unsupported-claim golden bundle")
+    review_mvp_smoke.add_argument("--finding-id", help="specific proposal-eligible finding id; defaults to first candidate")
+    review_mvp_smoke.add_argument("--owner", default="qa")
+    review_mvp_smoke.add_argument("--out-dir", required=True, help="directory where smoke artifacts should be written")
+    review_mvp_smoke.set_defaults(func=cmd_review_mvp_smoke)
 
     runtime = sub.add_parser("runtime", help="agent runtime install and validation commands").add_subparsers(dest="runtime_command")
     runtime_plan = runtime.add_parser("plan", help="generate a dry-run runtime install plan")
