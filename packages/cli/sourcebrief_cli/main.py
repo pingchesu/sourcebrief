@@ -33,6 +33,7 @@ from sourcebrief_shared.review_bundle import (
     build_review_bundle_from_agent_context,
     write_review_bundle,
 )
+from sourcebrief_shared.review_history import scan_review_history, show_review_history_record
 from sourcebrief_shared.review_runner import (
     ReviewRunnerError,
     ReviewRunOptions,
@@ -1310,6 +1311,21 @@ def cmd_review_stage(_client: SourceBriefClient, args: argparse.Namespace) -> An
     }
 
 
+def cmd_review_history_list(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    try:
+        summary = scan_review_history(args.dir)
+    except (OSError, ValueError) as exc:
+        raise SourceBriefCliError(str(exc)) from exc
+    return summary.model_dump(mode="json")
+
+
+def cmd_review_history_show(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    try:
+        return show_review_history_record(args.dir, args.artifact)
+    except (OSError, ValueError) as exc:
+        raise SourceBriefCliError(str(exc)) from exc
+
+
 def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
     _require_scope(args)
     plan = client.request(
@@ -1901,6 +1917,14 @@ def build_parser() -> argparse.ArgumentParser:
     review_stage.add_argument("--gate-result", required=True, help="path to an accepted sourcebrief.validation-gate-result.v1 JSON file")
     review_stage.add_argument("--out-dir", required=True, help="directory where staged artifacts should be written")
     review_stage.set_defaults(func=cmd_review_stage)
+    review_history = review.add_parser("history", help="inspect local self-improvement artifact history").add_subparsers(dest="history_command")
+    review_history_list = review_history.add_parser("list", help="list review bundles, reports, proposals, gates, and staged receipts")
+    review_history_list.add_argument("--dir", required=True, help="artifact directory to scan recursively")
+    review_history_list.set_defaults(func=cmd_review_history_list)
+    review_history_show = review_history.add_parser("show", help="show one redacted history artifact by id or relative path")
+    review_history_show.add_argument("artifact", help="artifact id or path relative to --dir")
+    review_history_show.add_argument("--dir", required=True, help="artifact directory to scan recursively")
+    review_history_show.set_defaults(func=cmd_review_history_show)
 
     runtime = sub.add_parser("runtime", help="agent runtime install and validation commands").add_subparsers(dest="runtime_command")
     runtime_plan = runtime.add_parser("plan", help="generate a dry-run runtime install plan")
