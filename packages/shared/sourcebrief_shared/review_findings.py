@@ -48,6 +48,7 @@ ReviewerLens = Literal[
 ]
 FindingConfidence = Literal["high", "medium", "low"]
 ProposalEligibility = Literal["not_eligible", "candidate", "requires_human_review"]
+ReviewVerdict = Literal["PASS", "BLOCK", "RISK"]
 
 
 class StrictModel(BaseModel):
@@ -106,6 +107,7 @@ class ReviewerReport(StrictModel):
     reviewer_backend: str = Field(min_length=1)
     reviewer_lenses: list[ReviewerLens] = Field(default_factory=list)
     generated_at: datetime
+    verdict: ReviewVerdict
     findings: list[ReviewerFinding] = Field(default_factory=list)
     aggregate: ReviewerReportAggregate
 
@@ -132,6 +134,14 @@ def finding_to_proposal_rule(finding: ReviewerFinding) -> ProposalEligibility:
     if finding.regression_candidate:
         return "requires_human_review"
     return "not_eligible"
+
+
+def verdict_for_findings(findings: list[ReviewerFinding]) -> ReviewVerdict:
+    if any(finding.severity in {"blocker", "major"} for finding in findings):
+        return "BLOCK"
+    if findings:
+        return "RISK"
+    return "PASS"
 
 
 def aggregate_findings(findings: list[ReviewerFinding]) -> ReviewerReportAggregate:
@@ -163,6 +173,7 @@ def build_reviewer_report(
         reviewer_backend=reviewer_backend,
         reviewer_lenses=reviewer_lenses,
         generated_at=generated_at,
+        verdict=verdict_for_findings(findings),
         findings=findings,
         aggregate=aggregate_findings(findings),
     )

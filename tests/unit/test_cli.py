@@ -575,6 +575,21 @@ def test_quickstart_demo_can_write_review_bundle(monkeypatch, capsys, tmp_path):
     assert bundle.verification_logs[0].status == "passed"
 
 
+def test_cli_review_run_writes_report(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    bundle_path = Path(__file__).resolve().parents[2] / "docs" / "examples" / "self-improvement" / "golden" / "review-bundle-citation-mismatch.json"
+    report_path = tmp_path / "review-report.json"
+
+    assert cli_main(["--json", "review", "run", "--bundle", str(bundle_path), "--report-out", str(report_path)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "reviewed"
+    assert payload["verdict"] == "BLOCK"
+    assert payload["report_path"] == str(report_path)
+    saved = json.loads(report_path.read_text(encoding="utf-8"))
+    assert saved["schema_version"] == "sourcebrief.review-report.v1"
+    assert saved["findings"][0]["type"] == "citation_mismatch"
+
+
 def test_explicit_workspace_id_does_not_inherit_saved_project(monkeypatch, capsys, tmp_path):
     patch_client(monkeypatch)
     config_path = tmp_path / "sourcebrief-config.json"

@@ -5,6 +5,7 @@
   "reviewer_backend": "mock",
   "reviewer_lenses": ["citation_support", "scope", "product_dx", "safety", "regression"],
   "generated_at": "2026-06-28T17:20:00Z",
+  "verdict": "BLOCK",
   "findings": [
     {
       "schema_version": "sourcebrief.review-finding.v1",

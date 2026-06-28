@@ -20,6 +20,11 @@ from sourcebrief_shared.review_bundle import (
     build_review_bundle_from_agent_context,
     write_review_bundle,
 )
+from sourcebrief_shared.review_runner import (
+    ReviewRunOptions,
+    run_review_bundle_path,
+    write_reviewer_report,
+)
 
 DEFAULT_API_URL = "http://localhost:18000"
 DEFAULT_EMAIL = "demo@example.com"
@@ -1192,6 +1197,21 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
     return result
 
 
+def cmd_review_run(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    options = ReviewRunOptions(backend=args.backend, allow_incomplete=args.allow_incomplete)
+    report = run_review_bundle_path(args.bundle, options=options)
+    output_path = args.report_out
+    if output_path:
+        written = write_reviewer_report(output_path, report)
+        return {
+            "status": "reviewed",
+            "verdict": report.verdict,
+            "report_path": str(written),
+            "report": report.model_dump(mode="json"),
+        }
+    return report.model_dump(mode="json")
+
+
 def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
     _require_scope(args)
     plan = client.request(
@@ -1751,6 +1771,14 @@ def build_parser() -> argparse.ArgumentParser:
     mcp.add_argument("--resource", action="append", help="resource ID or unambiguous resource ref/name")
     mcp.add_argument("--top-k", type=int, default=8)
     mcp.set_defaults(func=cmd_mcp_context)
+
+    review = sub.add_parser("review", help="self-improvement review bundle commands").add_subparsers(dest="review_command")
+    review_run = review.add_parser("run", help="run a local reviewer over a review bundle")
+    review_run.add_argument("--bundle", required=True, help="path to a sourcebrief.review-bundle.v1 JSON file")
+    review_run.add_argument("--report-out", help="write the sourcebrief.review-report.v1 JSON report to this path")
+    review_run.add_argument("--backend", default="deterministic", choices=["deterministic", "mock"])
+    review_run.add_argument("--allow-incomplete", action="store_true", help="diagnose incomplete/redacted bundles instead of failing closed")
+    review_run.set_defaults(func=cmd_review_run)
 
     runtime = sub.add_parser("runtime", help="agent runtime install and validation commands").add_subparsers(dest="runtime_command")
     runtime_plan = runtime.add_parser("plan", help="generate a dry-run runtime install plan")

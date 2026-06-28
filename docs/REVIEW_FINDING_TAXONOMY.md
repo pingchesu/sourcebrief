@@ -75,8 +75,9 @@ Proposal eligibility rules:
 
 ## Report aggregation
 
-Reviewer reports carry a deterministic aggregate:
+Reviewer reports carry a deterministic verdict and aggregate:
 
+- `verdict`: `PASS`, `BLOCK`, or `RISK`;
 - total finding count;
 - counts by severity;
 - counts by type;

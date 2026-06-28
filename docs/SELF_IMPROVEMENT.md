@@ -293,7 +293,7 @@ Revisit this design if:
 - [#158](https://github.com/pingchesu/sourcebrief/issues/158) this spec
 - [#159](https://github.com/pingchesu/sourcebrief/issues/159) bundle schema; implementation baseline: [Review bundle schema](REVIEW_BUNDLE_SCHEMA.md)
 - [#160](https://github.com/pingchesu/sourcebrief/issues/160) bundle capture; implementation baseline: [Review bundle capture](REVIEW_BUNDLE_CAPTURE.md)
-- [#161](https://github.com/pingchesu/sourcebrief/issues/161) reviewer runner
+- [#161](https://github.com/pingchesu/sourcebrief/issues/161) reviewer runner; implementation baseline: [Review bundle runner](REVIEW_BUNDLE_RUNNER.md)
 - [#162](https://github.com/pingchesu/sourcebrief/issues/162) finding taxonomy; implementation baseline: [Reviewer finding taxonomy](REVIEW_FINDING_TAXONOMY.md)
 - [#163](https://github.com/pingchesu/sourcebrief/issues/163) regression proposals
 - [#164](https://github.com/pingchesu/sourcebrief/issues/164) validation gate
