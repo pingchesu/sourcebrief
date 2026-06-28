@@ -1,25 +1,66 @@
 # SourceBrief
 
-> Cited project context for coding agents.
+> Connect source. Ask with citations. Wire into your agent.
 
-Coding agents do not need bigger prompts. They need evidence they can inspect before they edit.
-
-SourceBrief turns repos, docs, runbooks, URLs, uploads, and folder bundles into an **agent operating contract**: MCP tools for live cited evidence, generated skills/agent packs that teach runtimes when to call those tools, and CLI/API control-plane commands for setup, validation, resource lifecycle, and fallback automation. A good SourceBrief answer is not just plausible; it points back to source material with citations, snapshots, paths, line ranges, hashes, and follow-up read handles.
+SourceBrief gives coding agents a project evidence layer they can inspect before they edit. Connect a repo, docs folder, runbook, URL, upload, or folder bundle; ask a project question; get an answer with citations, snapshots, paths, line ranges, hashes, and follow-up read handles.
 
 Use it when you need agents to answer with evidence, not vibes.
 
-The strong version is not "run this CLI." It is:
-
 ```text
-install skill/agent pack so the agent knows the project contract
-    -> configure SourceBrief MCP so the agent can fetch cited evidence live
-    -> keep sourcebrief CLI available for doctor/setup/resource fallback
-    -> agent asks evidence first, then edits/tests in the real checkout
+source -> indexed snapshot -> cited answer -> agent pack -> safer coding agent
 ```
 
-[Install and use](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Run it locally](docs/QUICKSTART.md) · [Try the 5-minute demo](docs/DEMO.md) · [50Q launch proof with screenshots](docs/evaluations/sourcebrief-launch-50q-20260627.md) · [View examples](examples/awesome-agent-harness-50q/README.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
+A useful SourceBrief setup has three pieces:
+
+| Piece | What you get |
+| --- | --- |
+| **Cited evidence service** | MCP/API/CLI answers that point back to exact source sections. |
+| **Human workbench** | Web UI for sources, indexing state, review, and cited questions. |
+| **Agent pack** | Hermes skill packs and MCP/runtime guidance that teach agents when to ask SourceBrief first. Claude, Codex, Cursor, and other MCP clients use the same cited evidence service through their runtime setup paths. |
+
+[Start here](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Recipes](docs/RECIPES.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
 
 <img src="docs/assets/sourcebrief-mental-model.svg" alt="SourceBrief mental model from sources to snapshots to reviewed evidence to MCP/API agent access" width="100%" />
+
+## Try the product path
+
+Start the local stack, create a tiny demo source, ask for cited context, and validate the MCP-shaped path:
+
+```bash
+git clone https://github.com/pingchesu/sourcebrief.git
+cd sourcebrief
+cp .env.example .env
+python3 - <<'PY'
+from pathlib import Path
+import secrets
+p = Path(".env")
+text = p.read_text()
+text = text.replace(
+    "SOURCEBRIEF_ADMIN_PASSWORD=change-me-before-compose-up",
+    "SOURCEBRIEF_ADMIN_PASSWORD=sourcebrief-local-" + secrets.token_urlsafe(12),
+)
+p.write_text(text)
+PY
+python3 scripts/check_quickstart_prereqs.py
+make compose-up
+make quickstart-ready
+export SOURCEBRIEF_API_URL="$(make -s print-api-url)"
+export SOURCEBRIEF_ADMIN_EMAIL="$(grep '^SOURCEBRIEF_ADMIN_EMAIL=' .env | cut -d= -f2-)"
+export SOURCEBRIEF_ADMIN_PASSWORD="$(grep '^SOURCEBRIEF_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
+uv run sourcebrief login --email "$SOURCEBRIEF_ADMIN_EMAIL" --password-env SOURCEBRIEF_ADMIN_PASSWORD
+uv run sourcebrief quickstart-demo --validate-mcp
+```
+
+Then ask a project question and prepare a guarded agent runtime connection:
+
+```bash
+uv run sourcebrief ask "What does this source say about the retry policy?"
+uv run sourcebrief runtime setup hermes --dry-run
+```
+
+Today, `runtime setup hermes` produces an inspectable dry-run plan. Local Hermes skill install/apply remains explicit, receipt-backed, and rollbackable; see [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md) when you are ready to apply.
+
+Prefer the web console? Run `printf '%s/login\n' "$(make -s print-web-url)"`, sign in with the admin email/password in `.env`, connect a source, ask in Workbench, and inspect citations before generating or installing an agent pack.
 
 ## The problem
 
@@ -135,6 +176,7 @@ For runtime setup, prompts, token scopes, remote-code safety, generated skills, 
 | Operate or debug the local stack | [Operations](docs/OPERATIONS.md) |
 | Check alpha readiness and limits | [Project status](docs/STATUS.md) |
 | Review real evaluation examples | [Awesome Agent Harness 50-question example](examples/awesome-agent-harness-50q/README.md) |
+| Pick a product workflow | [Recipes](docs/RECIPES.md) |
 | Use SourceBrief with a local agent | [Local-agent runtime example](examples/use-sourcebrief-with-local-agent/README.md) |
 
 ## Trust boundaries
