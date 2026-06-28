@@ -229,6 +229,7 @@ Scope:
 - Run a reviewer agent asynchronously after important answers, PRs, demos, or recipe runs.
 - Classify findings as blocker, major, minor, or learning candidate.
 - Convert repeated validated issues into regression questions, recipe updates, docs fixes, or skill/rule updates.
+- Keep the detailed architecture in [Self-improvement](SELF_IMPROVEMENT.md), with tracking in [#157](https://github.com/pingchesu/sourcebrief/issues/157).
 
 Acceptance:
 

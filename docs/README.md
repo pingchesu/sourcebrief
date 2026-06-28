@@ -49,6 +49,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Roadmap](ROADMAP.md) | Planning reference | Finite alpha roadmap and future work. |
 | [Git repo import product gaps](GIT_REPO_IMPORT_PRODUCT_GAPS.md) | Product backlog | Enterprise Git onboarding gaps. |
 | [Out-of-box product plan](OUT_OF_BOX_PRODUCT_PLAN.md) | Productization backlog | More attractive first-use experience and recipe/agent-pack roadmap. |
+| [Self-improvement](SELF_IMPROVEMENT.md) | Product architecture | Review bundles, autonomous reviewer agents, regression proposals, validation gates, and staged adoption. |
 
 ## Deep specs
 
