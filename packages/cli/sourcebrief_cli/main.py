@@ -16,6 +16,13 @@ from urllib.request import Request, urlopen
 from dotenv import dotenv_values
 
 from sourcebrief_cli import runtime_apply, skill_install
+from sourcebrief_shared.regression_proposal import (
+    RegressionProposalError,
+    load_reviewer_report,
+    proposal_from_finding,
+    select_finding,
+    write_regression_proposal,
+)
 from sourcebrief_shared.review_bundle import (
     build_review_bundle_from_agent_context,
     write_review_bundle,
@@ -1212,6 +1219,20 @@ def cmd_review_run(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
     return report.model_dump(mode="json")
 
 
+def cmd_review_propose(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    report = load_reviewer_report(args.report)
+    finding = select_finding(report, args.finding_id)
+    proposal = proposal_from_finding(report, finding, owner=args.owner)
+    if args.proposal_out:
+        written = write_regression_proposal(args.proposal_out, proposal)
+        return {
+            "status": "proposal_written",
+            "proposal_path": str(written),
+            "proposal": proposal.model_dump(mode="json"),
+        }
+    return proposal.model_dump(mode="json")
+
+
 def _runtime_plan_request(client: SourceBriefClient, args: argparse.Namespace) -> dict[str, Any]:
     _require_scope(args)
     plan = client.request(
@@ -1779,6 +1800,12 @@ def build_parser() -> argparse.ArgumentParser:
     review_run.add_argument("--backend", default="deterministic", choices=["deterministic", "mock"])
     review_run.add_argument("--allow-incomplete", action="store_true", help="diagnose incomplete/redacted bundles instead of failing closed")
     review_run.set_defaults(func=cmd_review_run)
+    review_propose = review.add_parser("propose", help="create a regression proposal from a reviewer report finding")
+    review_propose.add_argument("--report", required=True, help="path to a sourcebrief.review-report.v1 JSON file")
+    review_propose.add_argument("--finding-id", help="specific proposal-eligible finding id; defaults to the first candidate")
+    review_propose.add_argument("--proposal-out", help="write the sourcebrief.regression-proposal.v1 artifact to this path")
+    review_propose.add_argument("--owner", default="unassigned")
+    review_propose.set_defaults(func=cmd_review_propose)
 
     runtime = sub.add_parser("runtime", help="agent runtime install and validation commands").add_subparsers(dest="runtime_command")
     runtime_plan = runtime.add_parser("plan", help="generate a dry-run runtime install plan")
@@ -1975,7 +2002,7 @@ def main(argv: list[str] | None = None) -> int:
         _maybe_session_login(client, args)
         _resolve_named_scope(client, args, getattr(args, "_sourcebrief_config", {}) or {})
         data = args.func(client, args)
-    except (SourceBriefCliError, runtime_apply.RuntimeApplyError, skill_install.SkillInstallError) as exc:
+    except (SourceBriefCliError, runtime_apply.RuntimeApplyError, skill_install.SkillInstallError, RegressionProposalError) as exc:
         print(f"sourcebrief: error: {exc}", file=sys.stderr)
         return 1
     exit_code = 1 if args.command == "doctor" and isinstance(data, dict) and data.get("status") in {"failed", "incomplete"} else 0
