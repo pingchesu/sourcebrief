@@ -1,0 +1,2334 @@
+{
+  "schema_version": "sourcebrief.eval-manifest.v1",
+  "name": "SourceBrief EvoEmbedding temporal-memory 50Q eval",
+  "description": "Structured temporal/memory eval for deciding whether EvoEmbedding-style retrieval is worth adopting in SourceBrief Retrieval V2. Placeholder IDs must be replaced with real imported resources before execution. The fixture contains ordered evidence markers so first/latest/changed-decision questions have explicit temporal ground truth.",
+  "thresholds": {
+    "pass_min_rate": 0.8,
+    "partial_min_rate": 0.6,
+    "block_below_rate": 0.6,
+    "max_wrong_repo": 0,
+    "max_unsupported_claims": 0
+  },
+  "run": {
+    "sourcebrief_commit": "NORMALIZED_SOURCEBRIEF_COMMIT",
+    "api_url": "http://localhost:18000",
+    "web_url": "http://localhost:3105",
+    "workspace_id": "NORMALIZED_WORKSPACE_ID",
+    "project_id": "NORMALIZED_PROJECT_ID",
+    "resources": [
+      {
+        "key": "evo_temporal_fixture",
+        "target_repo": "EvoEmbedding temporal-memory fixture",
+        "resource_ids": [
+          "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+        ],
+        "snapshot_ids": [
+          "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+        ],
+        "upstream_commit": "NORMALIZED_UPSTREAM_COMMIT",
+        "import_type": "full",
+        "corpus_caveats": []
+      },
+      {
+        "key": "sourcebrief_docs",
+        "target_repo": "SourceBrief docs",
+        "resource_ids": [
+          "NORMALIZED_SOURCEBRIEF_DOCS_RESOURCE_ID"
+        ],
+        "snapshot_ids": [
+          "NORMALIZED_SOURCEBRIEF_DOCS_SNAPSHOT_ID"
+        ],
+        "upstream_commit": "",
+        "import_type": "full",
+        "corpus_caveats": []
+      },
+      {
+        "key": "sourcebrief_eval_artifacts",
+        "target_repo": "SourceBrief eval artifacts",
+        "resource_ids": [
+          "NORMALIZED_EVAL_ARTIFACTS_RESOURCE_ID"
+        ],
+        "snapshot_ids": [
+          "NORMALIZED_EVAL_ARTIFACTS_SNAPSHOT_ID"
+        ],
+        "upstream_commit": "",
+        "import_type": "full",
+        "corpus_caveats": []
+      }
+    ]
+  },
+  "questions": [
+    {
+      "id": "temporal-order-001",
+      "query": "What was the first user request in the EvoEmbedding adoption discussion?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "turn-001",
+        "adoption space"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-001"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "temporal-order-002",
+      "query": "What was the latest instruction before implementation began?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "turn-009",
+        "start"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-009"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "temporal-order-003",
+      "query": "Which correction happened first: model-family correction or evaluator correction?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "turn-004",
+        "turn-005",
+        "0.8B",
+        "Hermes"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-004",
+          "turn-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "temporal-order-004",
+      "query": "What is the earliest recorded corrected baseline for SourceBrief retrieval?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "turn-003",
+        "hashing",
+        "term-overlap",
+        "dev_quality=true"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-003"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "temporal-order-005",
+      "query": "What came immediately after the evaluator correction?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "turn-005",
+        "turn-006",
+        "Evaluation-first"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-005",
+          "turn-006"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "temporal-order-006",
+      "query": "Which issue-stack event happened after Joe asked to open experiment issues?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "turn-007",
+        "turn-008",
+        "#195"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-007",
+          "turn-008"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "temporal-order-007",
+      "query": "What is the latest model-size ordering to evaluate before treating 4B as necessary?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "0.8B",
+        "2B",
+        "4B"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "decision-006"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "temporal-order-008",
+      "query": "What decision came before vector/schema deferral?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "batch rerank sidecar",
+        "Vector/schema deferral"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "decision-007",
+          "decision-008"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "temporal-order-009",
+      "query": "In the 50Q run, what happened before the RISK verdict?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "wide import failures",
+        "Bounded retry",
+        "RISK"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "eval-002",
+          "eval-003",
+          "eval-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "temporal-order-010",
+      "query": "What self-improvement event happens after regression proposal and before staged adoption receipt?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "temporal-order",
+      "customer_job": "answer first/latest/before-after questions from ordered evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Regression proposal",
+        "Validation gate",
+        "Staged adoption receipt"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-003",
+          "improve-004",
+          "improve-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "ordered_sequence"
+      }
+    },
+    {
+      "id": "changed-decision-001",
+      "query": "Which earlier assistant framing was corrected by Joe, and what is the corrected retrieval baseline?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "too conservative",
+        "hashing",
+        "term-overlap",
+        "dev_quality=true"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-002",
+          "turn-003"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "changed-decision-002",
+      "query": "Which EvoEmbedding model-family misunderstanding was corrected?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "EvoEmbedding-0.8B",
+        "EvoEmbedding-2B",
+        "EvoEmbedding-4B"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-004"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "changed-decision-003",
+      "query": "How did the evaluator plan change after the Qwen/30B discussion?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Hermes",
+        "Qwen/30B",
+        "not the required evaluator"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-005",
+          "guard-001"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "changed-decision-004",
+      "query": "Which process correction moved the work to evaluation design before integration?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Evaluation-first",
+        "50 questions"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-006"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "changed-decision-005",
+      "query": "Which instruction changed planning into issue-first tracking?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Issue-first",
+        "#195",
+        "#200"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-007",
+          "turn-008"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "changed-decision-006",
+      "query": "How did the comparison baseline change to avoid over-crediting EvoEmbedding?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "real static embedding baseline",
+        "hashing"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "decision-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "changed-decision-007",
+      "query": "Which adoption path changed from direct vector integration to first-stage rerank sidecar?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "batch rerank sidecar",
+        "Variable-dimension vector storage",
+        "deferred"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "decision-007",
+          "decision-008"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "changed-decision-008",
+      "query": "Which privacy decision constrains external Evo endpoint usage?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Private source/query payloads",
+        "unapproved external endpoints"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "decision-009",
+          "guard-006"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "changed-decision-009",
+      "query": "Which decision separates the existing 50Q from final Evo adoption evidence?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "general retrieval regression gate",
+        "adoption gate"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "decision-002",
+          "decision-003"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "changed-decision-010",
+      "query": "Which possible outcome says the model may be rejected even if the eval format is kept?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "changed-decision",
+      "customer_job": "recover corrected assumptions and decision drift",
+      "difficulty": "hard",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "adopt only the temporal eval format",
+        "reject model integration"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "decision-010"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "changed_decision"
+      }
+    },
+    {
+      "id": "timeline-001",
+      "query": "What sequence turned failed wide imports into a usable but limited 50Q run?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "incident-timeline",
+      "customer_job": "recover before-after rollout/eval evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "wide imports",
+        "Bounded retry",
+        "limited",
+        "RISK"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "eval-002",
+          "eval-003",
+          "eval-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "timeline"
+      }
+    },
+    {
+      "id": "timeline-002",
+      "query": "Why did the 50Q run remain RISK even after mechanical retrieval succeeded?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "incident-timeline",
+      "customer_job": "recover before-after rollout/eval evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Development-quality providers",
+        "PARTIAL",
+        "RISK"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "eval-004",
+          "eval-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "timeline"
+      }
+    },
+    {
+      "id": "timeline-003",
+      "query": "What must be captured before profile outputs are graded by Hermes?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "incident-timeline",
+      "customer_job": "recover before-after rollout/eval evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "provided SourceBrief context",
+        "citations",
+        "outside knowledge"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "decision-004"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "timeline"
+      }
+    },
+    {
+      "id": "timeline-004",
+      "query": "What event made #195 through #200 the execution backlog?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "incident-timeline",
+      "customer_job": "recover before-after rollout/eval evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "open issues",
+        "#195",
+        "#200"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "turn-007",
+          "turn-008"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "timeline"
+      }
+    },
+    {
+      "id": "timeline-005",
+      "query": "Which sequence prevents self-improvement from silently mutating runtime behavior?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "incident-timeline",
+      "customer_job": "recover before-after rollout/eval evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Review bundle",
+        "Reviewer report",
+        "Regression proposal",
+        "Validation gate",
+        "Staged adoption receipt"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-001",
+          "improve-002",
+          "improve-003",
+          "improve-004",
+          "improve-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "timeline"
+      }
+    },
+    {
+      "id": "timeline-006",
+      "query": "What happens before sleep replay can propose follow-up work?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "incident-timeline",
+      "customer_job": "recover before-after rollout/eval evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "recurring proposal artifacts",
+        "dry-run mode"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-006"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "timeline"
+      }
+    },
+    {
+      "id": "timeline-007",
+      "query": "Which guardrail comes before any claim that EvoEmbedding is default?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "incident-timeline",
+      "customer_job": "recover before-after rollout/eval evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "adoption requires",
+        "SourceBrief-owned eval gates"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "guard-002",
+          "decision-010"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "timeline"
+      }
+    },
+    {
+      "id": "timeline-008",
+      "query": "What evidence is missing before anyone can claim completed adoption or rejection?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "incident-timeline",
+      "customer_job": "recover before-after rollout/eval evidence",
+      "difficulty": "medium",
+      "demo_type": "temporal-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "no completed A/B evidence bundle"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "unknown-003"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "timeline"
+      }
+    },
+    {
+      "id": "review-provenance-001",
+      "query": "Which ordered artifact sequence connects review bundle capture to staged adoption receipt?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "review-provenance",
+      "customer_job": "trace reviewer finding provenance",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Review bundle",
+        "Reviewer report",
+        "Regression proposal",
+        "Validation gate",
+        "Staged adoption receipt"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-001",
+          "improve-002",
+          "improve-003",
+          "improve-004",
+          "improve-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "provenance_chain"
+      }
+    },
+    {
+      "id": "review-provenance-002",
+      "query": "What evidence should a reviewer report contain before a finding becomes a proposal?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "review-provenance",
+      "customer_job": "trace reviewer finding provenance",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "findings",
+        "severity",
+        "evidence-linked rationales",
+        "Regression proposal"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-002",
+          "improve-003"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "provenance_chain"
+      }
+    },
+    {
+      "id": "review-provenance-003",
+      "query": "Which gate rejects unsafe or unsupported proposal adoption before staging?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "review-provenance",
+      "customer_job": "trace reviewer finding provenance",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "accepts or rejects",
+        "before any staged adoption"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-004"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "provenance_chain"
+      }
+    },
+    {
+      "id": "review-provenance-004",
+      "query": "What proves accepted proposals remain human-reviewable instead of silent mutation?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "review-provenance",
+      "customer_job": "trace reviewer finding provenance",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "human-reviewable",
+        "patches/receipts",
+        "without silently mutating"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "provenance_chain"
+      }
+    },
+    {
+      "id": "review-provenance-005",
+      "query": "Which provenance path can convert reviewer findings into eval fixtures without runtime changes?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "review-provenance",
+      "customer_job": "trace reviewer finding provenance",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "proposal artifacts",
+        "eval fixtures",
+        "must not auto-adopt"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-003",
+          "improve-006"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "provenance_chain"
+      }
+    },
+    {
+      "id": "review-provenance-006",
+      "query": "Which check connects unsupported claims back to citation evidence?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "review-provenance",
+      "customer_job": "trace reviewer finding provenance",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "unsupported claims",
+        "citation mismatches",
+        "cited evidence"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-007"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "provenance_chain"
+      }
+    },
+    {
+      "id": "review-provenance-007",
+      "query": "Which security evidence governs reviewer egress and redaction?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "review-provenance",
+      "customer_job": "trace reviewer finding provenance",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "redaction",
+        "reviewer egress controls",
+        "retention"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-008"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "provenance_chain"
+      }
+    },
+    {
+      "id": "review-provenance-008",
+      "query": "What ordered evidence should be cited when explaining why rejected proposals do not stage changes?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "review-provenance",
+      "customer_job": "trace reviewer finding provenance",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Rejected proposals",
+        "must not stage",
+        "Staged adoption receipt"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-004",
+          "improve-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "provenance_chain"
+      }
+    },
+    {
+      "id": "self-improvement-001",
+      "query": "What does sleep replay mine, and what is it allowed to produce without auto-adoption?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "self-improvement-provenance",
+      "customer_job": "trace self-improvement memory evidence",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "recurring proposal artifacts",
+        "eval fixtures",
+        "must not auto-adopt"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-006"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "self_improvement_memory"
+      }
+    },
+    {
+      "id": "self-improvement-002",
+      "query": "Which artifacts must exist before a recurring learning candidate is trusted?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "self-improvement-provenance",
+      "customer_job": "trace self-improvement memory evidence",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Review bundle",
+        "Reviewer report",
+        "Regression proposal",
+        "Validation gate"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-001",
+          "improve-002",
+          "improve-003",
+          "improve-004"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "self_improvement_memory"
+      }
+    },
+    {
+      "id": "self-improvement-003",
+      "query": "What artifact proves whether a proposed regression was accepted or rejected?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "self-improvement-provenance",
+      "customer_job": "trace self-improvement memory evidence",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Validation gate",
+        "accepts or rejects"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-004"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "self_improvement_memory"
+      }
+    },
+    {
+      "id": "self-improvement-004",
+      "query": "How does SourceBrief prevent reviewer findings from applying immediately?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "self-improvement-provenance",
+      "customer_job": "trace self-improvement memory evidence",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "reviewable evidence",
+        "not an automatic runtime mutation",
+        "Validation gate"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-003",
+          "improve-004"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "self_improvement_memory"
+      }
+    },
+    {
+      "id": "self-improvement-005",
+      "query": "Which fixture concern protects unsupported claim behavior?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "self-improvement-provenance",
+      "customer_job": "trace self-improvement memory evidence",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "unsupported claims",
+        "citation mismatches"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-007"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "self_improvement_memory"
+      }
+    },
+    {
+      "id": "self-improvement-006",
+      "query": "What artifact security controls should be cited before sending review evidence to external evaluators?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "self-improvement-provenance",
+      "customer_job": "trace self-improvement memory evidence",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "sensitivity classes",
+        "redaction",
+        "unapproved external endpoints"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-008",
+          "decision-009"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "self_improvement_memory"
+      }
+    },
+    {
+      "id": "self-improvement-007",
+      "query": "What is the ordered path from safe reviewer finding to human-reviewable patch?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "self-improvement-provenance",
+      "customer_job": "trace self-improvement memory evidence",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "Reviewer report",
+        "Regression proposal",
+        "Validation gate",
+        "human-reviewable patches/receipts"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-002",
+          "improve-003",
+          "improve-004",
+          "improve-005"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "self_improvement_memory"
+      }
+    },
+    {
+      "id": "self-improvement-008",
+      "query": "What is the correct role of self-improvement memory in the EvoEmbedding eval?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "self-improvement-provenance",
+      "customer_job": "trace self-improvement memory evidence",
+      "difficulty": "hard",
+      "demo_type": "provenance-retrieval",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "temporal-memory 50Q",
+        "adoption gate",
+        "dry-run"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "answers without citing the ordered evidence markers",
+        "collapses earlier and later decisions"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "improve-006",
+          "decision-003"
+        ],
+        "requires_ordered_evidence": true,
+        "relation": "self_improvement_memory"
+      }
+    },
+    {
+      "id": "premise-rejection-001",
+      "query": "Did the SourceBrief EvoEmbedding eval require Qwen 30B as the evaluator?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "premise-rejection",
+      "customer_job": "answer false premises with cited negative evidence",
+      "difficulty": "medium",
+      "demo_type": "grounded-refusal",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "No",
+        "Hermes",
+        "Qwen/30B",
+        "not the required evaluator"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "abstains as unanswerable instead of giving a cited No",
+        "accepts the false premise"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "guard-001",
+          "turn-005"
+        ],
+        "requires_ordered_evidence": false,
+        "relation": "premise_rejection"
+      }
+    },
+    {
+      "id": "premise-rejection-002",
+      "query": "Has SourceBrief already proven EvoEmbedding should replace every retrieval profile by default?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "premise-rejection",
+      "customer_job": "answer false premises with cited negative evidence",
+      "difficulty": "medium",
+      "demo_type": "grounded-refusal",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "No",
+        "adoption requires",
+        "no completed A/B evidence bundle"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "abstains as unanswerable instead of giving a cited No",
+        "accepts the false premise"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "guard-002",
+          "unknown-003"
+        ],
+        "requires_ordered_evidence": false,
+        "relation": "premise_rejection"
+      }
+    },
+    {
+      "id": "premise-rejection-003",
+      "query": "Is the current hashing plus term-overlap provider pair a production-grade retrieval baseline?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "premise-rejection",
+      "customer_job": "answer false premises with cited negative evidence",
+      "difficulty": "medium",
+      "demo_type": "grounded-refusal",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "No",
+        "dev_quality=true",
+        "hashing",
+        "term-overlap"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "abstains as unanswerable instead of giving a cited No",
+        "accepts the false premise"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "guard-003",
+          "turn-003"
+        ],
+        "requires_ordered_evidence": false,
+        "relation": "premise_rejection"
+      }
+    },
+    {
+      "id": "premise-rejection-004",
+      "query": "Do EvoEmbedding paper benchmark results prove SourceBrief citation correctness?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "premise-rejection",
+      "customer_job": "answer false premises with cited negative evidence",
+      "difficulty": "medium",
+      "demo_type": "grounded-refusal",
+      "expected_paths": [
+        "demo/evo_temporal_50q/temporal_fixture.md"
+      ],
+      "expected_symbols": [],
+      "required_texts": [
+        "No",
+        "SourceBrief-owned evals",
+        "citation correctness"
+      ],
+      "forbidden_resource_ids": [],
+      "min_citations": 1,
+      "top_k": 8,
+      "max_chars": 8000,
+      "include_code_symbols": false,
+      "expected_result": "pass",
+      "bad_answer_criteria": [
+        "abstains as unanswerable instead of giving a cited No",
+        "accepts the false premise"
+      ],
+      "expected_resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "guard-004"
+        ],
+        "requires_ordered_evidence": false,
+        "relation": "premise_rejection"
+      }
+    },
+    {
+      "id": "negative-control-001",
+      "query": "What was the measured p95 latency for EvoEmbedding-2B on the SourceBrief temporal 50Q run?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "negative-control",
+      "customer_job": "avoid unsupported claims where evidence is absent",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "expected_paths": [],
+      "expected_symbols": [],
+      "required_texts": [],
+      "forbidden_resource_ids": [],
+      "min_citations": 0,
+      "top_k": 5,
+      "max_chars": 5000,
+      "include_code_symbols": false,
+      "expected_result": "expected_unanswerable",
+      "bad_answer_criteria": [
+        "claims a measured p95 latency without evidence",
+        "invents GPU memory or cost numbers"
+      ],
+      "expected_resource_ids": [],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "unknown-002"
+        ],
+        "requires_ordered_evidence": false
+      }
+    },
+    {
+      "id": "negative-control-002",
+      "query": "Which production EvoEmbedding endpoint URL and credential were approved for SourceBrief?",
+      "target_repo": "evo_temporal_fixture",
+      "resource_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_RESOURCE_ID"
+      ],
+      "snapshot_ids": [
+        "NORMALIZED_TEMPORAL_FIXTURE_SNAPSHOT_ID"
+      ],
+      "import_type": "full",
+      "category": "negative-control",
+      "customer_job": "avoid unsupported claims where evidence is absent",
+      "difficulty": "medium",
+      "demo_type": "abstention",
+      "expected_paths": [],
+      "expected_symbols": [],
+      "required_texts": [],
+      "forbidden_resource_ids": [],
+      "min_citations": 0,
+      "top_k": 5,
+      "max_chars": 5000,
+      "include_code_symbols": false,
+      "expected_result": "expected_unanswerable",
+      "bad_answer_criteria": [
+        "names an endpoint or credential",
+        "claims production approval without evidence"
+      ],
+      "expected_resource_ids": [],
+      "temporal_assertion": {
+        "evidence_markers": [
+          "unknown-004"
+        ],
+        "requires_ordered_evidence": false
+      }
+    }
+  ]
+}

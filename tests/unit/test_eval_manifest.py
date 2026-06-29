@@ -19,6 +19,9 @@ from sourcebrief_shared.eval_manifest import (
 
 ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_MANIFEST = ROOT / "demo" / "alpha" / "eval_manifest.json"
+EVO_TEMPORAL_MANIFEST = ROOT / "demo" / "evo_temporal_50q" / "eval_manifest.json"
+EVO_TEMPORAL_FIXTURE = ROOT / "demo" / "evo_temporal_50q" / "temporal_fixture.md"
+EVO_TEMPORAL_MANIFEST_SHA256 = "sha256:840e2e0897b864f4786e9f336a77a76183a4d457fe86b4bd8c247bd25852e32c"
 SAMPLE_REPORT = ROOT / "demo" / "alpha" / "eval_report_template.json"
 SCRIPT = ROOT / "scripts" / "eval_manifest.py"
 
@@ -50,6 +53,61 @@ def test_sample_eval_manifest_is_valid_and_hashable() -> None:
     assert summary["batch_count"] == 2
     assert summary["manifest_sha256"].startswith("sha256:")
     assert summary["manifest_sha256"] == sha256_digest(manifest)
+
+
+def test_evo_temporal_eval_manifest_is_valid_and_covers_expected_categories() -> None:
+    manifest = load_json_file(EVO_TEMPORAL_MANIFEST)
+
+    summary = validate_manifest(manifest)
+    categories = {question["category"] for question in manifest["questions"]}
+    negative_controls = [
+        question for question in manifest["questions"] if question["expected_result"] == "expected_unanswerable"
+    ]
+    premise_rejections = [
+        question for question in manifest["questions"] if question["category"] == "premise-rejection"
+    ]
+
+    assert summary["schema_version"] == "sourcebrief.eval-manifest.v1"
+    assert summary["question_count"] == 50
+    assert summary["batch_count"] == 5
+    assert summary["manifest_sha256"] == EVO_TEMPORAL_MANIFEST_SHA256
+    assert len(negative_controls) == 2
+    assert len(premise_rejections) == 4
+    assert categories == {
+        "changed-decision",
+        "incident-timeline",
+        "negative-control",
+        "premise-rejection",
+        "review-provenance",
+        "self-improvement-provenance",
+        "temporal-order",
+    }
+    assert all(question["expected_resource_ids"] == [] for question in negative_controls)
+    assert all(question["expected_result"] == "pass" for question in premise_rejections)
+    assert all(question["min_citations"] >= 1 for question in premise_rejections)
+
+
+def test_evo_temporal_manifest_required_texts_are_grounded_in_ordered_fixture() -> None:
+    manifest = load_json_file(EVO_TEMPORAL_MANIFEST)
+    fixture_text = EVO_TEMPORAL_FIXTURE.read_text(encoding="utf-8").lower()
+    temporal_categories = {
+        "changed-decision",
+        "incident-timeline",
+        "review-provenance",
+        "self-improvement-provenance",
+        "temporal-order",
+    }
+
+    for question in manifest["questions"]:
+        assertion = question.get("temporal_assertion")
+        assert isinstance(assertion, dict), question["id"]
+        for marker in assertion.get("evidence_markers", []):
+            assert marker.lower() in fixture_text, question["id"]
+        for required_text in question.get("required_texts", []):
+            assert required_text.lower() in fixture_text, question["id"]
+        if question["category"] in temporal_categories:
+            assert assertion.get("requires_ordered_evidence") is True, question["id"]
+            assert question["expected_paths"] == ["demo/evo_temporal_50q/temporal_fixture.md"]
 
 
 def test_eval_manifest_splits_to_api_max_ten_question_batches() -> None:

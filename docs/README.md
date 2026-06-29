@@ -45,6 +45,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Install and use](INSTALL_AND_USE.md) | User guide | Short install/use path, resource CRUD commands, product advantages, and embedding/rerank test boundaries. |
 | [Guide](GUIDE.md) | API/CLI reference | Hands-on API/CLI walkthroughs beyond the quick start. |
 | [Eval manifests](EVAL_MANIFESTS.md) | Eval/release reference | Structured real-corpus eval manifests, hashable question artifacts, max-10 batching, and grading schema. |
+| [EvoEmbedding Retrieval V2 evaluation plan](EVOEMBEDDING_EVALUATION_PLAN.md) | Active evaluation plan | Hermes-graded profile matrix and temporal-memory 50Q gates for deciding whether EvoEmbedding is worth adopting. |
 | [Alpha release notes](ALPHA_RELEASE_NOTES.md) | Release reference | Alpha capability summary and explicit boundaries. |
 | [Roadmap](ROADMAP.md) | Planning reference | Finite alpha roadmap and future work. |
 | [Git repo import product gaps](GIT_REPO_IMPORT_PRODUCT_GAPS.md) | Product backlog | Enterprise Git onboarding gaps. |
