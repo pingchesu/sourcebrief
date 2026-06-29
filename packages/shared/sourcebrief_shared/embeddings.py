@@ -202,29 +202,53 @@ def normalize_rerank_score(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
-def rerank_score(query: str, content: str, *, config: RerankConfig | None = None) -> float:
+def _extract_rerank_scores(result: dict, documents_count: int) -> list[float]:
+    if isinstance(result.get("scores"), list):
+        scores = [normalize_rerank_score(float(value)) for value in result["scores"]]
+        if len(scores) == documents_count:
+            return scores
+    if isinstance(result.get("results"), list):
+        scores = [0.0] * documents_count
+        found = False
+        for item in result["results"]:
+            if not isinstance(item, dict) or "index" not in item or "score" not in item:
+                continue
+            index = int(item["index"])
+            if 0 <= index < documents_count:
+                scores[index] = normalize_rerank_score(float(item["score"]))
+                found = True
+        if found:
+            return scores
+    if documents_count == 1 and "score" in result:
+        return [normalize_rerank_score(float(result["score"]))]
+    raise RuntimeError("rerank provider returned no usable scores")
+
+
+def _remote_rerank_response(query: str, documents: list[str], config: RerankConfig) -> dict:
+    if not config.endpoint:
+        raise RuntimeError(f"rerank provider {config.provider!r} requires SOURCEBRIEF_RERANK_ENDPOINT")
+    return _post_json(
+        config.endpoint,
+        {"model": config.model, "query": query, "documents": documents},
+        api_key=config.api_key,
+        timeout=config.timeout,
+    )
+
+
+def rerank_scores(query: str, contents: list[str], *, config: RerankConfig | None = None) -> list[float]:
     config = config or current_rerank_config()
+    if not contents:
+        return []
     if config.provider in {"term-overlap", "overlap", "dev", "deterministic"}:
-        return term_overlap_score(query, content)
+        return [term_overlap_score(query, content) for content in contents]
     if config.provider in {"http", "huggingface", "vllm", "sglang"}:
-        if not config.endpoint:
-            raise RuntimeError(f"rerank provider {config.provider!r} requires SOURCEBRIEF_RERANK_ENDPOINT")
-        result = _post_json(
-            config.endpoint,
-            {"model": config.model, "query": query, "documents": [content]},
-            api_key=config.api_key,
-            timeout=config.timeout,
-        )
-        if isinstance(result.get("scores"), list) and result["scores"]:
-            return normalize_rerank_score(float(result["scores"][0]))
-        if isinstance(result.get("results"), list) and result["results"]:
-            first = result["results"][0]
-            if isinstance(first, dict) and "score" in first:
-                return normalize_rerank_score(float(first["score"]))
-        if "score" in result:
-            return normalize_rerank_score(float(result["score"]))
-        raise RuntimeError("rerank provider returned no score")
+        result = _remote_rerank_response(query, contents, config)
+        return _extract_rerank_scores(result, len(contents))
     raise RuntimeError(f"unsupported rerank provider: {config.provider}")
+
+
+def rerank_score(query: str, content: str, *, config: RerankConfig | None = None) -> float:
+    return rerank_scores(query, [content], config=config)[0]
 
 
 def verify_provider_health() -> dict:
@@ -245,10 +269,20 @@ def verify_provider_health() -> dict:
     except Exception as exc:  # pragma: no cover - exercised through API/integration paths
         embedding_status = "failed"
         embedding_error = str(exc)
+    rerank_response: dict | None = None
     try:
-        score = rerank_score("provider health", "provider health probe", config=rerank_config)
-        if not 0.0 <= score <= 1.0:
-            raise RuntimeError(f"rerank score out of range: {score}")
+        rerank_response = _remote_rerank_response(
+            "provider health",
+            ["provider health probe", "unrelated probe"],
+            rerank_config,
+        ) if rerank_config.provider in {"http", "huggingface", "vllm", "sglang"} else None
+        scores = (
+            _extract_rerank_scores(rerank_response, 2)
+            if rerank_response is not None
+            else rerank_scores("provider health", ["provider health probe"], config=rerank_config)
+        )
+        if not scores or any(not 0.0 <= score <= 1.0 for score in scores):
+            raise RuntimeError(f"rerank score out of range: {scores}")
     except Exception as exc:  # pragma: no cover
         rerank_status = "failed"
         rerank_error = str(exc)
@@ -269,8 +303,16 @@ def verify_provider_health() -> dict:
             "status": rerank_status,
             "provider": rerank_config.provider,
             "model": rerank_config.model,
+            "reported_model": rerank_response.get("model") if isinstance(rerank_response, dict) else None,
+            "backend": rerank_response.get("backend") if isinstance(rerank_response, dict) else None,
+            "revision": rerank_response.get("revision") if isinstance(rerank_response, dict) else None,
+            "tokenizer_name": rerank_response.get("tokenizer_name") if isinstance(rerank_response, dict) else None,
             "score_range": [0.0, 1.0],
-            "dev_quality": rerank_config.provider in {"term-overlap", "overlap", "dev", "deterministic"},
+            "dev_quality": (
+                bool(rerank_response["dev_quality"])
+                if isinstance(rerank_response, dict) and "dev_quality" in rerank_response
+                else rerank_config.provider in {"term-overlap", "overlap", "dev", "deterministic"}
+            ),
             "error": rerank_error,
         },
     }

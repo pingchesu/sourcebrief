@@ -12,7 +12,7 @@ from sourcebrief_shared.embeddings import (
     embed_text,
     embedding_namespace,
     is_dev_embedding_provider,
-    rerank_score,
+    rerank_scores,
     vector_literal,
 )
 
@@ -565,9 +565,16 @@ def retrieve_context_candidates(
                 candidate.graph_score = max(candidate.graph_score, float(row["graph_score"] or 0.0))
 
     filtered: list[RetrievalCandidate] = []
+    rerank_by_chunk: dict[UUID, float] = {}
+    if retrieval_profile.use_rerank and candidates:
+        candidate_list = list(candidates.values())
+        batch_scores = rerank_scores(query, [candidate.content for candidate in candidate_list])
+        rerank_by_chunk = {
+            candidate.chunk_id: score for candidate, score in zip(candidate_list, batch_scores, strict=True)
+        }
     require_text_overlap = is_dev_embedding_provider(embedding_config)
     for candidate in candidates.values():
-        candidate.rerank_score = rerank_score(query, candidate.content) if retrieval_profile.use_rerank else 0.0
+        candidate.rerank_score = rerank_by_chunk.get(candidate.chunk_id, 0.0)
         # The offline hashing provider is not a true semantic model; avoid
         # returning random vector-nearest chunks that share no query terms. Real
         # embedding providers may legitimately return semantic-only matches.
