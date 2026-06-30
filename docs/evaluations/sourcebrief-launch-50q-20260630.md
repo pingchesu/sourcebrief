@@ -145,4 +145,4 @@ The concrete `.env`/credential values and raw artifact bundle remain ignored loc
 
 - Raw `report.json`, generated Playwright scripts, local ports, and full transcript remain under ignored `artifacts/`.
 - The committed screenshots intentionally show human-readable workspace/project/resource labels and do not expose bearer tokens, raw UUIDs, or local filesystem paths.
-- This run closes the #210 current screenshot-backed proof gap. Broader launch readiness still depends on the remaining launch train items (#211, #212, #213, #214, and parent #208).
+- This run closes the #210 current screenshot-backed proof gap. Broader launch readiness is synthesized in parent #208 and must follow the claim ledger's RISK/Unsupported boundaries.

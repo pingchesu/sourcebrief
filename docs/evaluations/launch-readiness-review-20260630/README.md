@@ -1,8 +1,26 @@
-# Launch readiness 5-role review (#211)
+# Launch readiness synthesis (#208 / #211)
 
 Issue: [#211](https://github.com/pingchesu/sourcebrief/issues/211)
 Parent: [#208](https://github.com/pingchesu/sourcebrief/issues/208)
-Candidate SHA: `1107ef4` (`docs: capture self-improvement browser proof`)
+Synthesis prepared after all #208 child risks were closed on current `main` at `54aea13` (`docs: exclude temporal adoption from launch scope`). This is a readiness synthesis, not a new full E2E rerun.
+
+## Final verdict
+
+**Close #208 as a completed local-alpha evidence/readiness train with explicit RISK lanes. Do not call it a blanket launch PASS.**
+
+What is safe to say:
+
+- SourceBrief has current committed evidence for README-driven local startup, cited agent context surfaces, screenshot-backed 50Q walkthrough, proof-gap closures, Skill Export approval/download, self-improvement review UI, runtime dry-run/apply boundaries, and real-corpus regression accounting.
+- The previously validated child risks (#229, #231, #233, #234, #235) are closed or explicitly scoped out of launch claims.
+- Customer-facing wording must continue to follow [`docs/CLAIM_LEDGER.md`](../../CLAIM_LEDGER.md): local-alpha evidence review is supported; public-SaaS/enterprise readiness, autonomous mutation, temporal-memory adoption, and blanket security/retrieval PASS claims remain unsupported or RISK.
+
+What is not safe to say:
+
+- “Production/public launch ready.”
+- “Enterprise-ready.”
+- “Temporal-memory retrieval is adopted/passing.”
+- “Security boundary launch PASS” without a fresh declared-SHA, browser-transcript-backed probe bundle.
+- “50Q/browser proof PASS for a final launch candidate” without a fresh declared-SHA rerun.
 
 ## Evidence inputs reviewed
 
@@ -10,62 +28,57 @@ Candidate SHA: `1107ef4` (`docs: capture self-improvement browser proof`)
 | --- | --- |
 | Claim ledger | [`docs/CLAIM_LEDGER.md`](../../CLAIM_LEDGER.md) keeps launch-facing claims separated into Current / RISK / Unsupported. |
 | Proof manifest | [`docs/PROOF_ARTIFACTS.md`](../../PROOF_ARTIFACTS.md) links committed screenshots, runtime proof, proof-gap closures, Skill Export, real-corpus, and self-improvement browser proof. |
-| Screenshot-backed 50Q | [`sourcebrief-launch-50q-20260630.md`](../sourcebrief-launch-50q-20260630.md) records current screenshot-backed 50Q walkthrough. |
+| Screenshot-backed 50Q | [`sourcebrief-launch-50q-20260630.md`](../sourcebrief-launch-50q-20260630.md) records the current screenshot-backed 50Q walkthrough and now documents random-port/CORS reproducibility rules. |
 | Proof gaps | [`proof-gaps-20260630/README.md`](../proof-gaps-20260630/README.md) closes Resource Map, Context Pack, and runtime doctor proof gaps. |
-| Skill Export | [`skill-export-20260630/README.md`](../skill-export-20260630/README.md) closes approved/downloadable package proof. |
-| Real-corpus regression | [`real-corpus-regression-20260630/README.md`](../real-corpus-regression-20260630/README.md) records current real-corpus evidence as **RISK**, not PASS. |
-| Self-improvement browser proof | [`self-improvement-browser-20260630/README.md`](../self-improvement-browser-20260630/README.md) verifies the artifact-first no-silent-mutation UI surface. |
+| Skill Export | [`skill-export-20260630/README.md`](../skill-export-20260630/README.md) closes approved/downloadable package proof with status wording clarified. |
+| Real-corpus regression | [`real-corpus-regression-20260630/README.md`](../real-corpus-regression-20260630/README.md) records current real-corpus evidence as **RISK**, not PASS, and excludes temporal-memory adoption claims. |
+| Self-improvement browser proof | [`self-improvement-browser-20260630/README.md`](../self-improvement-browser-20260630/README.md) verifies the artifact-first no-silent-mutation UI surface and documents the resolved CORS setup finding. |
 
-## Current open child risks
+## Child-risk disposition
 
-| Issue | Meaning | Launch impact |
+| Issue | Resolution | Launch impact after closure |
 | --- | --- | --- |
-| [#229](https://github.com/pingchesu/sourcebrief/issues/229) | Temporal-memory gate remains RISK on current `hybrid` profile. | Blocks temporal-memory adoption/PASS wording; does not block local-alpha launch if temporal-memory claims remain RISK/excluded. |
-| [#231](https://github.com/pingchesu/sourcebrief/issues/231) | Random-port browser proof stacks need matching CORS origin. | Setup/reproducibility risk; should be fixed before making random-port browser capture a fully automated gate. |
-| [#233](https://github.com/pingchesu/sourcebrief/issues/233) | Launch-security probe can overstate security/failure-mode readiness. | Keeps security-boundary claims at RISK; blocks treating `make launch-security-probe` as a launch PASS gate. |
-| [#234](https://github.com/pingchesu/sourcebrief/issues/234) | 50Q walkthrough runner/proof needs fail-fast cleanup, token cleanup, screenshot UUID hygiene, and stronger isolated-stack reproducibility. | Keeps screenshot-backed 50Q proof useful for local-alpha evidence but RISK for public/fully automated launch proof. |
-| [#235](https://github.com/pingchesu/sourcebrief/issues/235) | Skill Export approved package proof embeds draft-status README wording. | Does not block acknowledging approved export metadata, but blocks treating the package README itself as unambiguous install guidance. |
+| [#229](https://github.com/pingchesu/sourcebrief/issues/229) | Closed by excluding temporal-memory adoption/PASS claims from launch scope until a future provider/profile passes the temporal-memory 50Q gate. | Keeps real-corpus/temporal claims at **RISK**; no longer blocks closing #208 as a scoped local-alpha train. |
+| [#231](https://github.com/pingchesu/sourcebrief/issues/231) | Closed by adding a browser-origin CORS preflight to the proof runner and documenting matching `NEXT_PUBLIC_API_BASE_URL` / `SOURCEBRIEF_CORS_ORIGINS` in the isolated-stack convention. | Removes the random-port browser setup blocker; future proof capture fails fast instead of producing CORS-noise screenshots. |
+| [#233](https://github.com/pingchesu/sourcebrief/issues/233) | Closed by hardening the launch-security probe: fail-closed semantics, false-premise checks, browser transcript requirement, token cleanup, and JSON secret redaction. | Probe path is trustworthy enough to use as a gate, but a fresh declared-SHA probe bundle is still required before claiming security-boundary PASS. |
+| [#234](https://github.com/pingchesu/sourcebrief/issues/234) | Closed by hardening 50Q runner fail-fast behavior, public screenshot redaction, public hashes, and reproducibility docs. | Screenshot-backed 50Q evidence is useful and public-safe; final launch PASS still requires a fresh declared-SHA rerun. |
+| [#235](https://github.com/pingchesu/sourcebrief/issues/235) | Closed by distinguishing package-generation status from authoritative SourceBrief export approval state and refreshing public proof artifacts. | Skill Export proof can be described as approved/downloadable without contradictory draft-only README wording. |
 
-## Local verification while preparing this review
+## Local verification for this final synthesis
 
 ```text
-readiness evidence links/json blocks ok
-23 passed in 0.29s
+launch synthesis docs audit ok
+33 passed in focused launch-train unit suites
 ```
 
-Focused tests:
+Focused suites:
 
 ```text
 tests/unit/test_launch_50q_walkthrough.py
 tests/unit/test_skill_export_contract.py
-tests/unit/test_self_improvement_mvp_product.py
 tests/unit/test_launch_security_probe.py
 ```
 
-## Adopted async adversarial findings
+Docs audit:
 
-Several earlier PR-review delegations completed after their PRs had already been merged. I re-validated the durable findings against current `main` before adopting them here.
+```text
+docs/evaluations/launch-readiness-review-20260630/README.md
+docs/CLAIM_LEDGER.md
+docs/evaluations/sourcebrief-launch-50q-20260630.md
+```
 
-| Source review | Current disposition |
-| --- | --- |
-| PR #223 runtime docs review | Adopted. `docs/AGENT_RUNTIME_USAGE.md` overstated `sourcebrief doctor` as a complete REST/MCP validator. This branch narrows `doctor` to a lightweight smoke test and points full validation to generated runtime validator commands. |
-| PR #218/#224 launch-security probe reviews | Adopted. Current probe still has false-pass, redaction, browser-transcript, token-lifecycle, dev-auth, and cleanup risks. Opened [#233](https://github.com/pingchesu/sourcebrief/issues/233) and changed the claim ledger security-boundary row from `Current` to `RISK`. |
-| PR #210/#225 50Q walkthrough reviews | Adopted. Current proof remains valuable but has runner cleanup/fail-fast, screenshot UUID hygiene, and reproducibility gaps. Opened [#234](https://github.com/pingchesu/sourcebrief/issues/234) and changed the claim ledger 50Q row from `Current` to `RISK`. |
-| PR #226 Skill Export reviews | Adopted. Approved export metadata is present, but embedded package README says `Status: draft`; opened [#235](https://github.com/pingchesu/sourcebrief/issues/235). |
-| PR #230 real-corpus review | Partly adopted. No readiness blocker beyond known `RISK` verdict and [#229](https://github.com/pingchesu/sourcebrief/issues/229); the public run plan also had a concrete local env-file path, which this branch replaces with a placeholder. |
+## Five-role final review
 
-## Role verdicts
-
-The five required role lenses return a shared conclusion: the current evidence is useful for local-alpha review, but unresolved child risks block any blanket launch PASS.
-
-| Role | Verdict | Adopted findings / disposition |
+| Role | Final verdict | Rationale |
 | --- | --- | --- |
-| CEO / customer trust | RISK | Customer-facing trust is acceptable only for **local-alpha evidence review** wording. The claim ledger now prevents blanket PASS wording for real-corpus, 50Q public proof, and security-boundary gates while #229/#233/#234 remain open. |
-| CTO / architecture, ops, security | BLOCK for launch PASS / RISK for local alpha | Architecture is demonstrable, but launch-security probe semantics are not trustworthy enough for a PASS gate (#233); random-port CORS setup (#231), temporal-memory quality (#229), and 50Q runner cleanup/reproducibility (#234) remain operational risks. |
-| PO / onboarding and customer love | RISK | The product story is coherent for local alpha: screenshots, proof gaps, Skill Export, and self-improvement surface now have evidence. The story must avoid enterprise/public-SaaS, autonomous mutation, temporal-memory adoption, and security PASS claims until child issues close. |
-| Tech Lead / reproducibility and implementation | RISK | Evidence is committed and link-checked, but several proof paths still rely on local/ignored run context or generated artifacts with caveats. This branch fixes the concrete `/tmp/...env` path and `doctor` validator overclaim, while #234/#235 track remaining reproducibility/package consistency work. |
-| QA Lead / acceptance, flakiness, regression | BLOCK for launch PASS / RISK for local alpha | Focused tests pass locally, but QA cannot accept a launch PASS while probe gates can false-pass (#233), public screenshot hygiene is unresolved (#234), temporal-memory fails 18/50 (#229), and browser proof-stack CORS is not hardened (#231). |
+| CEO / customer trust | **RISK, acceptable for local-alpha evidence review only** | The narrative is now bounded: no enterprise/public-SaaS, no autonomous mutation, no temporal-memory adoption claim. |
+| CTO / architecture, ops, security | **RISK, not production launch PASS** | Architecture/proof runners are more trustworthy, but final security/50Q PASS requires fresh declared-SHA run bundles. |
+| PO / onboarding and customer value | **Current for local-alpha story with caveats** | The product story has screenshots, Skill Export, proof gaps, self-improvement UI, and runtime docs, with claim ledger guardrails. |
+| Tech Lead / reproducibility | **RISK but tracked/operable** | Random-port browser CORS, screenshot hygiene, token cleanup, and package-status mismatches were fixed; remaining upgrade path is explicit rerun evidence. |
+| QA Lead / acceptance/flakiness | **RISK for launch PASS** | Focused regressions pass and child blockers are closed, but QA should not sign a blanket PASS without fresh end-to-end declared-SHA bundles. |
 
-## Draft synthesis boundary
+## Final synthesis boundary
 
-This launch train can only be summarized as a **local-alpha evidence review with explicit RISK lanes**, not a blanket launch PASS, while #229/#231/#233/#234/#235 remain open. Safe wording must follow the claim ledger: local-alpha scope, self-improvement artifact surface, and runtime dry-run/apply boundaries can be described as current; real-corpus quality, screenshot-backed 50Q public/automated proof, and security-boundary launch gates remain RISK until their child issues are closed.
+#208 is complete as a launch-train closure because every validated child gap is closed, converted into claim-scope exclusion, or carried as an explicit non-goal in the claim ledger. The final output is **not** “SourceBrief is launch PASS”; it is:
+
+> SourceBrief has a current local-alpha evidence package with explicit RISK lanes. It is suitable for bounded evidence review and continued alpha iteration. Upgrade to a blanket launch PASS requires fresh declared-SHA README/E2E, 50Q/browser, and launch-security bundles with the claim ledger showing no repeated RISK/Unsupported claims.
