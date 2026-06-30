@@ -14,7 +14,7 @@ It is intentionally deterministic. Use it when you want to show the product idea
 - The CLI is on your path.
 - You can log in with the admin email/password from `.env`.
 
-Configure the CLI demo environment and save a local session token:
+Configure the CLI demo environment and save a local session token. `sourcebrief login` reads the admin email/password from environment variables or the local `.env` file:
 
 ```bash
 export SOURCEBRIEF_API_URL=http://localhost:18000

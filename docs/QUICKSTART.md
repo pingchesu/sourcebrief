@@ -129,7 +129,7 @@ Postgres and Redis are intentionally published on loopback only so remote or sha
 
 ## 3. CLI first useful moment
 
-CLI now supports the same admin email/password you use for the web console. Export the local `.env` values, then save a session token locally with `sourcebrief login`:
+CLI now supports the same admin email/password you use for the web console. Point the CLI at the local API; `sourcebrief login` reads the email/password from environment variables or the local `.env` file:
 
 ```bash
 make venv

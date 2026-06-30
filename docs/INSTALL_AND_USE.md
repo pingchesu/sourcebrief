@@ -102,6 +102,8 @@ export SOURCEBRIEF_API_URL="$(make -s print-api-url)"
 sourcebrief login --password-env SOURCEBRIEF_ADMIN_PASSWORD
 ```
 
+`sourcebrief login` reads `SOURCEBRIEF_ADMIN_EMAIL` and `SOURCEBRIEF_ADMIN_PASSWORD` from environment variables or the local `.env` file, so you do not need to enable dev-header auth for the CLI demo.
+
 Run the deterministic first-use demo:
 
 ```bash

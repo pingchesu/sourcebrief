@@ -48,6 +48,8 @@ export SOURCEBRIEF_API_URL="$(make -s print-api-url)"
 sourcebrief login --password-env SOURCEBRIEF_ADMIN_PASSWORD
 ```
 
+`sourcebrief login` reads the admin email/password from environment variables or the local `.env` file, so the demo does not require dev-header auth.
+
 ### 2. Create a small demo project and indexed source
 
 ```bash

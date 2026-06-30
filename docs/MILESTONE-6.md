@@ -25,7 +25,7 @@ Implemented in this milestone:
 
 Example request:
 
-```json
+```http
 POST /workspaces/{workspace_id}/projects/{project_id}/agent-context
 {
   "query": "payment retry runbook",
