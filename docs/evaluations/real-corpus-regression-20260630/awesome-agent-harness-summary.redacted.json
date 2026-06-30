@@ -1,0 +1,995 @@
+{
+  "aggregate": {
+    "abstention_pass_rate": 1.0,
+    "human_answer_demo_pass_rate": 1.0,
+    "mechanical_api_success_rate": 1.0,
+    "partial_corpus_risk_count": 50,
+    "provider_quality": {
+      "allow_dev_quality_override": true,
+      "dev_quality": true,
+      "providers": [
+        {
+          "dev_quality": true,
+          "model": "sourcebrief-hashing-v1",
+          "name": "embedding",
+          "provider": "hashing",
+          "status": "ok"
+        },
+        {
+          "dev_quality": true,
+          "model": "sourcebrief-term-overlap-v1",
+          "name": "rerank",
+          "provider": "term-overlap",
+          "status": "ok"
+        }
+      ],
+      "status": "dev_quality"
+    },
+    "retrieval_quality_pass_rate": 1.0,
+    "risk_reasons": [
+      "development_quality_retrieval_provider: embedding=hashing/sourcebrief-hashing-v1, rerank=term-overlap/sourcebrief-term-overlap-v1"
+    ],
+    "unsupported_claim_failures": 0,
+    "verdict": "RISK",
+    "wrong_repo_failures": 0
+  },
+  "candidate_commit": "5e6ae69526d3db8b1f19103171062bd2b8480e81",
+  "documentation_commit": "32e264aedf2ce2b699b8e9f993a8f873fb575424",
+  "final_verdict": "RISK",
+  "grade_counts": {
+    "FAIL": 0,
+    "PARTIAL": 50,
+    "PASS": 0
+  },
+  "import_results": [
+    {
+      "attempt": "wide-5000-files",
+      "chunks": 884,
+      "embeddings": 884,
+      "files": 170,
+      "import_type": "limited",
+      "repo": "Superpowers",
+      "status": "succeeded",
+      "symbols": 150
+    },
+    {
+      "attempt": "wide-5000-files",
+      "chunks": 5000,
+      "embeddings": 5000,
+      "files": 1526,
+      "import_type": "limited",
+      "notes": "chunk budget reached",
+      "repo": "ECC",
+      "status": "succeeded",
+      "symbols": 124
+    },
+    {
+      "attempt": "wide-5000-files",
+      "chunks": 199,
+      "embeddings": 199,
+      "files": 89,
+      "import_type": "limited",
+      "repo": "Matt Pocock Skills",
+      "status": "succeeded",
+      "symbols": 0
+    },
+    {
+      "attempt": "wide-5000-files",
+      "chunks": 5000,
+      "embeddings": 5000,
+      "files": 545,
+      "import_type": "limited",
+      "notes": "chunk budget reached",
+      "repo": "gstack",
+      "status": "succeeded",
+      "symbols": 1844
+    },
+    {
+      "attempt": "wide-5000-files",
+      "chunks": 5000,
+      "embeddings": 5000,
+      "files": 673,
+      "import_type": "limited",
+      "notes": "chunk and symbol budgets reached",
+      "repo": "DeerFlow",
+      "status": "succeeded",
+      "symbols": 5000
+    }
+  ],
+  "issue": 214,
+  "manifest_sha256": "sha256:38176ef24a03b234a4f909b5cab661a459f94bf27fb8ecbbfb470e3a502bfe0c",
+  "parent_issue": 208,
+  "per_question": [
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-architecture-001",
+      "rationale": "mechanical_pass=True; citations=7; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-skills-002",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-planning-003",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-tdd-004",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-review-005",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-subagents-006",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-install-007",
+      "rationale": "mechanical_pass=True; citations=7; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-memory-008",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-security-009",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "superpowers",
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": true,
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": "not_applicable",
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "superpowers-negative-010",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=['negative/control question returned near-miss citations with explicit insufficient-evidence abstention']",
+      "target_repos": [
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-architecture-011",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-hooks-012",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-skills-013",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-memory-014",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-security-015",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-validation-016",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-install-017",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-cross-harness-018",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "ecc",
+        "superpowers"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-extension-019",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": true,
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": "not_applicable",
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "ecc-negative-020",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=['negative/control question returned near-miss citations with explicit insufficient-evidence abstention']",
+      "target_repos": [
+        "ecc"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-architecture-021",
+      "rationale": "mechanical_pass=True; citations=7; context_chars=7918; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-adr-022",
+      "rationale": "mechanical_pass=True; citations=7; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-specs-023",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-testing-024",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-review-025",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-install-026",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-extension-027",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-scope-028",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "matt_pocock_skills",
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-memory-029",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": true,
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": "not_applicable",
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "mps-negative-030",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=['negative/control question returned near-miss citations with explicit insufficient-evidence abstention']",
+      "target_repos": [
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-architecture-031",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-product-032",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-architecture-decisions-033",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-qa-034",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=7993; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-release-035",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=7979; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-cross-agent-036",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "gstack",
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-extension-037",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-security-038",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-memory-039",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": true,
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": "not_applicable",
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "gstack-negative-040",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=['negative/control question returned near-miss citations with explicit insufficient-evidence abstention']",
+      "target_repos": [
+        "gstack"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-architecture-041",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=7991; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "deerflow"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-orchestration-042",
+      "rationale": "mechanical_pass=True; citations=7; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "deerflow"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-tools-043",
+      "rationale": "mechanical_pass=True; citations=7; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "deerflow"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-state-044",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "deerflow"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-runtime-045",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "deerflow"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-config-046",
+      "rationale": "mechanical_pass=True; citations=7; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "deerflow"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-security-047",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "deerflow"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-failure-048",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "deerflow"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": "not_applicable",
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": true,
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-api-049",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=[]",
+      "target_repos": [
+        "deerflow",
+        "matt_pocock_skills"
+      ]
+    },
+    {
+      "checks": {
+        "abstained_correctly": true,
+        "citation_support": true,
+        "human_answer_demo": true,
+        "mechanical_api_success": true,
+        "partial_corpus_caveat": "partial",
+        "retrieval_quality": "not_applicable",
+        "wrong_repo_check": true
+      },
+      "grade": "PARTIAL",
+      "id": "deerflow-negative-050",
+      "rationale": "mechanical_pass=True; citations=6; context_chars=8000; failure_reasons=[]; import_type=limited; quality_notes=['negative/control question returned near-miss citations with explicit insufficient-evidence abstention']",
+      "target_repos": [
+        "deerflow"
+      ]
+    }
+  ],
+  "provider_health": {
+    "allow_dev_quality_override": true,
+    "dev_quality": true,
+    "providers": [
+      {
+        "dev_quality": true,
+        "model": "sourcebrief-hashing-v1",
+        "name": "embedding",
+        "provider": "hashing",
+        "status": "ok"
+      },
+      {
+        "dev_quality": true,
+        "model": "sourcebrief-term-overlap-v1",
+        "name": "rerank",
+        "provider": "term-overlap",
+        "status": "ok"
+      }
+    ],
+    "status": "dev_quality"
+  },
+  "question_count": 50,
+  "raw_evidence_dir": "artifacts/e2e/214-20260630165524-awesome-agent-harness",
+  "risk_reasons": [
+    "dev-quality hashing/term-overlap providers",
+    "all five imported corpora are limited/partial",
+    "human-answer quality is answer-ready cited context, not a production answer layer"
+  ],
+  "run_date": "2026-06-30",
+  "run_environment": {
+    "api_readyz_ok": true,
+    "operator_exit_code": 0,
+    "provider_health_ok": true,
+    "web_health_ok": true
+  },
+  "source_list_status": "fetched"
+}

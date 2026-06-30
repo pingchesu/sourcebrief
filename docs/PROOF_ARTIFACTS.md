@@ -45,6 +45,7 @@ The current operation path for the 50Q walkthrough is documented in [`evaluation
 | --- | --- | --- |
 | Demo runtime output | Tiny deterministic source -> indexed snapshot -> `agent-context` and MCP-shaped response. | [`examples/demo-runtime-output.md`](examples/demo-runtime-output.md), [`DEMO.md`](DEMO.md) |
 | Agent-context output | Real local walkthrough query returned cited context from indexed resources. | [`examples/agent-context-output.md`](examples/agent-context-output.md), [`WALKTHROUGH.md`](WALKTHROUGH.md) |
+| Real-corpus regression #214 | Current Awesome Agent Harness 50Q rerun and temporal-memory 50Q refresh with explicit RISK accounting. | [`evaluations/real-corpus-regression-20260630/`](evaluations/real-corpus-regression-20260630/) |
 
 Internal UUIDs and token values are normalized or omitted in committed examples. That keeps the artifact readable and safe while preserving the response shape, citation policy, and runtime contract.
 
