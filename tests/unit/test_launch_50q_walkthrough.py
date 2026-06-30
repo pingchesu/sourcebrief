@@ -55,10 +55,92 @@ def test_launch_50q_defaults_follow_makefile_ports(tmp_path: Path, monkeypatch) 
     env_file = tmp_path / ".env"
     env_file.write_text("SOURCEBRIEF_API_PORT=18123\nSOURCEBRIEF_WEB_PORT=13123\n", encoding="utf-8")
     monkeypatch.setenv("SOURCEBRIEF_API_URL", "http://localhost:18999")
+    monkeypatch.delenv("SOURCEBRIEF_WEB_URL", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_WEB_URL", raising=False)
+    monkeypatch.delenv("WEB_URL", raising=False)
+    monkeypatch.delenv("SOURCEBRIEF_WEB_PORT", raising=False)
+    monkeypatch.delenv("CONTEXTSMITH_WEB_PORT", raising=False)
 
     assert module.configured_url("api", module.load_env_file(env_file)) == "http://localhost:18999"
     assert module.configured_url("web", module.load_env_file(env_file)) == "http://localhost:13123"
     assert module.default_artifact_dir(123).name == "sourcebrief-launch-50q-123"
+
+
+def test_launch_50q_expected_unanswerable_allows_unsupported_citations(monkeypatch) -> None:
+    module = load_module()
+    ctx = module.WalkthroughContext(
+        api_url="http://api",
+        web_url="http://web",
+        headers={},
+        session_token=None,
+        auth_mode="test",
+        workspace_id="ws",
+        workspace_name="Workspace",
+        project_id="proj",
+        project_name="Project",
+        resource_id="res",
+        resource_name="Resource",
+        index_run={},
+    )
+
+    def fake_request(*args, **kwargs):
+        return {
+            "answer": {"outcome": "unsupported_by_sources"},
+            "citations": [{"path": "docs/STATUS.md"}],
+            "context": "public SaaS is not ready",
+        }
+
+    monkeypatch.setattr(module, "request", fake_request)
+    result = module.evaluate_question(
+        "http://api",
+        ctx,
+        {
+            "id": "negative",
+            "query": "What Helm command deploys public SaaS?",
+            "expected_result": "expected_unanswerable",
+            "expected_terms": [],
+        },
+    )
+
+    assert result["mechanical_status"] == "pass"
+    assert result["citation_count"] == 1
+    assert result["answer_outcome"] == "unsupported_by_sources"
+
+
+def test_launch_50q_expected_unanswerable_blocks_answerable_outcomes(monkeypatch) -> None:
+    module = load_module()
+    ctx = module.WalkthroughContext(
+        api_url="http://api",
+        web_url="http://web",
+        headers={},
+        session_token=None,
+        auth_mode="test",
+        workspace_id="ws",
+        workspace_name="Workspace",
+        project_id="proj",
+        project_name="Project",
+        resource_id="res",
+        resource_name="Resource",
+        index_run={},
+    )
+
+    def fake_request(*args, **kwargs):
+        return {"answer": {"outcome": "answered"}, "citations": [{"path": "deploy.md"}], "context": "helm install"}
+
+    monkeypatch.setattr(module, "request", fake_request)
+    result = module.evaluate_question(
+        "http://api",
+        ctx,
+        {
+            "id": "negative",
+            "query": "What Helm command deploys public SaaS?",
+            "expected_result": "expected_unanswerable",
+            "expected_terms": [],
+        },
+    )
+
+    assert result["mechanical_status"] == "fail"
+    assert result["failures"] == ["negative_control_answered_too_strongly"]
 
 
 def test_launch_50q_verdict_blocks_failed_questions_and_missing_negative_control() -> None:

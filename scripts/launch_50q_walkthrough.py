@@ -298,9 +298,8 @@ def evaluate_question(api_url: str, ctx: WalkthroughContext, question: dict[str,
     failures: list[str] = []
     quality_warnings: list[str] = []
     if expected_result == "expected_unanswerable":
-        if citations:
-            failures.append("negative_control_returned_citations")
-        if answer.get("outcome") not in {"unsupported_by_sources", "insufficient_evidence", None}:
+        unsupported_outcomes = {"unsupported_by_sources", "insufficient_evidence"}
+        if answer.get("outcome") not in unsupported_outcomes:
             failures.append("negative_control_answered_too_strongly")
     else:
         if len(citations) < int(question.get("min_citations", 1)):
