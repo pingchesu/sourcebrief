@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "launch_50q_walkthrough.py"
 QUESTIONS = ROOT / "examples" / "sourcebrief-launch-50q" / "questions.json"
@@ -311,3 +313,34 @@ def test_launch_50q_public_doc_links_operations_and_screenshots() -> None:
         assert name in doc
     assert "50Q launch proof with screenshots" in readme
     assert "screenshot inventory hashes" in proof
+
+
+def test_launch_50q_browser_session_requirement_fails_before_project_creation(monkeypatch, tmp_path: Path) -> None:
+    module = load_module()
+    calls: list[str] = []
+
+    class Args:
+        artifact_dir = tmp_path
+        question_bank = QUESTIONS
+        question_limit = 50
+        skip_compose = True
+        skip_screenshots = False
+        allow_risk = False
+        api_url = "http://api"
+        web_url = "http://web"
+
+    monkeypatch.setattr(module.argparse.ArgumentParser, "parse_args", lambda self: Args())
+    monkeypatch.setattr(module, "load_env_file", lambda path: {})
+    monkeypatch.setattr(module, "wait_http", lambda url: calls.append(f"wait:{url}"))
+    monkeypatch.setattr(module, "authenticate", lambda api_url, env_file: ({"X-User-Email": "dev@example.com"}, None, "dev_header_local_fallback"))
+
+    def create_should_not_run(*args, **kwargs):  # noqa: ANN002, ANN003
+        calls.append("create_walkthrough_project")
+        raise AssertionError("project creation must not run before browser-session validation")
+
+    monkeypatch.setattr(module, "create_walkthrough_project", create_should_not_run)
+
+    with pytest.raises(RuntimeError, match="browser screenshot proof requires"):
+        module.main()
+
+    assert "create_walkthrough_project" not in calls
