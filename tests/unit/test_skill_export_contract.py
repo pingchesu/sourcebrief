@@ -1,6 +1,46 @@
 from apps.api.sourcebrief_api import skill_exports
 
 
+def test_skill_export_safe_text_neutralizes_source_evidence_secret_patterns() -> None:
+    raw = (
+        "Leak scanner docs mention cs_[A-Za-z0-9_-]{12,} and /Users/ examples; "
+        "real values include cs_abcdefghijklmnopqrstuvwxyz123456, /home/alice/private, "
+        "SOURCEBRIEF_ADMIN_PASSWORD, CONTEXTSMITH_ADMIN_PASSWORD, and session_token fields."
+    )
+
+    safe = skill_exports._safe_text(raw, max_len=1_000)  # noqa: SLF001
+
+    assert "cs_[A-Za-z0-9_-]{12,}" not in safe
+    assert "cs_abcdefghijklmnopqrstuvwxyz123456" not in safe
+    assert "/Users/" not in safe
+    assert "/home/alice" not in safe
+    assert "SOURCEBRIEF_ADMIN_PASSWORD" not in safe
+    assert "CONTEXTSMITH_ADMIN_PASSWORD" not in safe
+    assert "session_token" not in safe
+    assert "[token-pattern-redacted]" in safe
+    assert "[token-redacted]" in safe
+    assert "[local-path-pattern-redacted]" in safe
+
+
+def test_skill_export_scan_stays_strict_after_source_text_redaction() -> None:
+    content = skill_exports._safe_text("source text mentions cs_[A-Za-z0-9_-]{12,} and /Users/", max_len=1_000)  # noqa: SLF001
+    scan = skill_exports._scan_files([{"path": "references/resource-map.md", "bytes": len(content), "content": content}])  # noqa: SLF001
+
+    assert scan["ok"] is True
+
+    false_positive_prone_inventory = "docs/followups/DOCS_DEEP_PROOF_CLEANUP.md\napps/web/app/users/page.tsx"
+    inventory_scan = skill_exports._scan_files(
+        [{"path": "references/resource-map.md", "bytes": len(false_positive_prone_inventory), "content": false_positive_prone_inventory}]
+    )  # noqa: SLF001
+
+    assert inventory_scan["ok"] is True
+
+    unsafe = "real secret cs_abcdefghijklmnopqrstuvwxyz123456 under /Users/alice/private"
+    unsafe_scan = skill_exports._scan_files([{"path": "references/resource-map.md", "bytes": len(unsafe), "content": unsafe}])  # noqa: SLF001
+
+    assert unsafe_scan["ok"] is False
+
+
 def test_skill_export_validation_requires_self_improvement_boundary() -> None:
     files = []
     for path in sorted(skill_exports.REQUIRED_PACKAGE_PATHS):

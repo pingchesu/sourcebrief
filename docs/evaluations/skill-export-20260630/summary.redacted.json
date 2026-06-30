@@ -1,0 +1,19 @@
+{
+  "download_zip_sha256": "sha256:4ad5bdc9d94d491c1fc27785a706b9d882301b1e3d41dbd6c1def9bc33475d45",
+  "file_count": 18,
+  "leak_scan_ok": true,
+  "pack_key": "launch-proof-212",
+  "pack_version": 1,
+  "package_hash": "sha256:3a56e72516b72056275733d9d7800e036e6a22d3b672f94fc6d47aa09b444aaa",
+  "run_id": "226-20260630",
+  "sampled_public_files": [
+    "SKILL.md",
+    "README.md",
+    "manifest.json",
+    "references/data-structure.md",
+    "references/resource-map.md",
+    "references/source-coverage.md"
+  ],
+  "status": "approved",
+  "validation_ok": true
+}

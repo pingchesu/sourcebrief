@@ -12,7 +12,7 @@ Resource: `SourceBrief repository launch import`
 | --- | --- | --- | --- | --- |
 | Resource Map rendered output | Closed | `resource-map.redacted.json` | `artifacts/proof-gaps-212-20260630/resource-map.raw.json` | Current indexed git resource compiled and approved a Resource Map artifact with 313 sources and 2203 citations. |
 | Context Pack rendered output | Closed | `context-pack.redacted.json` | `artifacts/proof-gaps-212-20260630/context-pack.raw.json` | Approved Resource Map artifact published into Context Pack `launch-proof-212` v1. |
-| Skill Export package example | Blocked | `skill-export.redacted.json` | `artifacts/proof-gaps-212-20260630/skill-export.raw.json` | Export validation passed but leak scan failed, so the approved/downloadable package example cannot be committed yet. Follow-up: [#226](https://github.com/pingchesu/sourcebrief/issues/226). |
+| Skill Export package example | Closed by #226 | `../skill-export-20260630/README.md` | `artifacts/skill-export-226-20260630/skill-export-approved.zip` | Follow-up #226 generated, approved, leak-scanned, and downloaded a public-safe package proof. |
 | Runtime doctor terminal transcript | Closed | `runtime-doctor.redacted.txt` | `artifacts/proof-gaps-212-20260630/runtime-doctor.stdout.raw.txt` | CLI doctor resolved the named workspace/project and exited 0. |
 
 ## Skill Export blocker
@@ -34,7 +34,7 @@ The export reached `status=failed` because package validation passed but leak sc
 ]
 ```
 
-This is intentionally not papered over. The generated package is not approved/downloadable until the leak-scan findings are resolved or scoped to safe quoted evidence.
+This first failure is preserved as evidence. It was closed by #226 with source-evidence redaction hardening and an approved/downloadable package proof under `docs/evaluations/skill-export-20260630/`.
 
 ## Integrity
 

@@ -1,0 +1,145 @@
+# Resource Map
+
+This file summarizes approved SourceBrief context artifacts. Use it to decide what evidence to request, not as a replacement for evidence retrieval.
+
+Pack selector: `launch-proof-212` v`1`
+
+## Approved artifacts in this pack
+
+| Resource | Type | Title | Status | Citations | Hash |
+| --- | --- | --- | --- | --- | --- |
+| SourceBrief repository launch import | resource_map | Resource Map · SourceBrief repository launch import | approved | 2203 | sha256:f08580d18d6b |
+
+## Citation locator inventory
+
+Use these as drilldown hints with `sourcebrief.search`, `sourcebrief.read_section`, `sourcebrief.get_resource_map`, or stable `sourcebrief.get_agent_context`.
+
+| Resource | Path | Title | Start | End | Citation ref |
+| --- | --- | --- | --- | --- | --- |
+| SourceBrief repository launch import | AGENTS.md | SourceBrief Agent Development Guide | 1 | 4 | 22b751b5-989 |
+| SourceBrief repository launch import | AGENTS.md | Product bar | 5 | 16 | 6cc68b82-008 |
+| SourceBrief repository launch import | AGENTS.md | Required development workflow | 17 | 32 | a2d4cdbc-a91 |
+| SourceBrief repository launch import | AGENTS.md | Claude Code usage | 33 | 56 | 8d5f0823-131 |
+| SourceBrief repository launch import | AGENTS.md | Hermes adversarial review | 57 | 72 | 5722bd0c-5de |
+| SourceBrief repository launch import | AGENTS.md | Verification gates | 73 | 133 | d704b9cb-41c |
+| SourceBrief repository launch import | AGENTS.md | No-mock policy | 134 | 146 | 1ed61231-1b9 |
+| SourceBrief repository launch import | AGENTS.md | GitHub and PR operations | 147 | 187 | 6421d666-f84 |
+| SourceBrief repository launch import | AGENTS.md | SourceBrief repo conventions | 188 | 212 | 8045e995-c5f |
+| SourceBrief repository launch import | AGENTS.md | Frontend product standards | 213 | 233 | 1464c331-aae |
+| SourceBrief repository launch import | AGENTS.md | Operational boundaries | 234 | 247 | eba9b315-f90 |
+| SourceBrief repository launch import | AGENTS.md | Communication style | 248 | 258 | ee7c200b-2ae |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/auth.py | Lines 1-120 | 1 | 120 | 4c425515-78f |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/auth.py | Lines 121-203 | 121 | 203 | d9501aa6-f7d |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/constants.py | Lines 1-38 | 1 | 38 | 5b05fbd7-1ea |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/context_packs.py | Lines 1-120 | 1 | 120 | a35afbac-052 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/context_packs.py | Lines 121-229 | 121 | 229 | 975194b4-66b |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/graph_merges.py | Lines 1-120 | 1 | 120 | 709887db-eae |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/graph_merges.py | Lines 121-240 | 121 | 240 | 32e803d6-de2 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/graph_merges.py | Lines 241-360 | 241 | 360 | 4c0ea61a-278 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/graph_merges.py | Lines 361-480 | 361 | 480 | 3385e8e8-260 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/graph_merges.py | Lines 481-494 | 481 | 494 | 30b333f9-093 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/graph_versions.py | Lines 1-120 | 1 | 120 | 1be80816-d69 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/graph_versions.py | Lines 121-236 | 121 | 236 | 13b0478f-2fd |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/remote_code.py | Lines 1-120 | 1 | 120 | e1aef128-3d2 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/remote_code.py | Lines 121-191 | 121 | 191 | 0b0f868e-59e |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/repo_agents.py | Lines 1-120 | 1 | 120 | 8e3bed35-42e |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/repo_agents.py | Lines 121-240 | 121 | 240 | 9a95e742-bbf |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/repo_agents.py | Lines 241-247 | 241 | 247 | 9fe1ff68-c77 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/resource_map.py | Lines 1-120 | 1 | 120 | 16caaeb5-fd3 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/resource_map.py | Lines 121-240 | 121 | 240 | ecf75b16-a3b |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/resource_map.py | Lines 241-278 | 241 | 278 | 522b136b-949 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/retrieval.py | Lines 1-120 | 1 | 120 | 76774a88-f3c |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/retrieval.py | Lines 121-240 | 121 | 240 | 5b5f455d-165 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/retrieval.py | Lines 241-360 | 241 | 360 | 125ed93c-f46 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/retrieval.py | Lines 361-480 | 361 | 480 | b2f1eaf4-dfb |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/retrieval.py | Lines 481-600 | 481 | 600 | bb6cd7ae-16f |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/retrieval.py | Lines 601-720 | 601 | 720 | 5257be46-122 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/retrieval.py | Lines 721-821 | 721 | 821 | 254d6a98-8b7 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/routers/__init__.py | Lines 1-1 | 1 | 1 | d15638e1-b01 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/routers/system.py | Lines 1-32 | 1 | 32 | fb4c5af7-a26 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 1-120 | 1 | 120 | c76e7205-0a1 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 121-240 | 121 | 240 | 726dff88-cc6 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 241-360 | 241 | 360 | 6232ca67-721 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 361-480 | 361 | 480 | dc13c346-bd0 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 481-600 | 481 | 600 | bc84acf6-73f |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 601-720 | 601 | 720 | 26d57468-aec |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 721-840 | 721 | 840 | 4784928c-06b |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 841-960 | 841 | 960 | c7b57cc9-598 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 961-1080 | 961 | 1080 | 26abdfee-f1f |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 1081-1200 | 1081 | 1200 | 6463b336-3b0 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 1201-1320 | 1201 | 1320 | 54bb958d-446 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 1321-1440 | 1321 | 1440 | f9912309-e40 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 1441-1560 | 1441 | 1560 | 1d05451b-7c4 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/schemas.py | Lines 1561-1569 | 1561 | 1569 | cef403e1-842 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 1-120 | 1 | 120 | 58c50a9f-638 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 121-240 | 121 | 240 | 3e97eb71-b0f |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 241-360 | 241 | 360 | a00d214a-5ed |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 361-480 | 361 | 480 | 5575320a-e78 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 481-600 | 481 | 600 | 4dd80ca3-523 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 601-720 | 601 | 720 | 038d54cd-d2b |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 721-840 | 721 | 840 | eac3d78c-ded |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 841-960 | 841 | 960 | 455cca41-b70 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 961-1080 | 961 | 1080 | 79dd6d2f-580 |
+| SourceBrief repository launch import | apps/api/sourcebrief_api/skill_exports.py | Lines 1081-1187 | 1081 | 1187 | b507fa69-699 |
+| SourceBrief repository launch import | apps/web/app/admin/page.tsx | Lines 1-11 | 1 | 11 | d6e88ecf-f7d |
+| SourceBrief repository launch import | apps/web/app/agent-files/page.tsx | Lines 1-11 | 1 | 11 | 85f39f06-67d |
+| SourceBrief repository launch import | apps/web/app/agent-profile/page.tsx | Lines 1-104 | 1 | 104 | cf0fa0e0-579 |
+| SourceBrief repository launch import | apps/web/app/api/health/route.ts | Lines 1-3 | 1 | 3 | f9b67f30-2f8 |
+| SourceBrief repository launch import | apps/web/app/ask/page.tsx | Lines 1-8 | 1 | 8 | 5e14a94a-3b0 |
+| SourceBrief repository launch import | apps/web/app/config/page.tsx | Lines 1-29 | 1 | 29 | 13acc901-d83 |
+| SourceBrief repository launch import | apps/web/app/evals/page.tsx | Lines 1-8 | 1 | 8 | 78c6ad7b-655 |
+| SourceBrief repository launch import | apps/web/app/git-env/page.tsx | Lines 1-7 | 1 | 7 | 73048f32-fa5 |
+| SourceBrief repository launch import | apps/web/app/graph-merge/page.tsx | Lines 1-120 | 1 | 120 | 5ad16180-fe0 |
+| SourceBrief repository launch import | apps/web/app/graph-merge/page.tsx | Lines 121-160 | 121 | 160 | c4859113-00e |
+| SourceBrief repository launch import | apps/web/app/graphs/page.tsx | Lines 1-103 | 1 | 103 | b214c753-780 |
+| SourceBrief repository launch import | apps/web/app/import/page.tsx | Lines 1-7 | 1 | 7 | 07fcacb0-ce1 |
+| SourceBrief repository launch import | apps/web/app/layout.tsx | Lines 1-22 | 1 | 22 | b92bb131-2c1 |
+| SourceBrief repository launch import | apps/web/app/login/page.tsx | Lines 1-49 | 1 | 49 | 65aea370-f11 |
+| SourceBrief repository launch import | apps/web/app/maintenance/page.tsx | Lines 1-11 | 1 | 11 | a7f93a9b-f03 |
+| SourceBrief repository launch import | apps/web/app/page.tsx | Lines 1-120 | 1 | 120 | 6388683e-8b3 |
+| SourceBrief repository launch import | apps/web/app/page.tsx | Lines 121-240 | 121 | 240 | da39ba4f-cb4 |
+| SourceBrief repository launch import | apps/web/app/page.tsx | Lines 241-246 | 241 | 246 | 0de1b302-43d |
+| SourceBrief repository launch import | apps/web/app/quality/page.tsx | Lines 1-120 | 1 | 120 | 4289adff-590 |
+| SourceBrief repository launch import | apps/web/app/quality/page.tsx | Lines 121-240 | 121 | 240 | 366c0f30-078 |
+| SourceBrief repository launch import | apps/web/app/quality/page.tsx | Lines 241-360 | 241 | 360 | ace8feb0-8a1 |
+| SourceBrief repository launch import | apps/web/app/quality/page.tsx | Lines 361-452 | 361 | 452 | 623f49a7-f5e |
+| SourceBrief repository launch import | apps/web/app/repo-agents/page.tsx | Lines 1-120 | 1 | 120 | 490f7974-6e2 |
+| SourceBrief repository launch import | apps/web/app/resources/page.tsx | Lines 1-7 | 1 | 7 | f01adf1f-687 |
+| SourceBrief repository launch import | apps/web/app/review/page.tsx | Lines 1-8 | 1 | 8 | 0140ba59-254 |
+| SourceBrief repository launch import | apps/web/app/self-improvement/page.tsx | Lines 1-120 | 1 | 120 | d79cffcb-2ec |
+| SourceBrief repository launch import | apps/web/app/self-improvement/page.tsx | Lines 121-157 | 121 | 157 | 17dcd060-490 |
+| SourceBrief repository launch import | apps/web/app/sources/page.tsx | Lines 1-120 | 1 | 120 | 65e5f188-7a8 |
+| SourceBrief repository launch import | apps/web/app/sources/page.tsx | Lines 121-240 | 121 | 240 | 6a7a2190-688 |
+| SourceBrief repository launch import | apps/web/app/sources/page.tsx | Lines 241-360 | 241 | 360 | d38ee8be-db0 |
+| SourceBrief repository launch import | apps/web/app/sources/page.tsx | Lines 361-480 | 361 | 480 | b0a8cc9a-319 |
+| SourceBrief repository launch import | apps/web/app/sources/page.tsx | Lines 481-600 | 481 | 600 | 8004fed4-5ee |
+| SourceBrief repository launch import | apps/web/app/sources/page.tsx | Lines 601-720 | 601 | 720 | eaed9e0c-c62 |
+| SourceBrief repository launch import | apps/web/app/sources/page.tsx | Lines 721-840 | 721 | 840 | 1e0ca6cf-331 |
+| SourceBrief repository launch import | apps/web/app/sources/page.tsx | Lines 841-869 | 841 | 869 | 41310a17-468 |
+| SourceBrief repository launch import | apps/web/app/users/page.tsx | Lines 1-60 | 1 | 60 | bde62651-406 |
+| SourceBrief repository launch import | apps/web/app/workbench/page.tsx | Lines 1-120 | 1 | 120 | fe1d1436-c25 |
+| SourceBrief repository launch import | apps/web/app/workbench/page.tsx | Lines 121-240 | 121 | 240 | 8f81e3d8-d4c |
+| SourceBrief repository launch import | apps/web/app/workbench/page.tsx | Lines 241-297 | 241 | 297 | b91a7032-562 |
+| SourceBrief repository launch import | apps/web/components/AgentContextPreview.tsx | Lines 1-27 | 1 | 27 | e9fa3a6b-2c5 |
+| SourceBrief repository launch import | apps/web/components/AppShell.tsx | Lines 1-52 | 1 | 52 | a208a15e-a67 |
+| SourceBrief repository launch import | apps/web/components/ResourceScopePicker.tsx | Lines 1-28 | 1 | 28 | 592516fc-168 |
+| SourceBrief repository launch import | apps/web/components/ui.tsx | Lines 1-103 | 1 | 103 | ba5bed46-93e |
+| SourceBrief repository launch import | apps/web/lib/api.ts | Lines 1-57 | 1 | 57 | d9b7821d-efb |
+| SourceBrief repository launch import | apps/web/lib/lifecycle.ts | Lines 1-97 | 1 | 97 | 60f0bc56-d63 |
+| SourceBrief repository launch import | apps/web/lib/platform-context.tsx | Lines 1-120 | 1 | 120 | 65f47ee6-fa6 |
+| SourceBrief repository launch import | apps/web/lib/platform-context.tsx | Lines 121-210 | 121 | 210 | e47e98cf-429 |
+| SourceBrief repository launch import | apps/web/lib/settings.ts | Lines 1-42 | 1 | 42 | 11b34e47-0dd |
+| SourceBrief repository launch import | apps/web/lib/types.ts | Lines 1-120 | 1 | 120 | e14a3ec2-83f |
+| SourceBrief repository launch import | apps/web/lib/types.ts | Lines 121-125 | 121 | 125 | 2d90f04b-dd7 |
+| SourceBrief repository launch import | apps/web/next-env.d.ts | Lines 1-6 | 1 | 6 | 3a8b6e94-401 |
+| SourceBrief repository launch import | apps/web/package.json | Lines 1-27 | 1 | 27 | be97c526-314 |
+| SourceBrief repository launch import | apps/web/playwright.config.ts | Lines 1-26 | 1 | 26 | 886f82ae-7ae |
+| SourceBrief repository launch import | apps/web/tests/e2e/source-connect.spec.ts | Lines 1-120 | 1 | 120 | 8d4b10e4-087 |
+| SourceBrief repository launch import | apps/web/tests/e2e/source-connect.spec.ts | Lines 121-175 | 121 | 175 | 32c082f3-3e6 |
+
+## MCP drilldown examples
+
+```text
+sourcebrief.search(query=<question>, context_pack_key="launch-proof-212", context_pack_version=1)
+sourcebrief.read_section(resource_id=<from result>, context_artifact_citation_id=<from result>, context_pack_key="launch-proof-212", context_pack_version=1)
+```
