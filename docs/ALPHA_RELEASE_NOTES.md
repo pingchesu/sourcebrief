@@ -25,10 +25,11 @@ SourceBrief alpha is an open-source, multi-tenant, project-based context platfor
 - Provider health endpoint and embedding namespace drift diagnostics.
 - Runtime-specific `agent-context` API with usage accounting.
 - Central MCP endpoint exposing context/source-intelligence tools plus opt-in patch proposal and PR approval records.
+- Artifact-first self-improvement API/CLI/UI loop with review bundles, deterministic reviewer reports, regression proposals, validation gates, staged receipts, redacted history, and no-silent-mutation boundaries.
 
-### SaaS/ops surface
+### Local web/ops alpha surface
 
-- Next.js alpha web console for workspace/project/resource/token/review/agent flows.
+- Next.js alpha web console for workspace/project/resource/token/review/agent flows, including Quality and Self-improvement pages.
 - Scoped API tokens with allowlists for workspace/project/resource boundaries.
 - Docker Compose local alpha stack using Postgres/pgvector and Redis.
 - Operator runbook for health, logs, queues, stuck index runs, migrations, rollback, and reset.
@@ -37,7 +38,7 @@ SourceBrief alpha is an open-source, multi-tenant, project-based context platfor
 ### Quality/release gate
 
 - Unit and integration tests.
-- Real-service Docker QA smoke covering ingestion, indexing, retrieval, MCP, auth denial, provider diagnostics, web health, and lifecycle flows.
+- Real-service Docker QA smoke covering ingestion, indexing, retrieval, MCP, auth denial, provider diagnostics, web health, lifecycle flows, and the self-improvement artifact loop.
 - Alpha eval demo dataset with natural-language repo/runbook/cross-resource golden queries, relevance-budgeted citation checks, retrieval hit quality records, usage/freshness assertions, and cross-tenant leak checks.
 - Release gate records `artifacts/alpha-eval-report.json`.
 

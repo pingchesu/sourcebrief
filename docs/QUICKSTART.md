@@ -263,10 +263,10 @@ make verify
 10. QA smoke flow
 11. alpha evaluation, writing `artifacts/alpha-eval-report.json`
 
-Expected final output includes:
+Expected final output includes the following summary lines. The smoke summary is not a byte-for-byte contract, but the current runner uses Unicode arrows between stages:
 
 ```text
-QA smoke passed: document+git ingestion -> snapshots -> chunks -> embeddings -> code symbols -> graph index -> lexical/hybrid/GraphRAG context retrieval with citations, CLI search, agent profile, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, index-run logs, audit events, RQ worker, auth denial, frontend health
+QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, CLI search, agent profile, runtime install plan, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, self-improvement artifact loop, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, Hermes integration script, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health
 Alpha eval passed: 3 golden questions, report=artifacts/alpha-eval-report.json
 ```
 

@@ -34,7 +34,6 @@ Visual artifacts below are real captured product proof, not mockups. When recapt
 | --- | --- | --- | --- | --- | --- |
 | Product walkthrough GIF + three screenshots | PR #104 / `6fd0df6` | Local Docker Compose stack, dev-auth demo session, configured local API/web URLs | 2026-06-26 | Command Center `/` -> Sources `/sources` -> Workbench citation card `/workbench` | Citation screenshot is cropped to the human evidence card and excludes raw resource/snapshot IDs; GIF is rebuilt only from the committed screenshots; launch signoff must pair recaptures with a fresh redacted bundle from `make collect-e2e-evidence`. |
 | SourceBrief 50Q launch walkthrough screenshots | Issue #141 / `abc4c71` | Local Docker Compose stack, session login, API `:18000`, web `:3105` | 2026-06-27 | Login `/login` -> Command Center `/` -> Settings `/config` -> Sources `/sources` -> Workbench `/workbench` -> Agent Profile `/agent-profile` -> generated eval report | Screenshot set contains no raw tokens, UUIDs, or private local paths; generated JSON report stays under ignored `artifacts/`. |
-
 The full operation path for the 50Q walkthrough is documented in [`evaluations/sourcebrief-launch-50q-20260627.md`](evaluations/sourcebrief-launch-50q-20260627.md), including exact commands, auth order, workspace/project creation, bounded git import settings, MCP/CLI scenario calls, generated artifact tree, and a screenshot-by-screenshot proof table.
 
 ## Committed runtime output proof
@@ -67,6 +66,7 @@ These are not screenshots, but they are stronger than prose because they run aga
 | Behavior | Test evidence |
 | --- | --- |
 | Expanded MCP tools, aliases, `resource_ref`, pinned `read_section`, Context Pack scoping, graph overview. | `tests/integration/test_manifest_diff_flow.py::test_expanded_mcp_runtime_tools_f` |
+| Self-improvement product surface: overview, no-silent-mutation boundary, MVP smoke, redacted review history/artifact detail, and sleep dry-run. | PR #206 / `6babf67`; `make qa-smoke`; `tests/unit/test_self_improvement_mvp_product.py`; visual/browser recapture remains a launch-signoff follow-up if this page becomes part of public screenshots. |
 | Agent-context API and MCP `tools/list` / `tools/call` contract. | `tests/integration/test_agent_integrations_flow.py::test_agent_context_api_and_mcp_tool_call` |
 | Remote code search/grep/read/symbol MCP flow. | `tests/integration/test_remote_code_tools_flow.py::test_remote_code_http_and_mcp_flow` |
 | Runtime setup/doctor/token preset behavior. | `tests/unit/test_cli.py` doctor/runtime/token tests plus real local smoke recorded in PR #68. |
