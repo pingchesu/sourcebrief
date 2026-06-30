@@ -76,7 +76,7 @@ FORBIDDEN_PATTERNS = [
     r"secret-token",
     r"gh[pousr]_[A-Za-z0-9_]{20,}",
     r"/Users/",
-    r"[A-Za-z]:\\\\Users\\\\",
+    r"[A-Za-z]:\\Users\\",
     r"\\\\\\\\[^\s\\\\]+\\\\[^\s\\\\]+",
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
 ]
@@ -87,7 +87,6 @@ CASE_SENSITIVE_FORBIDDEN_PATTERNS = {
     r"/qa-fixtures/",
     r"cs_[A-Za-z0-9_-]{12,}",
     r"/Users/",
-    r"[A-Za-z]:\\\\Users\\\\",
     r"\\\\\\\\[^\s\\\\]+\\\\[^\s\\\\]+",
 }
 
@@ -615,7 +614,7 @@ def _render_readme(ctx: dict[str, Any], status: str) -> str:
 
 This is a generated SourceBrief Skill Pack for Context Pack `{version.pack_key}` v`{version.version}`.
 
-Status: `{status}`. External install/copy is allowed only after the export is `approved` in SourceBrief.
+Package generation status: `{status}` at creation. The SourceBrief export approval state is authoritative in `manifest.json` (`export_status`) and the API/export metadata. External install/copy is allowed only after that approval state is `approved` in SourceBrief.
 
 ## What this package contains
 

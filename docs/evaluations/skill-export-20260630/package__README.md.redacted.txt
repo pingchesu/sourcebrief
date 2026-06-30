@@ -2,7 +2,7 @@
 
 This is a generated SourceBrief Skill Pack for Context Pack `launch-proof-212` v`1`.
 
-Status: `draft`. External install/copy is allowed only after the export is `approved` in SourceBrief.
+Package generation status: `draft` at creation. The SourceBrief export approval state is authoritative in `manifest.json` (`export_status`) and the API/export metadata. External install/copy is allowed only after that approval state is `approved` in SourceBrief.
 
 ## What this package contains
 

@@ -1,8 +1,8 @@
 [
   {
-    "bytes": 1285,
+    "bytes": 1446,
     "path": "README.md",
-    "sha256": "sha256:85921c8200de8e73042160f677c1f803acbeea45fb62b9f86420136fdb6f8026"
+    "sha256": "sha256:d6b2649d7676b37adda3818a279e05d81c95423eb2b3cb959a226830d54421a0"
   },
   {
     "bytes": 8028,
@@ -17,7 +17,7 @@
   {
     "bytes": 7937,
     "path": "manifest.json",
-    "sha256": "sha256:cc3cf180477f29c8eaca5c76a63c30cfb8bd28cae39c1051e1677a685b65018d"
+    "sha256": "sha256:b58d3cbfe9ecf124cd6cdca12fd8260798cbcb0bd988e2239cee072e7c4fdd09"
   },
   {
     "bytes": 895,

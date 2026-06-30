@@ -73,3 +73,28 @@ def test_skill_export_validation_requires_self_improvement_boundary() -> None:
     assert any("Self-improvement review loop boundary" in message for message in messages)
     assert any("sourcebrief.review-bundle.v1" in message for message in messages)
     assert any("sourcebrief review stage" in message for message in messages)
+
+
+def test_skill_export_readme_distinguishes_generation_status_from_approval_state() -> None:
+    class Version:
+        pack_key = "demo"
+        version = 7
+
+    readme = skill_exports._render_readme(  # noqa: SLF001
+        {"title": "Demo", "version": Version(), "counts": {"resources": 1, "artifacts": 2, "citations": 3}},
+        "draft",
+    )
+
+    assert "Status: `draft`" not in readme
+    assert "Package generation status: `draft` at creation" in readme
+    assert "manifest.json" in readme
+    assert "export_status" in readme
+    assert "approval state is `approved`" in readme
+
+
+def test_skill_export_scan_rejects_lowercase_windows_user_paths() -> None:
+    unsafe = "local path c:\\users\\alice\\secret.txt should not ship"
+    scan = skill_exports._scan_files([{"path": "references/resource-map.md", "bytes": len(unsafe), "content": unsafe}])  # noqa: SLF001
+
+    assert scan["ok"] is False
+    assert any(finding["message"] == r"[A-Za-z]:\\Users\\" for finding in scan["findings"])
