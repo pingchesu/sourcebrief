@@ -609,9 +609,9 @@ def main() -> int:
     wait_http(f"{args.web_url}/api/health")
 
     headers, session_token, auth_mode = authenticate(args.api_url, env_file)
-    workspace_id, workspace_name, project_id, project_name, resource_id, resource_name, index_run, commit = create_walkthrough_project(args.api_url, headers, ts)
     if session_token is None and not args.skip_screenshots:
         raise RuntimeError("browser screenshot proof requires a /auth/login session token; set admin credentials or pass --skip-screenshots for API-only RISK evidence")
+    workspace_id, workspace_name, project_id, project_name, resource_id, resource_name, index_run, commit = create_walkthrough_project(args.api_url, headers, ts)
     ctx = WalkthroughContext(args.api_url, args.web_url, headers, session_token, auth_mode, workspace_id, workspace_name, project_id, project_name, resource_id, resource_name, index_run)
     questions = load_questions(args.question_bank, args.question_limit)
     question_bank_sha256 = sha256_file(args.question_bank)

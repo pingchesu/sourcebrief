@@ -72,8 +72,8 @@ Local artifact bundle: `artifacts/sourcebrief-launch-50q-210-20260630160727-reru
 | `02-dashboard.png` | `sha256:514f328ed2053dd0c79f050cf2922f189845791610e3978676035732a857baa4` | 240013 |
 | `03-selection-settings.png` | `sha256:60895009db79ed5b7f43d9a8795e897009789cc8b849b79a8115c3d0b2ffca7e` | 145950 |
 | `04-import-sources.png` | `sha256:dd8a025e90c962c8422a3c7f0039799b035d02a5d7e7dc04fc1b7702d3f54eb2` | 405748 |
-| `05-workbench-citations.png` | `sha256:2e3492963b4fb5d8dff67936c1dcc14e810256bc6bf8ea228565e6bae1cc0c0e` | 363456 |
-| `06-agent-profile.png` | `sha256:a7acc9e1489f67d35633da3199c1c53c7267931cd651cfcdec82faeeba378616` | 858349 |
+| `05-workbench-citations.png` | `sha256:0ef765cc0b19a936315765b6290b31e06fc9a78904c2073fd0d53946fe213836` | 238014 |
+| `06-agent-profile.png` | `sha256:2549bb1299e4a9e39a31835cc6d760a1a83bb5d669da06a0941a7214ea0d807c` | 490687 |
 | `07-eval-report.png` | `sha256:cebf85bfc5c019f69f5ecd697961235ca53d9d98b8e0a8563df23929e42da36b` | 326617 |
 
 ## Browser console/network transcript
@@ -107,6 +107,37 @@ The raw transcript stays in the ignored local artifact bundle at `browser/consol
 7. Exercise MCP `tools/list`, MCP `sourcebrief.get_agent_context`, MCP `sourcebrief.grep_code`, and CLI `sourcebrief --json search` using name-first workspace/project/resource selectors.
 8. Capture Playwright screenshots plus browser console/network transcript.
 9. Inspect screenshots for visible tokens, raw UUIDs, or private local paths before committing this sanitized screenshot set.
+
+
+## Reproducible isolated-stack convention
+
+Future #210-style proof reruns should not rely on the default shared `make compose-up` stack when the report claims isolated random ports/fresh volumes. Use an ignored per-run env file and tear the stack down after capture:
+
+```bash
+RUN_ID="launch-50q-$(date -u +%Y%m%d%H%M%S)"
+COMPOSE_PROJECT_NAME="sourcebrief-${RUN_ID}"
+SOURCEBRIEF_API_PORT="$(python - <<'PY'
+import socket
+s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()
+PY
+)"
+SOURCEBRIEF_WEB_PORT="$(python - <<'PY'
+import socket
+s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()
+PY
+)"
+SOURCEBRIEF_DEV_AUTH=false \
+COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME" \
+SOURCEBRIEF_API_PORT="$SOURCEBRIEF_API_PORT" \
+SOURCEBRIEF_WEB_PORT="$SOURCEBRIEF_WEB_PORT" \
+python scripts/launch_50q_walkthrough.py \
+  --api-url "http://127.0.0.1:${SOURCEBRIEF_API_PORT}" \
+  --web-url "http://127.0.0.1:${SOURCEBRIEF_WEB_PORT}" \
+  --artifact-dir "artifacts/${RUN_ID}"
+COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME" docker compose down -v
+```
+
+The concrete `.env`/credential values and raw artifact bundle remain ignored local files; the public proof should commit only redacted screenshots, hashes, transcript summary counts, and the exact commit SHA under test.
 
 ## Notes
 
