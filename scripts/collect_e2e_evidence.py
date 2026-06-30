@@ -115,10 +115,20 @@ def configured_urls(env_file: Path, environ: Mapping[str, str]) -> dict[str, str
     return {"api_url": api_url.rstrip("/"), "web_url": web_url.rstrip("/"), "api_port": api_port, "web_port": web_port}
 
 
-def run_command(command: list[str], *, cwd: Path, timeout: int = 120) -> dict[str, Any]:
+def run_command(
+    command: list[str], *, cwd: Path, timeout: int = 120, env: Mapping[str, str] | None = None
+) -> dict[str, Any]:
     started = datetime.now(UTC).isoformat()
     try:
-        result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, timeout=timeout, check=False)
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            env=dict(env) if env is not None else None,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
         exit_code = result.returncode
         stdout = redact_value("stdout", result.stdout) or ""
         stderr = redact_value("stderr", result.stderr) or ""
@@ -154,6 +164,15 @@ def git_state(cwd: Path) -> dict[str, Any]:
     }
 
 
+def command_failed(item: dict[str, Any]) -> bool:
+    return int(item.get("exit_code") or 0) != 0
+
+
+def health_failed(item: dict[str, Any]) -> bool:
+    status = item.get("status_code")
+    return not isinstance(status, int) or status >= 400
+
+
 def write_bundle(output_dir: Path, manifest: dict[str, Any]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -174,6 +193,10 @@ def write_bundle(output_dir: Path, manifest: dict[str, Any]) -> None:
     lines.extend(["", "## Health checks"])
     for item in manifest["health_checks"]:
         lines.append(f"- `{item['url']}` -> {item.get('status_code') or item.get('error')}")
+    lines.extend(["", "## Status"])
+    lines.append(f"- Overall status: `{manifest['status']}`")
+    for failure in manifest.get("failures", []):
+        lines.append(f"- Failure: `{failure}`")
     (output_dir / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -186,13 +209,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-health", action="store_true", help="do not call API/web health endpoints")
     parser.add_argument("--command", action="append", default=[], help="extra shell command to run and capture, repeatable")
     parser.add_argument("--include-file", action="append", default=[], help="label=path file to copy/redact into included_files metadata")
+    parser.add_argument(
+        "--allow-stale-include",
+        action="store_true",
+        help="record included files even when their mtime predates this collector run",
+    )
+    parser.add_argument(
+        "--allow-failures",
+        action="store_true",
+        help="write the bundle but return 0 even when health checks, commands, or freshness checks fail",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     cwd = Path.cwd()
-    captured_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    started_at_dt = datetime.now(UTC).replace(microsecond=0)
+    captured_at = started_at_dt.isoformat().replace("+00:00", "Z")
     run_id = captured_at.replace(":", "").replace("-", "").replace("Z", "")
     output_dir = Path(args.output_dir) if args.output_dir else Path("artifacts") / "e2e" / run_id
     env_file = Path(args.env_file)
@@ -205,11 +239,16 @@ def main(argv: list[str] | None = None) -> int:
         or f"sourcebrief_e2e_{run_id}"
     )
 
+    compose_env = os.environ.copy()
+    compose_env["COMPOSE_PROJECT_NAME"] = compose_project
+
     commands: list[dict[str, Any]] = []
     if not args.skip_docker:
-        commands.append(run_command(["docker", "compose", "ps", "--format", "json"], cwd=cwd))
+        commands.append(
+            run_command(["docker", "compose", "-p", compose_project, "ps", "--format", "json"], cwd=cwd, env=compose_env)
+        )
     for command in args.command:
-        commands.append(run_command(["bash", "-lc", command], cwd=cwd, timeout=900))
+        commands.append(run_command(["bash", "-lc", command], cwd=cwd, timeout=900, env=compose_env))
 
     health_checks: list[dict[str, Any]] = []
     if not args.skip_health:
@@ -223,13 +262,34 @@ def main(argv: list[str] | None = None) -> int:
         label, raw_path = item.split("=", 1)
         path = Path(raw_path)
         content = path.read_text(encoding="utf-8") if path.exists() else ""
-        included_files.append({"label": label, "path": raw_path, "exists": path.exists(), "content": redact_text(content)})
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, UTC).replace(microsecond=0) if path.exists() else None
+        stale = bool(mtime and mtime < started_at_dt)
+        included_files.append(
+            {
+                "label": label,
+                "path": raw_path,
+                "exists": path.exists(),
+                "mtime": mtime.isoformat().replace("+00:00", "Z") if mtime else None,
+                "stale_for_this_run": stale,
+                "content": redact_text(content),
+            }
+        )
+
+    failures: list[str] = []
+    failures.extend(f"command_failed:{' '.join(item['command'])}" for item in commands if command_failed(item))
+    failures.extend(f"health_failed:{item['url']}" for item in health_checks if health_failed(item))
+    failures.extend(f"included_file_missing:{item['label']}" for item in included_files if not item["exists"])
+    if not args.allow_stale_include:
+        failures.extend(f"included_file_stale:{item['label']}" for item in included_files if item.get("stale_for_this_run"))
+    status = "PASS" if not failures else "FAIL"
 
     manifest = {
         "schema_version": 1,
         "run_id": run_id,
         "captured_at": captured_at,
         "redaction_policy": "Secret-looking env keys and token-like values are replaced with ***REDACTED***.",
+        "status": status,
+        "failures": failures,
         "git": git_state(cwd),
         "compose": {"project_name": compose_project},
         "urls": urls,
@@ -240,8 +300,18 @@ def main(argv: list[str] | None = None) -> int:
     }
     manifest = redact_manifest(manifest)
     write_bundle(output_dir, manifest)
-    print(json.dumps({"status": "written", "output_dir": str(output_dir), "manifest": str(output_dir / "manifest.json")}, sort_keys=True))
-    return 0
+    print(
+        json.dumps(
+            {
+                "status": status.lower(),
+                "output_dir": str(output_dir),
+                "manifest": str(output_dir / "manifest.json"),
+                "failures": failures,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0 if status == "PASS" or args.allow_failures else 1
 
 
 if __name__ == "__main__":

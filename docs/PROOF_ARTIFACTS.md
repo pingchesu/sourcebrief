@@ -13,6 +13,8 @@ A proof artifact must be one of:
 
 Do not add mock screenshots, invented JSON, fake IDs, or hand-written "sample" output unless it is clearly labeled as illustrative and not proof.
 
+For launch-facing wording, pair this manifest with the [claim ledger](CLAIM_LEDGER.md). Historical artifacts prove that a path has worked before; they do not prove the current candidate until recaptured or rerun against the declared SHA.
+
 ## Committed visual proof
 
 Visual artifacts below are real captured product proof, not mockups. When recapturing for a launch signoff, pair them with a redacted [E2E evidence bundle](E2E_EVIDENCE.md) that records the current commit, stack mode, `COMPOSE_PROJECT_NAME`, configured ports, capture date, redaction policy, and exact UI/command path.

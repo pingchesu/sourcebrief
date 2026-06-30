@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 
@@ -61,6 +62,62 @@ def test_evidence_uses_env_file_before_shell_environment(tmp_path):
     assert summary["SOURCEBRIEF_DEV_AUTH"] == "false"
 
 
+def test_collector_fails_closed_on_command_failure(tmp_path, monkeypatch):
+    module = load_module()
+    output = tmp_path / "bundle"
+    env_file = tmp_path / ".env"
+    env_file.write_text("", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = module.main(
+        [
+            "--output-dir",
+            str(output),
+            "--env-file",
+            str(env_file),
+            "--skip-docker",
+            "--skip-health",
+            "--command",
+            "exit 7",
+        ]
+    )
+
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    assert exit_code == 1
+    assert manifest["status"] == "FAIL"
+    assert manifest["failures"] == ["command_failed:bash -lc exit 7"]
+
+
+def test_collector_records_compose_project_and_stale_includes(tmp_path, monkeypatch):
+    module = load_module()
+    output = tmp_path / "bundle"
+    env_file = tmp_path / ".env"
+    included = tmp_path / "old-report.json"
+    env_file.write_text("COMPOSE_PROJECT_NAME=sourcebrief_e2e_test\n", encoding="utf-8")
+    included.write_text('{"ok":true}\n', encoding="utf-8")
+    os.utime(included, (1, 1))
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = module.main(
+        [
+            "--output-dir",
+            str(output),
+            "--env-file",
+            str(env_file),
+            "--skip-docker",
+            "--skip-health",
+            "--include-file",
+            f"old={included}",
+        ]
+    )
+
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    assert exit_code == 1
+    assert manifest["compose"]["project_name"] == "sourcebrief_e2e_test"
+    assert manifest["included_files"][0]["stale_for_this_run"] is True
+    assert manifest["failures"] == ["included_file_stale:old"]
+
+
 def test_bundle_writer_creates_redacted_manifest_without_live_checks(tmp_path, monkeypatch):
     module = load_module()
     output = tmp_path / "bundle"
@@ -86,6 +143,7 @@ def test_bundle_writer_creates_redacted_manifest_without_live_checks(tmp_path, m
             "printf 'SOURCEBRIEF_ADMIN_PASSWORD=super-secret\\nSOURCEBRIEF_TOKEN=plain-token\\nAuthorization: Bearer abc.def.ghi\\n'",
             "--include-file",
             f"sample={env_file}",
+            "--allow-stale-include",
         ]
     )
 

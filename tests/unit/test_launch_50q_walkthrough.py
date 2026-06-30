@@ -25,7 +25,12 @@ def test_launch_50q_question_bank_has_exactly_50_sanitized_questions() -> None:
     assert len(bank["questions"]) == 50
     ids = [question["id"] for question in bank["questions"]]
     assert len(set(ids)) == 50
-    assert all(question["query"] and question["expected_terms"] for question in bank["questions"])
+    assert all(question["query"] for question in bank["questions"])
+    negative_controls = [
+        question for question in bank["questions"] if question.get("expected_result") == "expected_unanswerable"
+    ]
+    assert negative_controls
+    assert all(not question.get("expected_terms") for question in negative_controls)
     serialized = json.dumps(bank)
     assert "cs_" not in serialized
 
@@ -43,6 +48,46 @@ def test_launch_50q_followup_terms_have_launch_doc_anchors() -> None:
     assert "redact token values" in runtime_usage
     assert "--redact-token" in runtime_plan
     assert "plaintext bearer tokens" in runtime_plan
+
+
+def test_launch_50q_defaults_follow_makefile_ports(tmp_path: Path, monkeypatch) -> None:
+    module = load_module()
+    env_file = tmp_path / ".env"
+    env_file.write_text("SOURCEBRIEF_API_PORT=18123\nSOURCEBRIEF_WEB_PORT=13123\n", encoding="utf-8")
+    monkeypatch.setenv("SOURCEBRIEF_API_URL", "http://localhost:18999")
+
+    assert module.configured_url("api", module.load_env_file(env_file)) == "http://localhost:18999"
+    assert module.configured_url("web", module.load_env_file(env_file)) == "http://localhost:13123"
+    assert module.default_artifact_dir(123).name == "sourcebrief-launch-50q-123"
+
+
+def test_launch_50q_verdict_blocks_failed_questions_and_missing_negative_control() -> None:
+    module = load_module()
+    verdict, reasons = module.launch_verdict(
+        index_status="succeeded",
+        results=[{"id": "q1", "mechanical_status": "fail"}],
+        quality_warnings=[],
+        scenario_results={"mcp_context_is_error": False, "grep_code_is_error": False, "cli_search_exit_code": 0},
+        negative_control_count=0,
+    )
+
+    assert verdict == "BLOCK"
+    assert "question_failures:q1" in reasons
+    assert "missing_expected_unanswerable_negative_control" in reasons
+
+
+def test_launch_50q_verdict_risk_for_quality_warnings_only() -> None:
+    module = load_module()
+    verdict, reasons = module.launch_verdict(
+        index_status="succeeded",
+        results=[{"id": "q1", "mechanical_status": "pass"}],
+        quality_warnings=[{"id": "q1"}],
+        scenario_results={"mcp_context_is_error": False, "grep_code_is_error": False, "cli_search_exit_code": 0},
+        negative_control_count=1,
+    )
+
+    assert verdict == "RISK"
+    assert reasons == ["answer_quality_warnings_present"]
 
 
 def test_launch_50q_redaction_strips_tokens_passwords_and_ids() -> None:

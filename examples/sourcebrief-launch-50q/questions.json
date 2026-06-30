@@ -23,7 +23,7 @@
     {"id":"sourcebrief-launch-017","category":"retrieval","query":"How does SourceBrief separate mechanical retrieval checks from synthesized answer quality?","expected_terms":["citation","answer"]},
     {"id":"sourcebrief-launch-018","category":"retrieval","query":"What metadata should be preserved in citation-backed answers?","expected_terms":["content_hash","resource_id"]},
     {"id":"sourcebrief-launch-019","category":"retrieval","query":"How do lexical, vector, graph, or rerank scores appear in context evidence?","expected_terms":["score","graph"]},
-    {"id":"sourcebrief-launch-020","category":"retrieval","query":"How should unsupported claims or negative controls be handled?","expected_terms":["unsupported","evidence"]},
+    {"id":"sourcebrief-launch-020","category":"retrieval","query":"What production Kubernetes Helm chart command does SourceBrief document for public SaaS deployment?","expected_terms":[],"expected_result":"expected_unanswerable","min_citations":0,"bad_answer_criteria":["Claims SourceBrief has public SaaS or Helm production packaging ready"]},
     {"id":"sourcebrief-launch-021","category":"mcp","query":"What are the first MCP tools SourceBrief exposes for agent use?","expected_terms":["sourcebrief.ask","sourcebrief.lookup"]},
     {"id":"sourcebrief-launch-022","category":"mcp","query":"How should an agent drill down from a high-level answer to exact sections?","expected_terms":["read_section","citation"]},
     {"id":"sourcebrief-launch-023","category":"mcp","query":"What is the difference between sourcebrief.search and sourcebrief.get_agent_context?","expected_terms":["search","agent"]},

@@ -11,6 +11,7 @@ scenarios, and capture sanitized browser screenshots.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import os
@@ -25,7 +26,6 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_QUESTION_BANK = ROOT / "examples" / "sourcebrief-launch-50q" / "questions.json"
-DEFAULT_ARTIFACT_DIR = ROOT / "artifacts" / "sourcebrief-launch-50q"
 TOKEN_RE = re.compile(r"(cs_[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9_.-]{12,})")
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
@@ -82,6 +82,93 @@ def load_env_file(path: Path) -> dict[str, str]:
 
 def env_value(name: str, env_file: dict[str, str], default: str | None = None) -> str | None:
     return os.getenv(name) or env_file.get(name) or default
+
+
+def configured_url(kind: str, env_file: dict[str, str]) -> str:
+    if kind == "api":
+        explicit = env_value("SOURCEBRIEF_API_URL", env_file) or env_value("API_URL", env_file)
+        port = env_value("SOURCEBRIEF_API_PORT", env_file) or env_value("CONTEXTSMITH_API_PORT", env_file) or "18000"
+    else:
+        explicit = env_value("SOURCEBRIEF_WEB_URL", env_file) or env_value("WEB_URL", env_file)
+        port = env_value("SOURCEBRIEF_WEB_PORT", env_file) or env_value("CONTEXTSMITH_WEB_PORT", env_file) or "13000"
+    return (explicit or f"http://localhost:{port}").rstrip("/")
+
+
+def default_artifact_dir(ts: int) -> Path:
+    return ROOT / "artifacts" / f"sourcebrief-launch-50q-{ts}"
+
+
+def sha256_file(path: Path) -> str:
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def failure_result(question: dict[str, Any], failure: str, latency_ms: float = 0.0) -> dict[str, Any]:
+    return {
+        "id": str(question.get("id", "unknown")),
+        "category": question.get("category"),
+        "query": str(question.get("query", "")),
+        "expected_result": question.get("expected_result", "pass"),
+        "mechanical_status": "fail",
+        "failures": [failure],
+        "answer_quality_warnings": [],
+        "latency_ms": latency_ms,
+        "citation_count": 0,
+        "answer_outcome": None,
+        "quality_note": "question failed before citation evidence could be evaluated",
+        "citation_preview": [],
+        "coverage_warnings": [],
+    }
+
+
+def launch_verdict(
+    *,
+    index_status: str | None,
+    results: list[dict[str, Any]],
+    quality_warnings: list[dict[str, Any]],
+    scenario_results: dict[str, Any],
+    negative_control_count: int,
+) -> tuple[str, list[str]]:
+    blockers: list[str] = []
+    if index_status != "succeeded":
+        blockers.append(f"index_status:{index_status}")
+    failed_questions = [item["id"] for item in results if item.get("mechanical_status") != "pass"]
+    if failed_questions:
+        blockers.append("question_failures:" + ",".join(failed_questions[:10]))
+    if negative_control_count <= 0:
+        blockers.append("missing_expected_unanswerable_negative_control")
+    if scenario_results.get("mcp_context_is_error"):
+        blockers.append("mcp_context_scenario_failed")
+    if scenario_results.get("grep_code_is_error"):
+        blockers.append("grep_code_scenario_failed")
+    if scenario_results.get("cli_search_exit_code") not in {0, None}:
+        blockers.append("cli_search_scenario_failed")
+    if blockers:
+        return "BLOCK", blockers
+    if quality_warnings:
+        return "RISK", ["answer_quality_warnings_present"]
+    return "PASS", []
+
+
+def run_question_safely(api_url: str, ctx: WalkthroughContext, question: dict[str, Any]) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        return evaluate_question(api_url, ctx, question)
+    except Exception as exc:  # noqa: BLE001 - launch evidence must preserve first question failure
+        return failure_result(question, f"exception:{type(exc).__name__}:{str(exc)[:300]}", round((time.perf_counter() - started) * 1000, 2))
+
+
+def run_scenarios_safely(api_url: str, ctx: WalkthroughContext) -> dict[str, Any]:
+    try:
+        return run_scenarios(api_url, ctx)
+    except Exception as exc:  # noqa: BLE001 - keep report generation alive for first-failure evidence
+        return {
+            "scenario_exception": f"{type(exc).__name__}:{str(exc)[:500]}",
+            "mcp_context_is_error": True,
+            "grep_code_is_error": True,
+            "cli_search_exit_code": 1,
+            "cli_search_has_output": False,
+            "cli_search_stderr": redact(str(exc)[-500:]),
+        }
 
 
 def request(api_url: str, method: str, path: str, expected: int, *, headers: dict[str, str] | None = None, **kwargs: Any) -> Any:
@@ -211,7 +298,9 @@ def evaluate_question(api_url: str, ctx: WalkthroughContext, question: dict[str,
     failures: list[str] = []
     quality_warnings: list[str] = []
     if expected_result == "expected_unanswerable":
-        if answer.get("outcome") not in {"unsupported_by_sources", "insufficient_evidence", None} and citations:
+        if citations:
+            failures.append("negative_control_returned_citations")
+        if answer.get("outcome") not in {"unsupported_by_sources", "insufficient_evidence", None}:
             failures.append("negative_control_answered_too_strongly")
     else:
         if len(citations) < int(question.get("min_citations", 1)):
@@ -366,32 +455,44 @@ const path = require('path');
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-dir", type=Path, default=DEFAULT_ARTIFACT_DIR)
+    parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--question-bank", type=Path, default=DEFAULT_QUESTION_BANK)
     parser.add_argument("--question-limit", type=int, default=50)
     parser.add_argument("--skip-compose", action="store_true", help="assume API/web services are already running")
     parser.add_argument("--skip-screenshots", action="store_true")
-    parser.add_argument("--api-url", default=os.getenv("SOURCEBRIEF_API_URL") or os.getenv("API_URL") or "http://localhost:18000")
-    parser.add_argument("--web-url", default=os.getenv("SOURCEBRIEF_WEB_URL") or os.getenv("WEB_URL") or "http://localhost:3105")
+    parser.add_argument("--allow-risk", action="store_true", help="return 0 for RISK verdicts; BLOCK always exits nonzero")
+    parser.add_argument("--api-url")
+    parser.add_argument("--web-url")
     args = parser.parse_args()
 
-    artifact_dir = args.artifact_dir.resolve()
-    artifact_dir.mkdir(parents=True, exist_ok=True)
+    ts = int(time.time())
     env_file = load_env_file(ROOT / ".env")
+    args.api_url = (args.api_url or configured_url("api", env_file)).rstrip("/")
+    args.web_url = (args.web_url or configured_url("web", env_file)).rstrip("/")
+    artifact_dir = (args.artifact_dir or default_artifact_dir(ts)).resolve()
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     if not args.skip_compose:
         run(["make", "compose-up"])
     wait_http(f"{args.api_url}/readyz")
     wait_http(f"{args.web_url}/api/health")
 
     headers, session_token, auth_mode = authenticate(args.api_url, env_file)
-    ts = int(time.time())
     workspace_id, workspace_name, project_id, project_name, resource_id, resource_name, index_run, commit = create_walkthrough_project(args.api_url, headers, ts)
     ctx = WalkthroughContext(args.api_url, args.web_url, headers, session_token, auth_mode, workspace_id, workspace_name, project_id, project_name, resource_id, resource_name, index_run)
     questions = load_questions(args.question_bank, args.question_limit)
-    results = [evaluate_question(args.api_url, ctx, question) for question in questions]
-    scenario_results = run_scenarios(args.api_url, ctx)
+    question_bank_sha256 = sha256_file(args.question_bank)
+    negative_control_count = sum(1 for question in questions if question.get("expected_result") == "expected_unanswerable")
+    results = [run_question_safely(args.api_url, ctx, question) for question in questions]
+    scenario_results = run_scenarios_safely(args.api_url, ctx)
     failed = [item for item in results if item["mechanical_status"] != "pass"]
     quality_warnings = [item for item in results if item.get("answer_quality_warnings")]
+    verdict, verdict_reasons = launch_verdict(
+        index_status=index_run.get("status"),
+        results=results,
+        quality_warnings=quality_warnings,
+        scenario_results=scenario_results,
+        negative_control_count=negative_control_count,
+    )
     report = {
         "schema_version": "sourcebrief.launch-50q-walkthrough-report.v1",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -412,11 +513,18 @@ def main() -> int:
         ),
         "summary": {
             "question_count": len(results),
+            "negative_control_count": negative_control_count,
             "passed": len(results) - len(failed),
             "failed": len(failed),
             "answer_quality_warning_count": len(quality_warnings),
-            "verdict": "PASS" if not failed and index_run.get("status") == "succeeded" else "RISK",
+            "verdict": verdict,
+            "verdict_reasons": verdict_reasons,
             "limitations": ["Answer-quality is mechanically screened; human signoff should review the citation previews before launch claims."],
+        },
+        "question_bank": {
+            "path": str(args.question_bank),
+            "sha256": question_bank_sha256,
+            "selected_question_count": len(results),
         },
         "scenarios": redact(scenario_results),
         "questions": redact(results),
@@ -451,7 +559,11 @@ def main() -> int:
         encoding="utf-8",
     )
     log(f"50Q walkthrough complete: {report_json}")
-    return 0 if report["summary"]["verdict"] in {"PASS", "RISK"} else 1
+    if report["summary"]["verdict"] == "PASS":
+        return 0
+    if report["summary"]["verdict"] == "RISK" and args.allow_risk:
+        return 0
+    return 1
 
 
 if __name__ == "__main__":

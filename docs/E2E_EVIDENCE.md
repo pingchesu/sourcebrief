@@ -14,12 +14,15 @@ export PORT_SUFFIX="$(python -c 'import random; print(random.randint(10, 99))')"
 export COMPOSE_PROJECT_NAME="sourcebrief_e2e_${RUN_ID}"
 export SOURCEBRIEF_API_PORT="18${PORT_SUFFIX}"
 export SOURCEBRIEF_WEB_PORT="13${PORT_SUFFIX}"
+export NEXT_PUBLIC_API_BASE_URL="http://localhost:${SOURCEBRIEF_API_PORT}"
+export SOURCEBRIEF_CORS_ORIGINS="http://localhost:${SOURCEBRIEF_WEB_PORT},http://127.0.0.1:${SOURCEBRIEF_WEB_PORT}"
 
 make compose-up
 make migrate
-make qa-smoke
-make alpha-eval
-make collect-e2e-evidence
+python scripts/collect_e2e_evidence.py \
+  --command 'make qa-smoke' \
+  --command 'make alpha-eval' \
+  --include-file alpha-eval=artifacts/alpha-eval-report.json
 ```
 
 If you are verifying an existing checkout, do not assume the default ports. Read the configured values from `.env` and the environment:
@@ -36,7 +39,7 @@ If you are verifying an existing checkout, do not assume the default ports. Read
 make collect-e2e-evidence
 ```
 
-This writes:
+This writes and fails closed if a health check, command, missing include, or stale included file fails. Use `--allow-failures` only when intentionally preserving a red exploratory run. This writes:
 
 ```text
 artifacts/e2e/<timestamp>/

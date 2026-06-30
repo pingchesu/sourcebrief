@@ -20,6 +20,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | Doc | Status | What it proves |
 | --- | --- | --- |
 | [Proof artifacts](PROOF_ARTIFACTS.md) | Proof manifest | Which screenshots, outputs, and tests are real; which proof gaps remain. |
+| [Claim ledger](CLAIM_LEDGER.md) | Launch wording ledger | Which product claims are current, historical, risky, or unsupported. |
 | [E2E evidence bundles](E2E_EVIDENCE.md) | Release evidence convention | How to capture redacted launch evidence with commit, ports, Compose project, health, command outputs, and artifacts. |
 | [5-minute demo](DEMO.md) | Deterministic local demo | Tiny source -> indexed snapshot -> cited agent context -> MCP-shaped response. |
 | [Demo runtime output](examples/demo-runtime-output.md) | Captured output | Normalized output from a real local demo run. |
@@ -48,6 +49,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [EvoEmbedding Retrieval V2 evaluation plan](EVOEMBEDDING_EVALUATION_PLAN.md) | Active evaluation plan | Hermes-graded profile matrix and temporal-memory 50Q gates for deciding whether EvoEmbedding is worth adopting. |
 | [EvoEmbedding sidecar](EVOEMBEDDING_SIDECAR.md) | R&D/operator prototype | Optional rerank sidecar contract for EvoEmbedding without adding Torch/model deps to SourceBrief core. |
 | [Alpha release notes](ALPHA_RELEASE_NOTES.md) | Release reference | Alpha capability summary and explicit boundaries. |
+| [Claim ledger](CLAIM_LEDGER.md) | Launch reference | Customer-facing claim wording mapped to evidence, caveats, and blockers. |
 | [Roadmap](ROADMAP.md) | Planning reference | Finite alpha roadmap and future work. |
 | [Git repo import product gaps](GIT_REPO_IMPORT_PRODUCT_GAPS.md) | Product backlog | Enterprise Git onboarding gaps. |
 | [Out-of-box product plan](OUT_OF_BOX_PRODUCT_PLAN.md) | Productization backlog | More attractive first-use experience and recipe/agent-pack roadmap. |
