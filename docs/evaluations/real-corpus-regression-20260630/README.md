@@ -47,7 +47,7 @@ Import scope:
 
 Raw evidence bundle: `artifacts/e2e/214-20260630170300-temporal-memory`
 Committed summary: [`temporal-memory-summary.redacted.json`](temporal-memory-summary.redacted.json)
-Child issue: [#229](https://github.com/pingchesu/sourcebrief/issues/229)
+Child issue: [#229](https://github.com/pingchesu/sourcebrief/issues/229) (resolved by launch-scope exclusion, not by claiming adoption)
 
 The temporal fixture was bound to real local resources and executed through `scripts/run_profile_matrix_eval.py` using `current:hybrid`.
 
@@ -63,8 +63,8 @@ The temporal fixture was bound to real local resources and executed through `scr
 | Pass rate | 0.64 |
 | Final verdict | **RISK** |
 
-The run is useful evidence, but not temporal-memory adoption proof. Current `hybrid` missed required ordered/provenance evidence texts in 18 questions; #229 tracks that blocker.
+The run is useful evidence, but not temporal-memory adoption proof. Current `hybrid` missed required ordered/provenance evidence texts in 18 questions. Launch scope therefore excludes temporal-memory adoption/PASS claims until a future provider/profile path passes this temporal-memory 50Q gate.
 
 ## Launch impact
 
-#214 is now a current evidence refresh, not a launch PASS. It improves confidence in mechanical execution and wrong-resource safety, but the launch train should keep real-corpus retrieval quality at **RISK** until production-quality provider evidence and/or temporal-memory improvements are available.
+#214 is now a current evidence refresh, not a launch PASS. It improves confidence in mechanical execution and wrong-resource safety, but the launch train keeps real-corpus retrieval quality at **RISK** because providers are dev-quality, corpora are partial, and temporal-memory adoption is explicitly out of launch scope until a future passing temporal gate exists.
