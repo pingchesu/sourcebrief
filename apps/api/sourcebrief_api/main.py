@@ -8521,6 +8521,13 @@ def list_retrieval_profiles(
                 "graph": profile.graph_weight,
                 "rerank": profile.rerank_weight,
             },
+            candidate_pool={
+                "multiplier": profile.candidate_multiplier,
+                "min": profile.candidate_pool_min,
+                "max": profile.candidate_pool_max,
+            },
+            second_stage_rerank=profile.second_stage_rerank,
+            promote_sequence_siblings=profile.promote_sequence_siblings,
         )
         for name, profile in RETRIEVAL_PROFILES.items()
     ]
