@@ -38,28 +38,31 @@ EOF
 
 ## 2. Create a workspace and project
 
-```bash
-WORKSPACE_ID=$(sourcebrief --json workspace create \
-  --name "Demo" \
-  --slug "demo-$(date +%s)" \
-  | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+Use a readable workspace slug and project name. The CLI resolves those names internally; the demo does not require copying internal identifiers.
 
-PROJECT_ID=$(sourcebrief --json project create \
-  --workspace-id "$WORKSPACE_ID" \
-  --name "Demo Project" \
-  | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```bash
+WORKSPACE_SLUG="demo-$(date +%s)"
+PROJECT_NAME="Demo Project"
+
+sourcebrief workspace create \
+  --name "Demo" \
+  --slug "$WORKSPACE_SLUG"
+
+sourcebrief project create \
+  --workspace "$WORKSPACE_SLUG" \
+  --name "$PROJECT_NAME"
 ```
 
 The CLI is automation-oriented and supports name-first workspace/project selection for normal use, while IDs remain advanced/debug escape hatches. For agent runtimes, MCP plus generated skills are the primary path; CLI commands are useful for bootstrap, validation, resource lifecycle automation, and fallback debugging.
 
 ## 3. Add and index the source
 
-Save the workspace/project IDs once so later commands can use the human-facing golden path:
+Save the name-first workspace/project selection once so later commands stay short and human-readable:
 
 ```bash
 sourcebrief use \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID"
+  --workspace "$WORKSPACE_SLUG" \
+  --project "$PROJECT_NAME"
 
 sourcebrief status
 ```
@@ -67,17 +70,12 @@ sourcebrief status
 Then add and index the source. Resource creation remains explicit so scripts do not accidentally add sources to the wrong project:
 
 ```bash
-RESOURCE_JSON=$(sourcebrief --json resource add-doc \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
+sourcebrief resource add-doc \
   --name "Payment retry runbook" \
   --uri "doc://payment-retry-runbook" \
   --content-file /tmp/sourcebrief-demo-runbook.md \
   --refresh \
-  --wait)
-
-RESOURCE_ID=$(printf '%s' "$RESOURCE_JSON" \
-  | python -c 'import json,sys; print(json.load(sys.stdin)["resource"]["id"])')
+  --wait
 ```
 
 ## 4. Ask for cited context
@@ -100,27 +98,14 @@ sourcebrief ask --json \
   "What should I check when the payment retry queue stalls?"
 ```
 
-Equivalent explicit/API-shaped form:
-
-```bash
-sourcebrief --json agent-context \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
-  --resource-id "$RESOURCE_ID" \
-  --runtime hermes \
-  --query "What should I check when the payment retry queue stalls?"
-```
-
 A useful response should mention the queue depth, worker status, provider health, and recent deploys, with citations back to the demo runbook.
 
 ## 5. Exercise the MCP-shaped path
 
 ```bash
 sourcebrief --json mcp-context \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
-  --resource-id "$RESOURCE_ID" \
   --runtime hermes \
+  --resource "Payment retry runbook" \
   --query "What should I check when the payment retry queue stalls?"
 ```
 

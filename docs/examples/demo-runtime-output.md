@@ -28,13 +28,16 @@ The SourceBrief demo marker is sb-demo-retry-42.
 export SOURCEBRIEF_API_URL=http://localhost:18000
 export SOURCEBRIEF_EMAIL=demo@example.com
 
-WORKSPACE_ID=$(sourcebrief --json workspace create ...)
-PROJECT_ID=$(sourcebrief --json project create ...)
-RESOURCE_ID=$(sourcebrief --json resource add-doc \
+WORKSPACE_SLUG=demo-runtime-output
+PROJECT_NAME="Demo Project"
+sourcebrief workspace create --name "Demo" --slug "$WORKSPACE_SLUG"
+sourcebrief project create --workspace "$WORKSPACE_SLUG" --name "$PROJECT_NAME"
+sourcebrief use --workspace "$WORKSPACE_SLUG" --project "$PROJECT_NAME"
+sourcebrief resource add-doc \
   --name "Payment retry runbook" \
   --uri "doc://payment-retry-runbook" \
   --content-file /tmp/sourcebrief-demo-runbook.md \
-  --refresh --wait ...)
+  --refresh --wait
 ```
 
 The resource import completed before the runtime calls below returned citations.
@@ -45,9 +48,7 @@ Request:
 
 ```bash
 sourcebrief --json agent-context \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
-  --resource-id "$RESOURCE_ID" \
+  --resource "Payment retry runbook" \
   --runtime hermes \
   --query "What should I check when the payment retry queue stalls?"
 ```
@@ -84,9 +85,7 @@ Request:
 
 ```bash
 sourcebrief --json mcp-context \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
-  --resource-id "$RESOURCE_ID" \
+  --resource "Payment retry runbook" \
   --runtime hermes \
   --query "What should I check when the payment retry queue stalls?"
 ```

@@ -162,7 +162,7 @@ Next:
 - Delete the demo workspace from the web console when finished, or keep it for CLI experiments.
 ```
 
-After the demo, ask follow-up questions without copying workspace/project UUIDs:
+After the demo, ask follow-up questions without copying internal identifiers:
 
 ```bash
 sourcebrief ask --resource "Payment retry runbook" "what should an operator do when payment retries fail?"

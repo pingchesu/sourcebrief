@@ -11,8 +11,8 @@ PR metadata is intentionally bounded. The command rejects missing repo/head SHA,
 ```bash
 sourcebrief review pr-bundle \
   --metadata-fixture docs/examples/self-improvement/pr-review-metadata-fixture.json \
-  --workspace-id github \
-  --project-id sourcebrief \
+  --workspace github \
+  --project sourcebrief \
   --bundle-out ./review-bundles/pr-187.json
 
 sourcebrief review run \
@@ -28,8 +28,8 @@ When `--metadata-fixture` is omitted, the command shells out to the GitHub CLI:
 sourcebrief review pr-bundle \
   --repo pingchesu/sourcebrief \
   --pr 187 \
-  --workspace-id github \
-  --project-id sourcebrief \
+  --workspace github \
+  --project sourcebrief \
   --bundle-out ./review-bundles/pr-187.json
 ```
 

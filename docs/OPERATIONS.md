@@ -179,7 +179,7 @@ docker compose exec -T postgres psql -U sourcebrief -d sourcebrief -c \
 4. If the run failed due a transient dependency, refresh the resource again from UI or CLI:
 
    ```bash
-   sourcebrief resource refresh --workspace-id <workspace> --project-id <project> --resource-id <resource> --wait
+   sourcebrief resource refresh --workspace <workspace-name-or-slug> --project <project-name> --resource-id <resource> --wait
    ```
 
 5. If a run remains `queued` with no worker activity, restart workers only:

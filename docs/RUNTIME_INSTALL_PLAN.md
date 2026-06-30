@@ -117,21 +117,18 @@ It checks REST `agent-context`, MCP `initialize`, MCP `tools/list`, MCP `tools/c
 
 If you intend to use remote code drilldown tools such as `sourcebrief.search_code`, `sourcebrief.grep_code`, `sourcebrief.read_file`, or `sourcebrief.find_symbol`, make sure your token includes `code:read` and confirm those tools appear after runtime discovery. The current validator command does not exercise every optional code-read tool.
 
-Example direct validator command:
+Primary validation path: run `sourcebrief runtime plan` with workspace/project names and use the validator command printed in the generated plan. That command contains the resolved internal transport details and redaction flags, so users do not need to copy internal identifiers by hand.
 
 ```bash
 export SOURCEBRIEF_TOKEN="<sourcebrief-api-token>"
-python scripts/hermes_integration.py \
-  --api-url "http://localhost:18000" \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
-  --resource-id "$RESOURCE_ID" \
-  --query "How does this project expose context to agents?" \
-  --token-env SOURCEBRIEF_TOKEN \
-  --redact-token
+sourcebrief --json runtime plan \
+  --workspace "SourceBrief CLI Demo" \
+  --project "First useful moment" \
+  --target hermes \
+  --public-api-url "http://localhost:18000" > plan.json
 ```
 
-Prefer `--token-env SOURCEBRIEF_TOKEN` over passing a token on the command line. Command-line arguments can be visible to local process listings on shared systems.
+Inspect `plan.json`, then run its validator command with `--redact-token`/token-env handling preserved. Prefer environment variables over command-line token values because argv can be visible to local process listings on shared systems.
 
 After copying the generated config into your runtime, reload or restart that runtime and confirm it lists SourceBrief tools such as `sourcebrief.get_agent_context` and `sourcebrief.search`. That runtime-specific check is separate from the SourceBrief API/MCP validator.
 

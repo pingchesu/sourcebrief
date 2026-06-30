@@ -175,7 +175,7 @@ Use these MCP tools for remote code:
 | Propose a patch without mutating Git | `sourcebrief.generate_patch` |
 | Record explicit PR approval metadata | `sourcebrief.open_pr` |
 
-For high-throughput SDK/backend clients, use MCP `sourcebrief.get_rpc_spec` to fetch the exact HTTP/JSON-RPC code-access schema, then call `POST /workspaces/{workspace_id}/projects/{project_id}/code/rpc`. The RPC surface batches `sourcebrief.code.search`, `sourcebrief.code.grep`, `sourcebrief.code.read_batch`, and `sourcebrief.code.lookup_plan`; it uses the same auth/resource boundaries as MCP, prefers `resource_ref` names in user-facing clients, and returns per-call `ok`/`error` telemetry instead of asking a model to invent HTTP payloads from prose.
+For high-throughput SDK/backend clients, use MCP `sourcebrief.get_rpc_spec` to fetch the exact HTTP/JSON-RPC code-access schema, then call the project-scoped RPC endpoint returned by the spec/runtime plan. The RPC surface batches `sourcebrief.code.search`, `sourcebrief.code.grep`, `sourcebrief.code.read_batch`, and `sourcebrief.code.lookup_plan`; it uses the same auth/resource boundaries as MCP, prefers `resource_ref` names in user-facing clients, and returns per-call `ok`/`error` telemetry instead of asking a model to invent HTTP payloads from prose.
 
 The right behavior for a coding agent is:
 
@@ -292,10 +292,10 @@ Core tools an agent should expect:
 | Follow resource/file/symbol relationships | `sourcebrief.graph_query`, `sourcebrief.graph_path` |
 | Propose changes without direct mutation | `sourcebrief.generate_patch`, `sourcebrief.open_pr` when explicitly enabled |
 
-The MCP endpoint is project scoped. The URL may contain resolved internal IDs because MCP clients need a stable transport endpoint, but users should choose the workspace and project by name through the UI, `sourcebrief use --workspace ... --project ...`, or a generated runtime plan rather than copying IDs manually:
+The MCP endpoint is project scoped. Users should choose the workspace and project by name through the UI, `sourcebrief use --workspace ... --project ...`, or a generated runtime plan. The generated config may contain a resolved internal URL path because MCP clients need a stable transport endpoint, but users should not copy internal identifiers manually:
 
 ```text
-http://localhost:18000/mcp/<resolved-workspace-id>/<resolved-project-id>
+http://localhost:18000/mcp/<resolved-project-scope>
 ```
 
 Use a scoped bearer token in the `Authorization` header. In the examples below, `<auth-header>` means the full authorization header for your runtime token, and `<bearer-header-value>` means the header value built from the bearer scheme plus that token.
@@ -316,16 +316,14 @@ Runtime setup should be boring and reversible: generate a plan, inspect config a
 SourceBrief ships an operational validator that checks REST `agent-context`, MCP `initialize`, MCP `tools/list`, MCP `tools/call`, read-only denial behavior, and citation consistency.
 
 ```bash
-python scripts/hermes_integration.py \
-  --api-url http://localhost:18000 \
-  --workspace-id "$WORKSPACE_ID" \
-  --project-id "$PROJECT_ID" \
-  --resource-id "$RESOURCE_ID" \
+sourcebrief doctor \
+  --workspace "SourceBrief CLI Demo" \
+  --project "First useful moment" \
   --query "How does this project expose context to agents?" \
-  --redact-token
+  --runtime hermes
 ```
 
-The output includes a `hermes_config.mcp_servers` block and redacts the token when `--redact-token` is set.
+For a full generated MCP config/validator bundle, run `sourcebrief runtime plan` with the same workspace/project names and inspect the returned validator command. The validator output includes `hermes_config.mcp_servers` and redacts the token when configured with redaction flags.
 
 The validator's default minted token is enough for `sourcebrief.get_agent_context`. If you also want remote code drilldown tools (`search_code`, `grep_code`, `read_file`, `find_symbol`), create a token with `code:read` and pass it with `--token "$SB_TOKEN"`.
 
@@ -336,7 +334,7 @@ Add this shape to the target Hermes profile config:
 ```yaml
 mcp_servers:
   sourcebrief:
-    url: http://localhost:18000/mcp/<workspace-id>/<project-id>
+    url: http://localhost:18000/mcp/<resolved-project-scope>
     headers:
       Authorization: <bearer-header-value>
     timeout: 120
@@ -369,7 +367,7 @@ Claude-style JSON:
   "mcpServers": {
     "sourcebrief": {
       "type": "http",
-      "url": "http://localhost:18000/mcp/<workspace-id>/<project-id>",
+      "url": "http://localhost:18000/mcp/<resolved-project-scope>",
       "headers": {
         "Authorization": "<bearer-header-value>"
       }
@@ -382,7 +380,7 @@ Codex-style TOML:
 
 ```toml
 [mcp_servers.sourcebrief]
-url = "http://localhost:18000/mcp/<workspace-id>/<project-id>"
+url = "http://localhost:18000/mcp/<resolved-project-scope>"
 bearer_token_env_var = "SOURCEBRIEF_TOKEN"
 ```
 
@@ -402,14 +400,7 @@ SourceBrief has two skill-related outputs. They are related but not the same.
 Use this when you want a quick adapter package for one SourceBrief project. It is
 the fastest way to hand a runtime a project-specific context contract.
 
-Download the generated pack:
-
-```bash
-curl -fsS \
-  -H "<auth-header>" \
-  "http://localhost:18000/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/agent-pack.zip" \
-  -o sourcebrief-agent-pack.zip
-```
+Download the generated pack from the web **Install Agent** panel or from the project agent-pack URL returned by a generated runtime plan. The URL is resolved internally for the selected workspace/project; do not ask users to paste internal identifiers into it.
 
 The zip contains:
 
@@ -492,7 +483,7 @@ sourcebrief skill install --package ./sourcebrief-skill --target hermes --receip
 sourcebrief skill uninstall --receipt ./sourcebrief-skill-receipt.json
 ```
 
-The API also exposes an approved package download at `/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}/download.zip`; draft exports cannot be downloaded or installed.
+The API also exposes an approved package download for internal clients; normal users should use the UI/CLI export flow above rather than constructing an internal ID-based URL. Draft exports cannot be downloaded or installed.
 
 Generated skill exports are better for repeatable team workflows because they can include package metadata, references, playbooks, citation policy, freshness rules, local install receipts, and leak-scan validation. They still do not embed the full source corpus or plaintext bearer tokens; generated artifacts should reference token environment variable names and redact token values in examples, receipts, and validation output.
 

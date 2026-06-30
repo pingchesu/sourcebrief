@@ -589,10 +589,10 @@ def test_cli_review_pr_bundle_from_fixture_and_run_report(monkeypatch, capsys, t
         "pr-bundle",
         "--metadata-fixture",
         str(fixture),
-        "--workspace-id",
-        "ws",
-        "--project-id",
-        "proj",
+        "--workspace",
+        "github",
+        "--project",
+        "sourcebrief",
         "--bundle-out",
         str(bundle_path),
     ]) == 0
@@ -604,6 +604,9 @@ def test_cli_review_pr_bundle_from_fixture_and_run_report(monkeypatch, capsys, t
         "tests/unit/test_staged_adoption.py",
     ]
     assert FakeClient.instances[-1].calls == []
+    bundle = load_review_bundle(bundle_path)
+    assert bundle.scope.workspace_id == "github"
+    assert bundle.scope.project_id == "sourcebrief"
 
     assert cli_main(["--json", "review", "run", "--bundle", str(bundle_path), "--report-out", str(report_path)]) == 0
     report_payload = json.loads(capsys.readouterr().out)

@@ -10,9 +10,9 @@ Ask capture:
 
 ```bash
 sourcebrief ask \
-  --workspace-id <workspace-id> \
-  --project-id <project-id> \
-  --resource-id <resource-id> \
+  --workspace <workspace-name-or-slug> \
+  --project <project-name> \
+  --resource <resource-name-or-ref> \
   --review-bundle-out ./review-bundles/ask.json \
   "What should an operator do when payment retries fail?"
 ```
