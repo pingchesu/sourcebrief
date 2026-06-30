@@ -28,7 +28,7 @@ from sourcebrief_shared.eval_manifest import (  # noqa: E402
 )
 
 DEV_EMAIL = "demo@example.com"
-SUPPORTED_API_PROFILES = {"lexical", "vector", "hybrid", "hybrid_rerank", "hybrid-rerank", "graph"}
+SUPPORTED_API_PROFILES = {"lexical", "vector", "hybrid", "hybrid_rerank", "hybrid-rerank", "graph", "retrieval_v2_rerank", "retrieval-v2-rerank"}
 SAFE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 

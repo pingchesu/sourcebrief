@@ -453,6 +453,9 @@ class RetrievalProfileRead(BaseModel):
     name: str
     description: str
     weights: dict[str, float]
+    candidate_pool: dict[str, int | None] = Field(default_factory=dict)
+    second_stage_rerank: bool = False
+    promote_sequence_siblings: bool = False
 
 
 class RetrievalProfilesResponse(BaseModel):
@@ -476,7 +479,7 @@ class RetrievalEvalQuestion(BaseModel):
 
 class RetrievalEvalRequest(BaseModel):
     questions: list[RetrievalEvalQuestion] = Field(min_length=1, max_length=10)
-    profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph)$")
+    profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph|retrieval[-_]v2[-_]rerank)$")
     runtime: str = Field(default="hermes", pattern=r"^(api|hermes|claude|codex|cursor)$")
     max_chars: int = Field(default=8000, ge=1000, le=12000)
 
@@ -991,7 +994,7 @@ class SearchResponse(BaseModel):
 
 class ContextPacketRequest(BaseModel):
     query: str = Field(min_length=1)
-    profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph)$")
+    profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph|retrieval[-_]v2[-_]rerank)$")
     resource_ids: list[UUID] | None = None
     top_k: int = Field(default=8, ge=1, le=50)
     mode: str = "hybrid"
@@ -1285,7 +1288,7 @@ class CodeSearchResponse(BaseModel):
 
 class AgentContextRequest(BaseModel):
     query: str = Field(min_length=1)
-    profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph)$")
+    profile: str | None = Field(default=None, pattern=r"^(lexical|vector|hybrid|hybrid[-_]rerank|graph|retrieval[-_]v2[-_]rerank)$")
     resource_ids: list[UUID] | None = None
     resource_ref: str | None = Field(default=None, min_length=1)
     resource_refs: list[str] | None = None

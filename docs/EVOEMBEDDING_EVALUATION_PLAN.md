@@ -15,6 +15,12 @@ Tracking issue: [#195](https://github.com/pingchesu/sourcebrief/issues/195).
 
 The answer must come from replayable SourceBrief evidence, not from paper/project-page claims.
 
+## Current decision after #195/#200 evidence
+
+EvoEmbedding-4B is **not** adopted as a plug-and-play replacement for the current provider path. The completed evidence showed a strong 4B rank-only signal in a 50-candidate reranker-sensitive benchmark, but the section-level integrated POC did not improve final answer/context pass rate (`current=39/50`, `evo4b=38/50`).
+
+The next implementation path is therefore a default-off Retrieval V2 experiment: retrieve a larger first-stage candidate pool, apply batch rerank as a second-stage selector, preserve pre/post/final-inclusion diagnostics, and tune final selection for multi-evidence questions. See #204.
+
 ## Eval sets
 
 ### A. General retrieval gate: existing Awesome Agent Harness 50Q

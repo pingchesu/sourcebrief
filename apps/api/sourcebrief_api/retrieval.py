@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -29,6 +30,11 @@ class RetrievalProfile:
     use_vector: bool = True
     use_graph: bool = True
     use_rerank: bool = True
+    candidate_multiplier: int = 8
+    candidate_pool_min: int = 40
+    candidate_pool_max: int | None = None
+    second_stage_rerank: bool = False
+    promote_sequence_siblings: bool = False
 
 
 RETRIEVAL_PROFILES: dict[str, RetrievalProfile] = {
@@ -77,6 +83,22 @@ RETRIEVAL_PROFILES: dict[str, RetrievalProfile] = {
         graph_weight=0.25,
         rerank_weight=0.10,
     ),
+    "retrieval_v2_rerank": RetrievalProfile(
+        name="retrieval_v2_rerank",
+        description=(
+            "Default-off Retrieval V2 experiment: larger first-stage candidate pool, "
+            "batch rerank as second-stage selector, and final multi-evidence diagnostics."
+        ),
+        lexical_weight=0.45,
+        vector_weight=0.40,
+        graph_weight=0.15,
+        rerank_weight=0.0,
+        candidate_multiplier=12,
+        candidate_pool_min=80,
+        candidate_pool_max=100,
+        second_stage_rerank=True,
+        promote_sequence_siblings=True,
+    ),
 }
 DEFAULT_RETRIEVAL_PROFILE = "hybrid"
 
@@ -89,6 +111,14 @@ def normalize_retrieval_profile(profile: str | None) -> RetrievalProfile:
     return RETRIEVAL_PROFILES[key]
 
 
+def candidate_limit_for_profile(profile: RetrievalProfile, *, top_k: int) -> int:
+    """Return first-stage candidate-pool size for a retrieval profile."""
+    limit = max(top_k * profile.candidate_multiplier, profile.candidate_pool_min)
+    if profile.candidate_pool_max is not None:
+        limit = min(limit, profile.candidate_pool_max)
+    return limit
+
+
 def retrieval_profile_manifest() -> dict[str, dict[str, object]]:
     return {
         name: {
@@ -99,6 +129,13 @@ def retrieval_profile_manifest() -> dict[str, dict[str, object]]:
                 "graph": profile.graph_weight,
                 "rerank": profile.rerank_weight,
             },
+            "candidate_pool": {
+                "multiplier": profile.candidate_multiplier,
+                "min": profile.candidate_pool_min,
+                "max": profile.candidate_pool_max,
+            },
+            "second_stage_rerank": profile.second_stage_rerank,
+            "promote_sequence_siblings": profile.promote_sequence_siblings,
         }
         for name, profile in RETRIEVAL_PROFILES.items()
     }
@@ -182,6 +219,90 @@ def _path_family(path: str | None) -> str:
     return parts[0]
 
 
+_SEQUENCE_SUFFIX_RE = re.compile(r"^(?P<prefix>.+?)(?:[-_](?P<num>\d{2,})|(?P<num2>\d{2,}))$")
+
+
+def _sequence_path_family(path: str | None) -> str | None:
+    """Group adjacent ordered evidence files such as improve-003.md/improve-004.md."""
+    normalized = _normalized_path(path)
+    if not normalized or "/" not in normalized:
+        return None
+    directory, filename = normalized.rsplit("/", 1)
+    stem = filename.rsplit(".", 1)[0]
+    match = _SEQUENCE_SUFFIX_RE.match(stem)
+    if not match:
+        return None
+    prefix = match.group("prefix").strip("-_")
+    if len(prefix) < 3:
+        return None
+    return f"{directory}/{prefix}"
+
+
+def promote_sequence_siblings_for_second_stage(
+    candidates: list[RetrievalCandidate],
+    *,
+    top_k: int,
+    lookahead: int | None = None,
+) -> tuple[list[RetrievalCandidate], dict]:
+    """Move best same-sequence evidence siblings near their anchor before diversity selection.
+
+    Rank-only rerankers can correctly put a primary evidence section first while a
+    necessary same-sequence section remains just outside final top-k. This profile-gated
+    helper keeps the overall rerank order but inserts one strong same-sequence sibling
+    near each early anchor so the final selector can preserve multi-evidence answers.
+    """
+    if top_k <= 1 or not candidates:
+        return candidates, {"promoted_count": 0, "promotions": []}
+    window = min(len(candidates), lookahead or max(top_k * 4, 20))
+    early = candidates[:window]
+    by_family: dict[str, list[RetrievalCandidate]] = {}
+    for candidate in early:
+        family = _sequence_path_family(candidate.path)
+        if family:
+            by_family.setdefault(family, []).append(candidate)
+    emitted: list[RetrievalCandidate] = []
+    emitted_ids: set[UUID] = set()
+    promoted_ids: set[UUID] = set()
+    promoted_families: set[str] = set()
+    promotions: list[dict[str, object]] = []
+    for candidate in candidates:
+        if candidate.chunk_id in emitted_ids:
+            continue
+        emitted.append(candidate)
+        emitted_ids.add(candidate.chunk_id)
+        family = _sequence_path_family(candidate.path)
+        if not family or family in promoted_families:
+            continue
+        siblings = [item for item in by_family.get(family, []) if item.chunk_id not in emitted_ids]
+        if not siblings:
+            continue
+        sibling = siblings[0]
+        sibling.ranking_diagnostics = {
+            **(sibling.ranking_diagnostics or {}),
+            "second_stage_sibling_promoted": True,
+            "second_stage_sibling_anchor_chunk_id": str(candidate.chunk_id),
+            "second_stage_sequence_family": family,
+        }
+        emitted.append(sibling)
+        emitted_ids.add(sibling.chunk_id)
+        promoted_ids.add(sibling.chunk_id)
+        promoted_families.add(family)
+        promotions.append(
+            {
+                "family": family,
+                "anchor_chunk_id": str(candidate.chunk_id),
+                "promoted_chunk_id": str(sibling.chunk_id),
+                "anchor_path": candidate.path,
+                "promoted_path": sibling.path,
+            }
+        )
+    for candidate in candidates:
+        if candidate.chunk_id not in emitted_ids:
+            emitted.append(candidate)
+            emitted_ids.add(candidate.chunk_id)
+    return emitted, {"promoted_count": len(promoted_ids), "promotions": promotions}
+
+
 def path_prior_score(query: str, path: str | None, title: str | None = None) -> tuple[float, list[str]]:
     """Return a small, explainable path/type prior for retrieval quality."""
     q = query.lower()
@@ -204,7 +325,6 @@ def path_prior_score(query: str, path: str | None, title: str | None = None) -> 
     elif name.startswith(LOCALIZED_README_NAMES):
         prior -= 0.08
         reasons.append("localized_readme_downrank")
-
     if "quickstart" in normalized or "quick-start" in normalized or "getting-started" in normalized or "installation" in normalized:
         if is_install:
             prior += 0.16
@@ -225,10 +345,70 @@ def path_prior_score(query: str, path: str | None, title: str | None = None) -> 
     if any(part in normalized for part in LOW_SIGNAL_PATH_PARTS):
         prior -= 0.14
         reasons.append("low_signal_path")
-    if normalized.endswith(('.py', '.ts', '.tsx', '.go', '.rs')) and (is_install or is_architecture):
+    if normalized.endswith((".py", ".ts", ".tsx", ".go", ".rs")) and (is_install or is_architecture):
         prior -= 0.04
         reasons.append("source_file_below_docs")
     return prior, reasons
+
+
+def first_stage_score(profile: RetrievalProfile, candidate: RetrievalCandidate) -> float:
+    return (
+        profile.lexical_weight * candidate.lexical_score
+        + profile.vector_weight * candidate.vector_score
+        + profile.graph_weight * candidate.graph_score
+    )
+
+
+def bound_merged_candidate_pool(
+    candidates: list[RetrievalCandidate],
+    *,
+    query: str,
+    retrieval_profile: RetrievalProfile,
+    candidate_limit: int,
+) -> tuple[list[RetrievalCandidate], dict[str, object]]:
+    """Apply a profile-level cap to the merged lexical/vector/graph candidate pool.
+
+    SQL source limits are per-retriever. Remote rerank providers see the merged
+    pool, so profiles with an explicit candidate_pool_max must be capped after
+    lexical/vector union and graph scoring but before batch rerank.
+    """
+    merged_count = len(candidates)
+    for candidate in candidates:
+        candidate.path_prior_score, prior_reasons = path_prior_score(query, candidate.path, candidate.title)
+        stage1_score = first_stage_score(retrieval_profile, candidate)
+        candidate.ranking_diagnostics = {
+            **(candidate.ranking_diagnostics or {}),
+            "retrieval_profile": retrieval_profile.name,
+            "second_stage_rerank": retrieval_profile.second_stage_rerank,
+            "candidate_pool_limit": candidate_limit,
+            "merged_first_stage_candidate_count": merged_count,
+            "stage1_score": round(stage1_score, 6),
+            "path_prior_score": round(candidate.path_prior_score, 6),
+            "path_prior_reasons": prior_reasons,
+            "lexical_score": round(candidate.lexical_score, 6),
+            "vector_score": round(candidate.vector_score, 6),
+            "graph_score": round(candidate.graph_score, 6),
+        }
+    ranked = sorted(
+        candidates,
+        key=lambda item: (
+            -float((item.ranking_diagnostics or {}).get("stage1_score", 0.0)),
+            -item.path_prior_score,
+            item.resource_id,
+            item.ordinal,
+            item.chunk_id,
+        ),
+    )
+    bounded = ranked
+    if retrieval_profile.candidate_pool_max is not None:
+        bounded = ranked[:candidate_limit]
+    metadata: dict[str, object] = {
+        "candidate_pool_limit": candidate_limit,
+        "merged_first_stage_candidate_count": merged_count,
+        "candidate_pool_truncated": len(bounded) < merged_count,
+        "reranked_candidate_count": len(bounded) if retrieval_profile.use_rerank else 0,
+    }
+    return bounded, metadata
 
 
 def diversify_ranked_candidates(candidates: list[RetrievalCandidate], *, top_k: int) -> tuple[list[RetrievalCandidate], dict]:
@@ -413,7 +593,7 @@ def retrieve_context_candidates(
 ) -> list[RetrievalCandidate]:
     """Profile-aware lexical/vector/graph retrieval scoped to current snapshots only."""
     retrieval_profile = normalize_retrieval_profile(profile)
-    candidate_limit = max(top_k * 8, 40)
+    candidate_limit = candidate_limit_for_profile(retrieval_profile, top_k=top_k)
     base_params: dict = {
         "ws": str(workspace_id),
         "proj": str(project_id),
@@ -564,49 +744,78 @@ def retrieve_context_candidates(
             if candidate is not None:
                 candidate.graph_score = max(candidate.graph_score, float(row["graph_score"] or 0.0))
 
+    candidate_pool, pool_metadata = bound_merged_candidate_pool(
+        list(candidates.values()),
+        query=query,
+        retrieval_profile=retrieval_profile,
+        candidate_limit=candidate_limit,
+    )
     filtered: list[RetrievalCandidate] = []
     rerank_by_chunk: dict[UUID, float] = {}
-    if retrieval_profile.use_rerank and candidates:
-        candidate_list = list(candidates.values())
-        batch_scores = rerank_scores(query, [candidate.content for candidate in candidate_list])
+    if retrieval_profile.use_rerank and candidate_pool:
+        batch_scores = rerank_scores(query, [candidate.content for candidate in candidate_pool])
         rerank_by_chunk = {
-            candidate.chunk_id: score for candidate, score in zip(candidate_list, batch_scores, strict=True)
+            candidate.chunk_id: score for candidate, score in zip(candidate_pool, batch_scores, strict=True)
         }
     require_text_overlap = is_dev_embedding_provider(embedding_config)
-    for candidate in candidates.values():
+    for candidate in candidate_pool:
         candidate.rerank_score = rerank_by_chunk.get(candidate.chunk_id, 0.0)
         # The offline hashing provider is not a true semantic model; avoid
         # returning random vector-nearest chunks that share no query terms. Real
         # embedding providers may legitimately return semantic-only matches.
         if require_text_overlap and candidate.lexical_score <= 0 and candidate.rerank_score <= 0 and candidate.graph_score <= 0:
             continue
-        candidate.path_prior_score, prior_reasons = path_prior_score(query, candidate.path, candidate.title)
-        base_score = (
-            retrieval_profile.lexical_weight * candidate.lexical_score
-            + retrieval_profile.vector_weight * candidate.vector_score
-            + retrieval_profile.graph_weight * candidate.graph_score
-            + retrieval_profile.rerank_weight * candidate.rerank_score
-        )
-        candidate.score = base_score + candidate.path_prior_score
+        stage1_score = first_stage_score(retrieval_profile, candidate)
+        legacy_base_score = stage1_score + retrieval_profile.rerank_weight * candidate.rerank_score
+        if retrieval_profile.second_stage_rerank:
+            candidate.score = candidate.rerank_score + (0.001 * stage1_score) + (0.0001 * candidate.path_prior_score)
+        else:
+            candidate.score = legacy_base_score + candidate.path_prior_score
         candidate.ranking_diagnostics = {
-            "base_score": round(base_score, 6),
-            "path_prior_score": round(candidate.path_prior_score, 6),
-            "path_prior_reasons": prior_reasons,
-            "lexical_score": round(candidate.lexical_score, 6),
-            "vector_score": round(candidate.vector_score, 6),
-            "graph_score": round(candidate.graph_score, 6),
+            **(candidate.ranking_diagnostics or {}),
+            **pool_metadata,
+            "base_score": round(legacy_base_score, 6),
             "rerank_score": round(candidate.rerank_score, 6),
         }
         filtered.append(candidate)
+    stage1_ranked = sorted(
+        filtered,
+        key=lambda item: (-(item.ranking_diagnostics or {}).get("stage1_score", 0.0), item.resource_id, item.ordinal, item.chunk_id),
+    )
+    pre_rerank_rank_by_chunk = {candidate.chunk_id: rank for rank, candidate in enumerate(stage1_ranked, start=1)}
     ranked = sorted(
         filtered,
         key=lambda item: (-item.score, item.resource_id, item.ordinal, item.chunk_id),
     )
-    selected, diversity_metadata = diversify_ranked_candidates(ranked, top_k=top_k)
-    for candidate in selected:
+    if retrieval_profile.second_stage_rerank:
+        for rank, candidate in enumerate(ranked, start=1):
+            candidate.ranking_diagnostics = {
+                **(candidate.ranking_diagnostics or {}),
+                "pre_rerank_rank": pre_rerank_rank_by_chunk.get(candidate.chunk_id),
+                "post_rerank_rank": rank,
+                "post_rerank_score": round(candidate.score, 6),
+            }
+        sequence_metadata: dict = {"promoted_count": 0, "promotions": []}
+        selection_ranked = ranked
+        if retrieval_profile.promote_sequence_siblings:
+            selection_ranked, sequence_metadata = promote_sequence_siblings_for_second_stage(ranked, top_k=top_k)
+        selected, diversity_metadata = diversify_ranked_candidates(selection_ranked, top_k=top_k)
+        diversity_metadata = {
+            **diversity_metadata,
+            **pool_metadata,
+            "second_stage_rerank": True,
+            "pre_rerank_candidate_count": len(stage1_ranked),
+            "post_rerank_candidate_count": len(ranked),
+            "sequence_sibling_promotions": sequence_metadata,
+        }
+    else:
+        selected, diversity_metadata = diversify_ranked_candidates(ranked, top_k=top_k)
+    for final_rank, candidate in enumerate(selected, start=1):
         candidate.ranking_diagnostics = {
             **(candidate.ranking_diagnostics or {}),
             "retrieval_diversity": diversity_metadata,
+            "final_selected": True,
+            "final_rank": final_rank,
             "final_score": round(candidate.score - candidate.diversity_penalty, 6),
         }
     return selected
