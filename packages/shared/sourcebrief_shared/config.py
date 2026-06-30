@@ -41,6 +41,7 @@ class Settings(BaseModel):
     bootstrap_workspace_name: str
     bootstrap_workspace_slug: str
     bootstrap_project_name: str
+    self_improvement_root: str
 
     model_config = ConfigDict(extra="ignore")
 
@@ -89,4 +90,10 @@ def get_settings() -> Settings:
             "Default Project",
         )
         or "Default Project",
+        self_improvement_root=_env(
+            "SOURCEBRIEF_SELF_IMPROVEMENT_ROOT",
+            "CONTEXTSMITH_SELF_IMPROVEMENT_ROOT",
+            "artifacts/self-improvement",
+        )
+        or "artifacts/self-improvement",
     )

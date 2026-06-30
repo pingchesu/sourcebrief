@@ -31,6 +31,28 @@ query -> cited answer -> autonomous review -> regression/proposal -> better futu
 
 The product value is that agent mistakes do not disappear in chat history. They become inspectable, replayable, and reviewable evidence.
 
+## Product UI and API surface
+
+The web console includes a **Self-improvement** page under the quality navigation. It is the product-grade operating surface for the loop:
+
+- shows shipped surfaces and the no-silent-mutation boundary;
+- lists redacted review history across bundles, reports, proposals, gate results, and staged receipts;
+- opens artifact detail through the same redaction path as CLI history;
+- runs the public-safe MVP smoke chain into the project artifact root;
+- runs sleep/replay as a dry-run only recurrence miner.
+
+The corresponding project-scoped API lives under:
+
+```text
+GET  /workspaces/{workspace_id}/projects/{project_id}/self-improvement
+GET  /workspaces/{workspace_id}/projects/{project_id}/self-improvement/history
+GET  /workspaces/{workspace_id}/projects/{project_id}/self-improvement/artifacts/{artifact_id}
+POST /workspaces/{workspace_id}/projects/{project_id}/self-improvement/mvp-smoke
+POST /workspaces/{workspace_id}/projects/{project_id}/self-improvement/sleep
+```
+
+Artifacts are stored under `SOURCEBRIEF_SELF_IMPROVEMENT_ROOT` (default `artifacts/self-improvement`) partitioned by workspace and project. Read paths require `review:read`; run paths require `review:write`. The run paths write local artifacts and audit events only; they do not apply staged patches.
+
 ## Non-goals
 
 SourceBrief self-improvement does **not** mean:

@@ -51,7 +51,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Roadmap](ROADMAP.md) | Planning reference | Finite alpha roadmap and future work. |
 | [Git repo import product gaps](GIT_REPO_IMPORT_PRODUCT_GAPS.md) | Product backlog | Enterprise Git onboarding gaps. |
 | [Out-of-box product plan](OUT_OF_BOX_PRODUCT_PLAN.md) | Productization backlog | More attractive first-use experience and recipe/agent-pack roadmap. |
-| [Self-improvement](SELF_IMPROVEMENT.md) | Product architecture | Review bundles, autonomous reviewer agents, regression proposals, validation gates, and staged adoption. |
+| [Self-improvement](SELF_IMPROVEMENT.md) | Product architecture + UI contract | Web console entry, review bundles, autonomous reviewer agents, regression proposals, validation gates, and staged adoption. |
 | [Review bundle schema](REVIEW_BUNDLE_SCHEMA.md) | Artifact schema | Typed `sourcebrief.review-bundle.v1` fields, examples, redaction/completeness contract, and validation path. |
 | [Review bundle capture](REVIEW_BUNDLE_CAPTURE.md) | CLI capture path | Opt-in `sourcebrief ask` / `quickstart-demo` bundle writes with scope, citations, proof, and completeness metadata. |
 | [Review bundle runner](REVIEW_BUNDLE_RUNNER.md) | Reviewer execution | Local deterministic `sourcebrief review run` over bundles, report writing, verdicts, and fail-closed incomplete handling. |

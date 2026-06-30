@@ -199,6 +199,69 @@ class RuntimeInstallPlanResponse(BaseModel):
     rollback_steps: list[str]
 
 
+class SelfImprovementRunRequest(BaseModel):
+    owner: str = Field(default="qa", min_length=1, max_length=80)
+    finding_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class SelfImprovementSleepRequest(BaseModel):
+    min_occurrences: int = Field(default=2, ge=2, le=100)
+    max_artifacts: int = Field(default=100, ge=1, le=1000)
+
+
+class SelfImprovementHistoryRecordRead(BaseModel):
+    artifact_id: str
+    schema_version: str
+    kind: str
+    path: str
+    created_at: str | None = None
+    bundle_id: str | None = None
+    report_id: str | None = None
+    proposal_id: str | None = None
+    gate_result_id: str | None = None
+    source_report_id: str | None = None
+    source_bundle_id: str | None = None
+    source_finding_id: str | None = None
+    status: str | None = None
+    decision: str | None = None
+    verdict: str | None = None
+    finding_count: int = 0
+    blocker_major_count: int = 0
+    target_surface: str | None = None
+    subject_refs: list[dict[str, Any]] = Field(default_factory=list)
+    redaction_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class SelfImprovementHistoryResponse(BaseModel):
+    root: str
+    records: list[SelfImprovementHistoryRecordRead] = Field(default_factory=list)
+    metrics: dict[str, int] = Field(default_factory=dict)
+    provenance: list[dict[str, str]] = Field(default_factory=list)
+
+
+class SelfImprovementArtifactResponse(BaseModel):
+    record: SelfImprovementHistoryRecordRead
+    payload: dict[str, Any]
+    redaction_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class SelfImprovementRunResponse(BaseModel):
+    status: str
+    out_dir: str
+    summary: dict[str, Any]
+    history: SelfImprovementHistoryResponse
+
+
+class SelfImprovementOverviewResponse(BaseModel):
+    workspace_id: UUID
+    project_id: UUID
+    root: str
+    no_silent_mutation: bool = True
+    shipped_surfaces: list[str]
+    next_safe_actions: list[str]
+    history: SelfImprovementHistoryResponse
+
+
 class ResourceCreate(BaseModel):
     type: str = Field(min_length=1)
     name: str = Field(min_length=1)

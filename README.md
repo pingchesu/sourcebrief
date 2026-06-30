@@ -108,7 +108,7 @@ That is the product bar: an agent can act on the answer because every claim poin
 
 ## Self-improvement without silent mutation
 
-SourceBrief now ships a local, artifact-based self-improvement loop for reviewing its own cited answers and PR-review evidence:
+SourceBrief now ships a productized, artifact-based self-improvement loop for reviewing its own cited answers and PR-review evidence:
 
 ```text
 cited answer or PR evidence
@@ -122,14 +122,21 @@ cited answer or PR evidence
 
 This is not an automatic optimizer and it does not rewrite prompts, skills, runtime packs, docs, or code by itself. The shipped path writes bounded JSON artifacts and human-reviewable staged patches; applying a change remains an explicit developer/PR action.
 
-Try the public-safe smoke path:
+Use the web console for the product path:
+
+1. Open **Self-improvement** from the left navigation.
+2. Run **MVP smoke** to generate the complete bundle → report → proposal → gate → staged receipt chain.
+3. Inspect **Review history** and artifact detail before applying any staged patch.
+4. Run **sleep dry-run** only after multiple proposal artifacts exist; it mines recurrence candidates but still does not apply learning.
+
+Use the CLI for automation or local evidence bundles:
 
 ```bash
 uv run sourcebrief review mvp-smoke --out-dir ./artifacts/self-improvement-mvp-smoke
 uv run sourcebrief review history list --dir ./artifacts/self-improvement-mvp-smoke
 ```
 
-Start with [Self-improvement MVP smoke](docs/SELF_IMPROVEMENT_MVP_SMOKE.md), [Review bundle runner](docs/REVIEW_BUNDLE_RUNNER.md), [Validation gate](docs/VALIDATION_GATE.md), and [Staged adoption](docs/STAGED_ADOPTION.md).
+Start with the web console **Self-improvement** page, then use [Self-improvement MVP smoke](docs/SELF_IMPROVEMENT_MVP_SMOKE.md), [Review bundle runner](docs/REVIEW_BUNDLE_RUNNER.md), [Validation gate](docs/VALIDATION_GATE.md), and [Staged adoption](docs/STAGED_ADOPTION.md) for automation details.
 
 ## How SourceBrief works
 

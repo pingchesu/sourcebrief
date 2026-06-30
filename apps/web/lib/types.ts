@@ -116,3 +116,10 @@ export type AgentContextCoverage = { resource_id: string; name: string; queryabl
 export type AgentContextResponse = { query: string; profile: string; runtime: string; instruction: string; context: string; citations: AgentCitation[]; token_budget_hint: number; symbols: CodeSymbol[]; resource_coverage?: AgentContextCoverage[]; coverage_warnings?: string[] };
 export type ApiToken = { id: string; workspace_id?: string; name: string; scopes: string[]; allowed_project_ids: string[] | null; allowed_resource_ids: string[] | null; revoked_at: string | null; created_at: string | null; last_used_at: string | null; expires_at?: string | null; created_by?: string | null };
 export type TokenCreateResponse = { token: string; api_token: ApiToken };
+
+
+export type SelfImprovementHistoryRecord = { artifact_id: string; schema_version: string; kind: string; path: string; created_at: string | null; bundle_id: string | null; report_id: string | null; proposal_id: string | null; gate_result_id: string | null; source_report_id: string | null; source_bundle_id: string | null; source_finding_id: string | null; status: string | null; decision: string | null; verdict: string | null; finding_count: number; blocker_major_count: number; target_surface: string | null; subject_refs: Array<Record<string, unknown>>; redaction_counts: Record<string, number> };
+export type SelfImprovementHistory = { root: string; records: SelfImprovementHistoryRecord[]; metrics: Record<string, number>; provenance: Array<Record<string, string>> };
+export type SelfImprovementOverview = { workspace_id: string; project_id: string; root: string; no_silent_mutation: boolean; shipped_surfaces: string[]; next_safe_actions: string[]; history: SelfImprovementHistory };
+export type SelfImprovementArtifact = { record: SelfImprovementHistoryRecord; payload: Record<string, unknown>; redaction_counts: Record<string, number> };
+export type SelfImprovementRun = { status: string; out_dir: string; summary: Record<string, unknown>; history: SelfImprovementHistory };

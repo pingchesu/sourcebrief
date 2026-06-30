@@ -232,6 +232,34 @@ def main() -> None:
     if project is None:
         fail("project create returned empty response")
     proj = project["id"]
+    self_improvement_base = f"/workspaces/{ws}/projects/{proj}/self-improvement"
+    self_improvement_overview = request("GET", self_improvement_base, 200, headers=HEADERS)
+    if self_improvement_overview is None or self_improvement_overview.get("no_silent_mutation") is not True:
+        fail(f"self-improvement overview missing no-silent-mutation contract: {self_improvement_overview}")
+    self_improvement_smoke = request("POST", f"{self_improvement_base}/mvp-smoke", 200, json={"owner": "qa"}, headers=HEADERS)
+    if self_improvement_smoke is None:
+        fail("self-improvement MVP smoke returned empty response")
+    self_improvement_smoke = cast(dict[str, Any], self_improvement_smoke)
+    if self_improvement_smoke.get("status") != "completed" or self_improvement_smoke.get("summary", {}).get("gate_decision") != "accept":
+        fail(f"self-improvement MVP smoke did not produce accepted gate: {self_improvement_smoke}")
+    si_records = self_improvement_smoke.get("history", {}).get("records") or []
+    if {record.get("kind") for record in si_records} < {"bundle", "report", "proposal", "gate_result", "staged_adoption"}:
+        fail(f"self-improvement history missing expected artifact kinds: {si_records}")
+    artifact_id = si_records[0].get("artifact_id")
+    if not artifact_id:
+        fail(f"self-improvement first history record missing artifact_id: {si_records[0] if si_records else si_records}")
+    artifact = request("GET", f"{self_improvement_base}/artifacts/{artifact_id}", 200, headers=HEADERS)
+    if artifact is None or not artifact.get("payload") or artifact.get("record", {}).get("artifact_id") != artifact_id:
+        fail(f"self-improvement artifact detail missing payload/provenance: {artifact}")
+    self_improvement_sleep = request(
+        "POST",
+        f"{self_improvement_base}/sleep",
+        200,
+        json={"min_occurrences": 2, "max_artifacts": 100},
+        headers=HEADERS,
+    )
+    if self_improvement_sleep is None or self_improvement_sleep.get("summary", {}).get("dry_run") is not True:
+        fail(f"self-improvement sleep endpoint must remain dry-run: {self_improvement_sleep}")
     token_created = request(
         "POST",
         f"/workspaces/{ws}/api-tokens",
@@ -717,7 +745,7 @@ def main() -> None:
 
     print(
         "QA smoke passed: document+git ingestion → snapshots → chunks → embeddings → code symbols → graph index → lexical/hybrid/GraphRAG context retrieval with citations, "
-        "CLI search, agent profile, runtime install plan, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, Hermes integration script, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
+        "CLI search, agent profile, runtime install plan, web console homepage/token flow, provider health/namespace diagnostics, query/resource usage analytics, review lifecycle, self-improvement artifact loop, scheduled refresh dry-run, restore/purge lifecycle, upload connector redaction, agent-context API, central MCP context tool, Hermes integration script, index-run logs, audit events, RQ worker, auth denial (read+search), frontend health"
     )
 
 

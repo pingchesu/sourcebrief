@@ -4,7 +4,11 @@ This document is the end-to-end proof for SourceBrief self-improvement issue [#1
 
 The smoke path connects the component artifacts without reviewing raw chat transcripts and without mutating prompts, skills, runtime config, code, or production state.
 
-## One-command local smoke
+## Web console path
+
+Open **Self-improvement** from the web console. The page provides a **Run MVP smoke** action that writes the same artifact chain into the current workspace/project self-improvement root and immediately refreshes redacted review history. This is the preferred product path for humans because it makes provenance, gate status, staged receipts, and non-mutation boundaries visible without opening raw JSON by hand.
+
+## CLI path
 
 ```bash
 sourcebrief review mvp-smoke --out-dir ./artifacts/self-improvement-mvp-smoke

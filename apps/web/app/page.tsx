@@ -236,6 +236,7 @@ export default function CommandCenterPage() {
             </div>
             <div className="action-grid">
               <ActionLink href="/workbench" label="Try a query in Workbench" description="Preview the cited context packet for a query." tone="primary" />
+              <ActionLink href="/self-improvement" label="Review self-improvement artifacts" description="Inspect bundles, reports, proposals, gates, and staged receipts." />
               <ActionLink href="/agent-profile" label="Prepare agent" description="Review the generated project agent before sharing it." />
             </div>
           </>}

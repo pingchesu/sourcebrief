@@ -142,7 +142,15 @@ First questions:
 - "Can this failure become a deterministic regression check?"
 - "Did the validation gate accept or reject the proposed learning?"
 
-### Copy/paste start
+### Web console start
+
+1. Open **Self-improvement** in the SourceBrief web console.
+2. Run **MVP smoke** to create the stitched artifact chain for the current workspace/project.
+3. Inspect **Review history** and open artifact detail for the report, proposal, gate result, and staged receipt.
+4. Run **sleep dry-run** only after multiple proposal artifacts exist; do not treat it as adopted learning.
+5. If a staged patch exists, read its receipt before applying anything; applying remains a separate developer/PR action.
+
+### CLI automation start
 
 1. Run the stitched local proof: `uv run sourcebrief review mvp-smoke --out-dir ./artifacts/self-improvement-mvp-smoke`.
 2. Inspect history: `uv run sourcebrief review history list --dir ./artifacts/self-improvement-mvp-smoke`.
