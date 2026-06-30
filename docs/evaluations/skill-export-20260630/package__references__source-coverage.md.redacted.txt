@@ -1,0 +1,21 @@
+# Source Coverage
+
+## Pack totals
+
+- Resources: 1
+- Artifacts: 1
+- Citations: 2203
+
+## Per-resource coverage
+
+| Resource | Artifacts | Citations | Files | Sections | Manifest |
+| --- | --- | --- | --- | --- | --- |
+| SourceBrief repository launch import | 1 | 2203 | 313 | 2203 | sha256:2ebea143449d |
+
+## Coverage warnings
+
+- No zero-citation or zero-artifact resource coverage gaps detected in pack metadata.
+
+## Review rule
+
+If the user asks about an uncovered area, do not infer from package text. Ask for reindex, artifact approval, or an expanded Context Pack.

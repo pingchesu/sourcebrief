@@ -1,0 +1,229 @@
+# Data Structure
+
+Start here before searching. This file is the package's hierarchical map, inspired by `rag-skill` data-structure-first retrieval and `book-to-skill` progressive disclosure.
+
+Pack: `launch-proof-212` v`1` / `sha256:ff9b59ed39955a33f75fa2eb99e7eb32d774ae36ec72f29498e9d3fa550c21bf`
+
+## Covered resources
+
+| Resource | Type | Artifacts | Citations | Files | Sections | Audit ref |
+| --- | --- | --- | --- | --- | --- | --- |
+| SourceBrief repository launch import | git | 1 | 2203 | 313 | 2203 | 088e3e90-488 |
+
+## File starting points
+
+Use these paths as candidate starting points. Do not read entire corpora; use SourceBrief search/read-section tools.
+
+| Path | Coverage | Sections | Bytes | MIME |
+| --- | --- | --- | --- | --- |
+| .dockerignore | unsectioned |  | 132 | text/plain |
+| .env.example | unsectioned |  | 3488 | text/plain |
+| .github/ISSUE_TEMPLATE/bug_report.yml | sectioned | 1 | 1924 | text/plain |
+| .gitignore | unsectioned |  | 393 | text/plain |
+| AGENTS.md | sectioned | 12 | 9143 | text/plain |
+| CONTRIBUTING.md | sectioned | 5 | 2397 | text/plain |
+| LICENSE | unsectioned |  | 1063 | text/plain |
+| Makefile | unsectioned |  | 5294 | text/plain |
+| README.md | sectioned | 22 | 17313 | text/plain |
+| alembic.ini | unsectioned |  | 627 | text/plain |
+| apps/api/sourcebrief_api/__init__.py | unsectioned |  |  | text/plain |
+| apps/web/app/admin/page.tsx | sectioned | 1 | 550 | text/plain |
+| demo/alpha/README.md | sectioned | 4 | 1912 | text/plain |
+| docker/api.Dockerfile | unsectioned |  | 513 | text/plain |
+| docker-compose.yml | sectioned | 2 | 12113 | text/plain |
+| docs/AGENT_RUNTIME_USAGE.md | sectioned | 22 | 25120 | text/plain |
+| docs/ALPHA_RELEASE_NOTES.md | sectioned | 10 | 2841 | text/plain |
+| docs/ARCHITECTURE.md | sectioned | 14 | 7521 | text/plain |
+| docs/CITATION_SUPPORT_CHECK.md | sectioned | 6 | 2243 | text/plain |
+| docs/CLAIM_LEDGER.md | sectioned | 4 | 4193 | text/plain |
+| docs/CODEBASE_MEMORY_MCP_REFERENCE_SPEC.md | sectioned | 47 | 20034 | text/plain |
+| docs/CONCEPTS.md | sectioned | 7 | 4869 | text/plain |
+| docs/CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md | sectioned | 152 | 68071 | text/plain |
+| docs/DEFAULT_CREDENTIAL_POLICY.md | sectioned | 6 | 3150 | text/plain |
+| docs/DEMO.md | sectioned | 10 | 4443 | text/plain |
+| docs/E2E_EVIDENCE.md | sectioned | 7 | 5010 | text/plain |
+| docs/EVAL_MANIFESTS.md | sectioned | 7 | 5974 | text/plain |
+| docs/EVOEMBEDDING_EVALUATION_PLAN.md | sectioned | 14 | 7363 | text/plain |
+| docs/EVOEMBEDDING_SIDECAR.md | sectioned | 7 | 4636 | text/plain |
+| docs/GITHUB_PR_REVIEW.md | sectioned | 6 | 2849 | text/plain |
+| docs/GIT_REPO_IMPORT_PRODUCT_GAPS.md | sectioned | 14 | 10490 | text/plain |
+| docs/GUIDE.md | sectioned | 11 | 6010 | text/plain |
+| docs/INSTALL_AND_USE.md | sectioned | 12 | 12483 | text/plain |
+| docs/MILESTONE-1.md | sectioned | 24 | 8732 | text/plain |
+| docs/MILESTONE-11.md | sectioned | 7 | 3633 | text/plain |
+| docs/MILESTONE-12.md | sectioned | 12 | 3589 | text/plain |
+| docs/MILESTONE-13.md | sectioned | 7 | 3694 | text/plain |
+| docs/MILESTONE-14.md | sectioned | 10 | 4140 | text/plain |
+| docs/MILESTONE-15.md | sectioned | 6 | 2900 | text/plain |
+| docs/MILESTONE-16.md | sectioned | 8 | 4748 | text/plain |
+| docs/MILESTONE-17.md | sectioned | 8 | 2993 | text/plain |
+| docs/MILESTONE-18.md | sectioned | 7 | 2925 | text/plain |
+| docs/MILESTONE-2.md | sectioned | 10 | 8180 | text/plain |
+| docs/MILESTONE-23.md | sectioned | 5 | 1513 | text/plain |
+| docs/MILESTONE-27.md | sectioned | 5 | 1622 | text/plain |
+| docs/MILESTONE-28.md | sectioned | 5 | 2509 | text/plain |
+| docs/MILESTONE-29.md | sectioned | 5 | 2256 | text/plain |
+| docs/MILESTONE-3.md | sectioned | 5 | 1992 | text/plain |
+| docs/MILESTONE-30.md | sectioned | 15 | 12119 | text/plain |
+| docs/MILESTONE-4.md | sectioned | 5 | 1537 | text/plain |
+| docs/MILESTONE-5.md | sectioned | 5 | 1478 | text/plain |
+| docs/MILESTONE-6.md | sectioned | 5 | 2337 | text/plain |
+| docs/MILESTONE-7-10.md | sectioned | 7 | 4083 | text/plain |
+| docs/OPERATIONS.md | sectioned | 13 | 7669 | text/plain |
+| docs/OUT_OF_BOX_PRODUCT_PLAN.md | sectioned | 23 | 10581 | text/plain |
+| docs/PROOF_ARTIFACTS.md | sectioned | 8 | 9989 | text/plain |
+| docs/QUICKSTART.md | sectioned | 20 | 12311 | text/plain |
+| docs/README.md | sectioned | 8 | 11528 | text/plain |
+| docs/RECIPES.md | sectioned | 19 | 11759 | text/plain |
+| docs/REGRESSION_PROPOSALS.md | sectioned | 6 | 1892 | text/plain |
+| docs/REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md | sectioned | 42 | 35433 | text/plain |
+| docs/REVIEW_BUNDLE_CAPTURE.md | sectioned | 5 | 2243 | text/plain |
+| docs/REVIEW_BUNDLE_RUNNER.md | sectioned | 7 | 2198 | text/plain |
+| docs/REVIEW_BUNDLE_SCHEMA.md | sectioned | 7 | 4153 | text/plain |
+| docs/REVIEW_FINDING_TAXONOMY.md | sectioned | 7 | 3964 | text/plain |
+| docs/REVIEW_HISTORY.md | sectioned | 5 | 1942 | text/plain |
+| docs/ROADMAP.md | sectioned | 10 | 5611 | text/plain |
+| docs/RUNTIME_INSTALL_PLAN.md | sectioned | 13 | 11032 | text/plain |
+| docs/RUNTIME_PACK_REVIEW_LOOP.md | sectioned | 6 | 2413 | text/plain |
+| docs/SELF_IMPROVEMENT.md | sectioned | 28 | 17562 | text/plain |
+| docs/SELF_IMPROVEMENT_GOLDEN_FIXTURES.md | sectioned | 5 | 2047 | text/plain |
+| docs/SELF_IMPROVEMENT_MVP_SMOKE.md | sectioned | 5 | 2070 | text/plain |
+| docs/SELF_IMPROVEMENT_SECURITY.md | sectioned | 8 | 4520 | text/plain |
+| docs/SLEEP_REPLAY_LOOP.md | sectioned | 5 | 1828 | text/plain |
+| docs/SPEC.md | sectioned | 139 | 54263 | text/plain |
+| docs/STAGED_ADOPTION.md | sectioned | 5 | 2387 | text/plain |
+| docs/STATUS.md | sectioned | 12 | 4421 | text/plain |
+| docs/VALIDATION_GATE.md | sectioned | 7 | 1768 | text/plain |
+| docs/WALKTHROUGH.md | sectioned | 8 | 2336 | text/plain |
+| docs/assets/sourcebrief-agent-workflow.svg | unsectioned |  | 5339 | text/plain |
+| docs/context-artifact-compiler/A1-manifest-model-spec.md | sectioned | 26 | 22513 | text/plain |
+| docs/evaluations/awesome-agent-harness-50q-20260626.md | sectioned | 9 | 7848 | text/plain |
+| docs/examples/agent-context-output.md | sectioned | 6 | 2967 | text/plain |
+| docs/followups/CLI_ERGONOMICS_GOLDEN_PATH.md | sectioned | 7 | 2521 | text/plain |
+| docs/frontend-rebuild/PR1-command-center-spec.md | sectioned | 21 | 13182 | text/plain |
+| examples/awesome-agent-harness-50q/README.md | sectioned | 7 | 4196 | text/plain |
+| migrations/env.py | sectioned | 1 | 1262 | text/plain |
+| packages/cli/sourcebrief_cli/__init__.py | sectioned | 1 | 98 | text/plain |
+| packages/shared/sourcebrief_shared/__init__.py | unsectioned |  |  | text/plain |
+| packages/worker/sourcebrief_worker/__init__.py | unsectioned |  |  | text/plain |
+| pyproject.toml | sectioned | 1 | 1384 | text/plain |
+| scripts/alpha_eval.py | sectioned | 4 | 18874 | text/plain |
+| scripts/check_quickstart_prereqs.py | sectioned | 2 | 7324 | text/plain |
+| scripts/collect_e2e_evidence.py | sectioned | 3 | 13208 | text/plain |
+| scripts/eval_manifest.py | sectioned | 1 | 2951 | text/plain |
+| scripts/evoembedding_sidecar.py | sectioned | 2 | 7894 | text/plain |
+| scripts/hermes_integration.py | sectioned | 3 | 14294 | text/plain |
+| scripts/launch_50q_walkthrough.py | sectioned | 5 | 26361 | text/plain |
+| scripts/launch_security_probe.py | sectioned | 4 | 21053 | text/plain |
+| scripts/qa_smoke.py | sectioned | 7 | 31174 | text/plain |
+| scripts/run_awesome_agent_harness_eval.py | sectioned | 10 | 52898 | text/plain |
+| scripts/run_profile_matrix_eval.py | sectioned | 5 | 24720 | text/plain |
+| scripts/wait_for_http.py | sectioned | 1 | 592 | text/plain |
+| tests/conftest.py | sectioned | 1 | 247 | text/plain |
+| tests/integration/test_agent_integrations_flow.py | sectioned | 7 | 28651 | text/plain |
+| tests/unit/test_agent_answer_abstention.py | sectioned | 1 | 3911 | text/plain |
+| .github/ISSUE_TEMPLATE/evaluation_example.yml | sectioned | 1 | 1493 | text/plain |
+| apps/api/sourcebrief_api/auth.py | sectioned | 2 | 7822 | text/plain |
+| apps/web/app/agent-files/page.tsx | sectioned | 1 | 548 | text/plain |
+| demo/alpha/eval_manifest.json | sectioned | 4 | 12427 | text/plain |
+| docker/web.Dockerfile | unsectioned |  | 259 | text/plain |
+| docs/assets/sourcebrief-context-flow.svg | unsectioned |  | 3168 | text/plain |
+| docs/context-artifact-compiler/A2-folder-upload-spec.md | sectioned | 41 | 52297 | text/plain |
+| docs/evaluations/sourcebrief-launch-50q-20260627.md | sectioned | 9 | 8635 | text/plain |
+| docs/examples/demo-runtime-output.md | sectioned | 8 | 4375 | text/plain |
+| docs/followups/DOCS_DEEP_PROOF_CLEANUP.md | sectioned | 8 | 2835 | text/plain |
+| docs/frontend-rebuild/PR2-sources-lifecycle-spec.md | sectioned | 43 | 25275 | text/plain |
+| examples/awesome-agent-harness-50q/questions.json | sectioned | 7 | 32110 | text/plain |
+| migrations/versions/0001_foundation.py | sectioned | 2 | 9853 | text/plain |
+| packages/cli/sourcebrief_cli/main.py | sectioned | 19 | 104935 | text/plain |
+
+## Section starting points
+
+| Path | Section title | Start line | End line |
+| --- | --- | --- | --- |
+| AGENTS.md | SourceBrief Agent Development Guide | 1 | 4 |
+| AGENTS.md | Product bar | 5 | 16 |
+| AGENTS.md | Required development workflow | 17 | 32 |
+| AGENTS.md | Claude Code usage | 33 | 56 |
+| AGENTS.md | Hermes adversarial review | 57 | 72 |
+| AGENTS.md | Verification gates | 73 | 133 |
+| AGENTS.md | No-mock policy | 134 | 146 |
+| AGENTS.md | GitHub and PR operations | 147 | 187 |
+| AGENTS.md | SourceBrief repo conventions | 188 | 212 |
+| AGENTS.md | Frontend product standards | 213 | 233 |
+| AGENTS.md | Operational boundaries | 234 | 247 |
+| AGENTS.md | Communication style | 248 | 258 |
+| apps/api/sourcebrief_api/auth.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/auth.py | Lines 121-203 | 121 | 203 |
+| apps/api/sourcebrief_api/constants.py | Lines 1-38 | 1 | 38 |
+| apps/api/sourcebrief_api/context_packs.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/context_packs.py | Lines 121-229 | 121 | 229 |
+| apps/api/sourcebrief_api/graph_merges.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/graph_merges.py | Lines 121-240 | 121 | 240 |
+| apps/api/sourcebrief_api/graph_merges.py | Lines 241-360 | 241 | 360 |
+| apps/api/sourcebrief_api/graph_merges.py | Lines 361-480 | 361 | 480 |
+| apps/api/sourcebrief_api/graph_merges.py | Lines 481-494 | 481 | 494 |
+| apps/api/sourcebrief_api/graph_versions.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/graph_versions.py | Lines 121-236 | 121 | 236 |
+| apps/api/sourcebrief_api/remote_code.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/remote_code.py | Lines 121-191 | 121 | 191 |
+| apps/api/sourcebrief_api/repo_agents.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/repo_agents.py | Lines 121-240 | 121 | 240 |
+| apps/api/sourcebrief_api/repo_agents.py | Lines 241-247 | 241 | 247 |
+| apps/api/sourcebrief_api/resource_map.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/resource_map.py | Lines 121-240 | 121 | 240 |
+| apps/api/sourcebrief_api/resource_map.py | Lines 241-278 | 241 | 278 |
+| apps/api/sourcebrief_api/retrieval.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/retrieval.py | Lines 121-240 | 121 | 240 |
+| apps/api/sourcebrief_api/retrieval.py | Lines 241-360 | 241 | 360 |
+| apps/api/sourcebrief_api/retrieval.py | Lines 361-480 | 361 | 480 |
+| apps/api/sourcebrief_api/retrieval.py | Lines 481-600 | 481 | 600 |
+| apps/api/sourcebrief_api/retrieval.py | Lines 601-720 | 601 | 720 |
+| apps/api/sourcebrief_api/retrieval.py | Lines 721-821 | 721 | 821 |
+| apps/api/sourcebrief_api/routers/__init__.py | Lines 1-1 | 1 | 1 |
+| apps/api/sourcebrief_api/routers/system.py | Lines 1-32 | 1 | 32 |
+| apps/api/sourcebrief_api/schemas.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/schemas.py | Lines 121-240 | 121 | 240 |
+| apps/api/sourcebrief_api/schemas.py | Lines 241-360 | 241 | 360 |
+| apps/api/sourcebrief_api/schemas.py | Lines 361-480 | 361 | 480 |
+| apps/api/sourcebrief_api/schemas.py | Lines 481-600 | 481 | 600 |
+| apps/api/sourcebrief_api/schemas.py | Lines 601-720 | 601 | 720 |
+| apps/api/sourcebrief_api/schemas.py | Lines 721-840 | 721 | 840 |
+| apps/api/sourcebrief_api/schemas.py | Lines 841-960 | 841 | 960 |
+| apps/api/sourcebrief_api/schemas.py | Lines 961-1080 | 961 | 1080 |
+| apps/api/sourcebrief_api/schemas.py | Lines 1081-1200 | 1081 | 1200 |
+| apps/api/sourcebrief_api/schemas.py | Lines 1201-1320 | 1201 | 1320 |
+| apps/api/sourcebrief_api/schemas.py | Lines 1321-1440 | 1321 | 1440 |
+| apps/api/sourcebrief_api/schemas.py | Lines 1441-1560 | 1441 | 1560 |
+| apps/api/sourcebrief_api/schemas.py | Lines 1561-1569 | 1561 | 1569 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 1-120 | 1 | 120 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 121-240 | 121 | 240 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 241-360 | 241 | 360 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 361-480 | 361 | 480 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 481-600 | 481 | 600 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 601-720 | 601 | 720 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 721-840 | 721 | 840 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 841-960 | 841 | 960 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 961-1080 | 961 | 1080 |
+| apps/api/sourcebrief_api/skill_exports.py | Lines 1081-1187 | 1081 | 1187 |
+| apps/web/app/admin/page.tsx | Lines 1-11 | 1 | 11 |
+| apps/web/app/agent-files/page.tsx | Lines 1-11 | 1 | 11 |
+| apps/web/app/agent-profile/page.tsx | Lines 1-104 | 1 | 104 |
+| apps/web/app/api/health/route.ts | Lines 1-3 | 1 | 3 |
+| apps/web/app/ask/page.tsx | Lines 1-8 | 1 | 8 |
+| apps/web/app/config/page.tsx | Lines 1-29 | 1 | 29 |
+| apps/web/app/evals/page.tsx | Lines 1-8 | 1 | 8 |
+| apps/web/app/git-env/page.tsx | Lines 1-7 | 1 | 7 |
+| apps/web/app/graph-merge/page.tsx | Lines 1-120 | 1 | 120 |
+| apps/web/app/graph-merge/page.tsx | Lines 121-160 | 121 | 160 |
+| apps/web/app/graphs/page.tsx | Lines 1-103 | 1 | 103 |
+| apps/web/app/import/page.tsx | Lines 1-7 | 1 | 7 |
+| apps/web/app/layout.tsx | Lines 1-22 | 1 | 22 |
+| apps/web/app/login/page.tsx | Lines 1-49 | 1 | 49 |
+| apps/web/app/maintenance/page.tsx | Lines 1-11 | 1 | 11 |
+
+## Navigation rule
+
+1. Pick the resource/path cluster that matches the user question.
+2. Use `references/resource-map.md` to locate approved artifacts/citations.
+3. Call SourceBrief evidence tools with the pinned pack selector.

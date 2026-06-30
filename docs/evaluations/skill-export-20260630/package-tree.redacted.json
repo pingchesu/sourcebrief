@@ -1,0 +1,92 @@
+[
+  {
+    "bytes": 1285,
+    "path": "README.md",
+    "sha256": "sha256:85921c8200de8e73042160f677c1f803acbeea45fb62b9f86420136fdb6f8026"
+  },
+  {
+    "bytes": 8028,
+    "path": "SKILL.md",
+    "sha256": "sha256:c91c2c220cbdb5405a094c147ef5a077ae0e304a704e3817b923a66c895966d2"
+  },
+  {
+    "bytes": 995,
+    "path": "examples/smoke-queries.md",
+    "sha256": "sha256:5660da9deb185b19cb14683d4ce4319acac83164ad8f52d40ba9aee3b253449a"
+  },
+  {
+    "bytes": 7937,
+    "path": "manifest.json",
+    "sha256": "sha256:cc3cf180477f29c8eaca5c76a63c30cfb8bd28cae39c1051e1677a685b65018d"
+  },
+  {
+    "bytes": 895,
+    "path": "references/citation-policy.md",
+    "sha256": "sha256:bf10d5c78ebec60a8fe764fb6d5ce35c3ec0e5f11c2201b9406557b6787bfab2"
+  },
+  {
+    "bytes": 14535,
+    "path": "references/data-structure.md",
+    "sha256": "sha256:9279f38ebac7f1fa33bde63bec2660bb67765f78d2341b8291393704d6171f26"
+  },
+  {
+    "bytes": 603,
+    "path": "references/freshness.md",
+    "sha256": "sha256:cdeb769d958e78cdab6f007daab0a7a848ace2208b3569dc080295334a7583d4"
+  },
+  {
+    "bytes": 8595,
+    "path": "references/glossary.md",
+    "sha256": "sha256:c1be2f306af2676d2b977ced7fe9ee183d7c6503acfce4f139294a8ae9aeb583"
+  },
+  {
+    "bytes": 496,
+    "path": "references/patterns.md",
+    "sha256": "sha256:92a534b0898f66cd36a7d9bb7325c1a2e9e9c2dd601c8289fea54037dbbf6c2e"
+  },
+  {
+    "bytes": 691,
+    "path": "references/pitfalls.md",
+    "sha256": "sha256:026a0e17c70e538ce7cfe05d4830b5a13a4094c2ac62d77e02a312076eeb821e"
+  },
+  {
+    "bytes": 15118,
+    "path": "references/resource-map.md",
+    "sha256": "sha256:36613aec327f13b1fee77f150e0cc1447abbe398ff6c7c85ec503b02e8e4875f"
+  },
+  {
+    "bytes": 567,
+    "path": "references/source-coverage.md",
+    "sha256": "sha256:745af9de79bbde29fdfd7fce024d061fbe09e2447b6c15024186cfdbdfc11ab9"
+  },
+  {
+    "bytes": 2338,
+    "path": "references/task-playbooks/architecture-question.md",
+    "sha256": "sha256:a2123ed6385e4a27c0a5dc57a06f3c1d3408d236b3958ecee34627e2843788a2"
+  },
+  {
+    "bytes": 3425,
+    "path": "references/task-playbooks/change-impact.md",
+    "sha256": "sha256:12bc2d9a1838c7b64bd5df76838e4ef01bbedc660683a3b2a353f5aeac15dfbe"
+  },
+  {
+    "bytes": 3024,
+    "path": "references/task-playbooks/debugging.md",
+    "sha256": "sha256:b720555b915882083bf9adbdcb2503e7b48914e90a685ad4dc4a3b159b20b3a2"
+  },
+  {
+    "bytes": 1807,
+    "path": "references/task-playbooks/onboarding.md",
+    "sha256": "sha256:8951540c5e7f1afec9edb41be2a8c6a93d906ee819d32f6786e5de282e11bd04"
+  },
+  {
+    "bytes": 3038,
+    "path": "references/task-routes.md",
+    "sha256": "sha256:93a0d2b60c41a0f93d3c5a5c77f9a7c7d65cf33cfef9592952233911a5057f01"
+  },
+  {
+    "bytes": 833,
+    "path": "scripts/verify-sourcebrief-runtime.sh",
+    "sha256": "sha256:03fd4275ff42fd4df4e0d8ffaede27f38d15cb5748bdd1854f0aa9b379aa1f03"
+  }
+]
