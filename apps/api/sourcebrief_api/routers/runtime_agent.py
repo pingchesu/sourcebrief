@@ -59,7 +59,7 @@ class RuntimeAgentRouterDeps:
 
 
 def create_router(deps: RuntimeAgentRouterDeps) -> APIRouter:
-    router = APIRouter(tags=["runtime-agent"])
+    router = APIRouter()
 
     @router.get(
         "/workspaces/{workspace_id}/projects/{project_id}/agent-files",

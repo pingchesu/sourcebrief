@@ -53,3 +53,12 @@ def test_runtime_agent_route_contract_is_stable() -> None:
 
 def test_recursive_route_signature_count_is_stable() -> None:
     assert len(_route_signatures()) == 131
+
+
+def test_runtime_agent_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_ROUTE_SIGNATURES:
+        if path in {"/healthz", "/provider-health"}:
+            continue
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
