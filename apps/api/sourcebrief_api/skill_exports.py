@@ -1001,17 +1001,72 @@ def _manifest_hash_form(ctx: dict[str, Any], export_type: str, files: list[dict[
         "section_scope": [resource["source_snapshot_id_short"] for resource in ctx["resources"]],
     }
     cache_key = _sha256_text(_canonical_json(cache_seed) + "\n")
+    runtime_tools = {
+        "mcp_required": ["sourcebrief.get_agent_context"],
+        "mcp_optional": [
+            "sourcebrief.search",
+            "sourcebrief.read_section",
+            "sourcebrief.get_context_pack",
+            "sourcebrief.get_resource_map",
+            "sourcebrief.graph_query",
+            "sourcebrief.graph_path",
+        ],
+        "cli": [
+            "sourcebrief doctor",
+            "sourcebrief runtime validate",
+            "sourcebrief skill install --dry-run",
+            "sourcebrief skill uninstall --receipt",
+        ],
+    }
     return {
         "schema_version": GENERATOR_VERSION,
+        "agent_pack_schema_version": "sourcebrief.agent-pack.v1",
         "package_kind": PACKAGE_KIND,
         "export_type": export_type,
         "title": ctx["title"],
         "summary": ctx["summary"],
+        "mode": "remote-live",
+        "requires_sourcebrief_remote": True,
         "pack_key": version.pack_key,
         "pack_version": version.version,
         "pack_hash": version.pack_hash,
         "pack_status": version.status,
         "coverage": coverage,
+        "runtime_access": {
+            "mode": "remote-live",
+            "requires_sourcebrief_remote": True,
+            "local_repo_required": False,
+            "local_grep_allowed": False,
+            "local_edits_allowed": False,
+            "current_claims_require_remote": True,
+        },
+        "runtime_tools": runtime_tools,
+        "local_payload": {
+            "contains_full_resource": False,
+            "contains_raw_source": False,
+            "contains_embeddings": False,
+            "contains_graph_index": False,
+            "contains_resource_map_summary": True,
+            "contains_cited_excerpts": "bounded",
+        },
+        "freshness_policy": {
+            "require_remote_for_current_claims": True,
+            "stale_context_behavior": "warn_or_block_by_task_sensitivity",
+            "pack_mismatch_behavior": "block_production_sensitive_claims",
+        },
+        "security_policy": {
+            "requires_runtime_auth": True,
+            "supports_revocation": True,
+            "plaintext_tokens_allowed": False,
+            "server_side_local_apply_allowed": False,
+            "cache_mode": "none",
+        },
+        "cache_policy": {
+            "mode": "none",
+            "pinned_snapshot": False,
+            "local_mirror": False,
+            "full_resource_sync_default": False,
+        },
         "generation": {
             "mode": "deterministic_fallback",
             "llm_provider_used": False,

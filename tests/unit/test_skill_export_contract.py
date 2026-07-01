@@ -98,3 +98,75 @@ def test_skill_export_scan_rejects_lowercase_windows_user_paths() -> None:
 
     assert scan["ok"] is False
     assert any(finding["message"] == r"[A-Za-z]:\\Users\\" for finding in scan["findings"])
+
+
+def test_skill_export_manifest_declares_remote_live_agent_pack_policy() -> None:
+    class Version:
+        pack_key = "default"
+        version = 3
+        pack_hash = "sha256:" + "a" * 64
+        status = "published"
+
+    manifest = skill_exports._manifest_hash_form(  # noqa: SLF001
+        {
+            "version": Version(),
+            "counts": {"resources": 1, "artifacts": 2, "citations": 3},
+            "title": "Demo Agent Pack",
+            "summary": "Demo summary",
+            "resources": [
+                {
+                    "resource_name": "Demo Repo",
+                    "resource_type": "git",
+                    "artifact_count": 2,
+                    "citation_count": 3,
+                    "resource_id_short": "res123",
+                    "source_snapshot_id_short": "snap123",
+                }
+            ],
+            "smoke_queries": [{"id": "one"}],
+        },
+        skill_exports.EXPORT_TYPE_HERMES_SKILL,
+        [],
+    )
+
+    assert manifest["agent_pack_schema_version"] == "sourcebrief.agent-pack.v1"
+    assert manifest["mode"] == "remote-live"
+    assert manifest["requires_sourcebrief_remote"] is True
+    assert manifest["runtime_access"] == {
+        "mode": "remote-live",
+        "requires_sourcebrief_remote": True,
+        "local_repo_required": False,
+        "local_grep_allowed": False,
+        "local_edits_allowed": False,
+        "current_claims_require_remote": True,
+    }
+    assert manifest["local_payload"]["contains_full_resource"] is False
+    assert manifest["local_payload"]["contains_raw_source"] is False
+    assert manifest["local_payload"]["contains_embeddings"] is False
+    assert manifest["local_payload"]["contains_graph_index"] is False
+    assert manifest["freshness_policy"]["require_remote_for_current_claims"] is True
+    assert manifest["security_policy"]["plaintext_tokens_allowed"] is False
+    assert manifest["security_policy"]["server_side_local_apply_allowed"] is False
+    assert manifest["cache_policy"] == {
+        "mode": "none",
+        "pinned_snapshot": False,
+        "local_mirror": False,
+        "full_resource_sync_default": False,
+    }
+    assert "sourcebrief.get_agent_context" in manifest["runtime_tools"]["mcp_required"]
+    assert "sourcebrief.graph_query" in manifest["runtime_tools"]["mcp_optional"]
+    assert "sourcebrief skill install --dry-run" in manifest["runtime_tools"]["cli"]
+
+
+def test_skill_export_readme_states_no_corpus_or_credentials() -> None:
+    class Version:
+        pack_key = "demo"
+        version = 7
+
+    readme = skill_exports._render_readme(  # noqa: SLF001
+        {"title": "Demo", "version": Version(), "counts": {"resources": 1, "artifacts": 2, "citations": 3}},
+        "draft",
+    )
+
+    assert "Agents must have SourceBrief MCP/API access" in readme
+    assert "This package contains no source corpus and no credentials" in readme
