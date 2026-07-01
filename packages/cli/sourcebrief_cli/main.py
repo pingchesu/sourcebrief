@@ -1652,23 +1652,34 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
     checks.append(
         _agent_pack_check(
             "manifest_schema",
-            "passed" if schema_ok else "failed" if mode == "pinned-snapshot" else "warning",
+            "passed" if schema_ok else "failed" if mode in {"pinned-snapshot", "local-mirror"} else "warning",
             agent_pack_schema_version=manifest.get("agent_pack_schema_version"),
-            message=None if schema_ok else "manifest predates Agent Pack policy metadata" if mode != "pinned-snapshot" else "pinned-snapshot manifests require sourcebrief.agent-pack.v1",
+            message=None if schema_ok else "manifest predates Agent Pack policy metadata" if mode not in {"pinned-snapshot", "local-mirror"} else f"{mode} manifests require sourcebrief.agent-pack.v1",
         )
     )
     raw_runtime_access = manifest.get("runtime_access")
     runtime_access = raw_runtime_access if isinstance(raw_runtime_access, dict) else {}
-    runtime_access_ok = (
-        mode in {"remote-live", "pinned-snapshot"}
-        and manifest.get("requires_sourcebrief_remote") is True
-        and runtime_access.get("mode") == mode
-        and runtime_access.get("requires_sourcebrief_remote") is True
-        and runtime_access.get("local_repo_required") is False
-        and runtime_access.get("local_grep_allowed") is False
-        and runtime_access.get("local_edits_allowed") is False
-        and runtime_access.get("current_claims_require_remote") is True
-    )
+    if mode == "local-mirror":
+        runtime_access_ok = (
+            manifest.get("requires_sourcebrief_remote") is False
+            and runtime_access.get("mode") == "local-mirror"
+            and runtime_access.get("requires_sourcebrief_remote") is False
+            and runtime_access.get("local_repo_required") is False
+            and runtime_access.get("local_grep_allowed") is True
+            and runtime_access.get("local_edits_allowed") is False
+            and runtime_access.get("current_claims_require_remote") is True
+        )
+    else:
+        runtime_access_ok = (
+            mode in {"remote-live", "pinned-snapshot"}
+            and manifest.get("requires_sourcebrief_remote") is True
+            and runtime_access.get("mode") == mode
+            and runtime_access.get("requires_sourcebrief_remote") is True
+            and runtime_access.get("local_repo_required") is False
+            and runtime_access.get("local_grep_allowed") is False
+            and runtime_access.get("local_edits_allowed") is False
+            and runtime_access.get("current_claims_require_remote") is True
+        )
     checks.append(
         _agent_pack_check(
             "runtime_access",
@@ -1697,6 +1708,16 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             and local_payload.get("contains_resource_map_summary") is True
             and local_payload.get("contains_cited_excerpts") == "bounded"
         )
+    elif mode == "local-mirror":
+        local_payload_ok = (
+            local_payload.get("contains_full_resource") is True
+            and local_payload.get("contains_raw_source") is True
+            and local_payload.get("contains_embeddings") is True
+            and local_payload.get("contains_graph_index") is True
+            and local_payload.get("contains_resource_map_summary") is True
+            and local_payload.get("contains_cited_excerpts") == "bounded"
+            and bool(local_payload.get("sensitivity_label"))
+        )
     checks.append(
         _agent_pack_check(
             "local_payload",
@@ -1707,6 +1728,7 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             contains_graph_index=local_payload.get("contains_graph_index"),
             contains_resource_map_summary=local_payload.get("contains_resource_map_summary"),
             contains_cited_excerpts=local_payload.get("contains_cited_excerpts"),
+            sensitivity_label=local_payload.get("sensitivity_label"),
         )
     )
     raw_security_policy = manifest.get("security_policy")
@@ -1730,6 +1752,7 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
     raw_freshness_policy = manifest.get("freshness_policy")
     freshness_policy = raw_freshness_policy if isinstance(raw_freshness_policy, dict) else {}
     snapshot_age_days = freshness_policy.get("max_snapshot_age_days")
+    mirror_age_hours = freshness_policy.get("max_mirror_age_hours")
     freshness_ok = freshness_policy.get("require_remote_for_current_claims") is True
     if mode == "pinned-snapshot":
         freshness_ok = (
@@ -1737,6 +1760,14 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             and freshness_policy.get("pinned_snapshot") is True
             and freshness_policy.get("offline_current_claims_allowed") is False
             and _strict_positive_int_at_most(snapshot_age_days, 7)
+        )
+    elif mode == "local-mirror":
+        freshness_ok = (
+            freshness_ok
+            and freshness_policy.get("offline_current_claims_allowed") is False
+            and _strict_positive_int_at_most(mirror_age_hours, 24)
+            and freshness_policy.get("drift_check_required") is True
+            and freshness_policy.get("fail_closed_on_expired_mirror") is True
         )
     checks.append(
         _agent_pack_check(
@@ -1746,6 +1777,9 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             pinned_snapshot=freshness_policy.get("pinned_snapshot"),
             offline_current_claims_allowed=freshness_policy.get("offline_current_claims_allowed"),
             max_snapshot_age_days=freshness_policy.get("max_snapshot_age_days"),
+            max_mirror_age_hours=freshness_policy.get("max_mirror_age_hours"),
+            drift_check_required=freshness_policy.get("drift_check_required"),
+            fail_closed_on_expired_mirror=freshness_policy.get("fail_closed_on_expired_mirror"),
         )
     )
     raw_cache_policy = manifest.get("cache_policy")
@@ -1758,6 +1792,16 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             and cache_policy.get("full_resource_sync_default") is False
             and cache_policy.get("local_mirror") is False
             and _strict_positive_int_at_most(cache_snapshot_age_days, 7)
+        )
+    elif mode == "local-mirror":
+        cache_ok = (
+            cache_policy.get("mode") == "local-mirror"
+            and cache_policy.get("pinned_snapshot") is False
+            and cache_policy.get("local_mirror") is True
+            and cache_policy.get("full_resource_sync_default") is False
+            and cache_policy.get("purge_required") is True
+            and cache_policy.get("update_required") is True
+            and cache_policy.get("audit_receipts_required") is True
         )
     else:
         cache_ok = (
@@ -1775,8 +1819,40 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             local_mirror=cache_policy.get("local_mirror"),
             full_resource_sync_default=cache_policy.get("full_resource_sync_default"),
             max_snapshot_age_days=cache_policy.get("max_snapshot_age_days"),
+            purge_required=cache_policy.get("purge_required"),
+            update_required=cache_policy.get("update_required"),
+            audit_receipts_required=cache_policy.get("audit_receipts_required"),
         )
     )
+    if mode == "local-mirror":
+        raw_local_mirror_policy = manifest.get("local_mirror_policy")
+        local_mirror_policy = raw_local_mirror_policy if isinstance(raw_local_mirror_policy, dict) else {}
+        local_mirror_policy_ok = (
+            local_mirror_policy.get("explicit_opt_in") is True
+            and local_mirror_policy.get("purge_command_required") is True
+            and local_mirror_policy.get("update_command_required") is True
+            and local_mirror_policy.get("drift_detection_required") is True
+            and local_mirror_policy.get("audit_receipts_required") is True
+            and local_mirror_policy.get("sensitivity_labels_required") is True
+            and local_mirror_policy.get("local_access_control_required") is True
+            and local_mirror_policy.get("encryption_at_rest_required") is True
+            and local_mirror_policy.get("server_side_apply_allowed") is False
+        )
+        checks.append(
+            _agent_pack_check(
+                "local_mirror_policy",
+                "passed" if local_mirror_policy_ok else "failed",
+                explicit_opt_in=local_mirror_policy.get("explicit_opt_in"),
+                purge_command_required=local_mirror_policy.get("purge_command_required"),
+                update_command_required=local_mirror_policy.get("update_command_required"),
+                drift_detection_required=local_mirror_policy.get("drift_detection_required"),
+                audit_receipts_required=local_mirror_policy.get("audit_receipts_required"),
+                sensitivity_labels_required=local_mirror_policy.get("sensitivity_labels_required"),
+                local_access_control_required=local_mirror_policy.get("local_access_control_required"),
+                encryption_at_rest_required=local_mirror_policy.get("encryption_at_rest_required"),
+                server_side_apply_allowed=local_mirror_policy.get("server_side_apply_allowed"),
+            )
+        )
     raw_runtime_tools = manifest.get("runtime_tools")
     runtime_tools = raw_runtime_tools if isinstance(raw_runtime_tools, dict) else {}
     raw_required = runtime_tools.get("mcp_required")

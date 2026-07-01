@@ -2874,3 +2874,119 @@ def test_agent_pack_docs_pinned_snapshot_manifest_passes_doctor(capsys, tmp_path
 
     assert data["status"] == "passed"
     assert data["package"]["mode"] == "pinned-snapshot"
+
+
+def _local_mirror_manifest_overrides() -> dict[str, Any]:
+    return {
+        "mode": "local-mirror",
+        "requires_sourcebrief_remote": False,
+        "runtime_access": {
+            "mode": "local-mirror",
+            "requires_sourcebrief_remote": False,
+            "local_repo_required": False,
+            "local_grep_allowed": True,
+            "local_edits_allowed": False,
+            "current_claims_require_remote": True,
+        },
+        "local_payload": {
+            "contains_full_resource": True,
+            "contains_raw_source": True,
+            "contains_embeddings": True,
+            "contains_graph_index": True,
+            "contains_resource_map_summary": True,
+            "contains_cited_excerpts": "bounded",
+            "sensitivity_label": "confidential",
+        },
+        "freshness_policy": {
+            "require_remote_for_current_claims": True,
+            "offline_current_claims_allowed": False,
+            "max_mirror_age_hours": 24,
+            "drift_check_required": True,
+            "fail_closed_on_expired_mirror": True,
+        },
+        "cache_policy": {
+            "mode": "local-mirror",
+            "pinned_snapshot": False,
+            "local_mirror": True,
+            "full_resource_sync_default": False,
+            "purge_required": True,
+            "update_required": True,
+            "audit_receipts_required": True,
+        },
+        "local_mirror_policy": {
+            "explicit_opt_in": True,
+            "purge_command_required": True,
+            "update_command_required": True,
+            "drift_detection_required": True,
+            "audit_receipts_required": True,
+            "sensitivity_labels_required": True,
+            "local_access_control_required": True,
+            "encryption_at_rest_required": True,
+            "server_side_apply_allowed": False,
+        },
+    }
+
+
+def test_agent_pack_doctor_accepts_explicit_local_mirror_policy(capsys, tmp_path):
+    package = _agent_pack_package(tmp_path, manifest_overrides=_local_mirror_manifest_overrides())
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 0
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "passed"
+    assert data["package"]["mode"] == "local-mirror"
+    assert next(check for check in data["checks"] if check["name"] == "runtime_access")["runtime_access_local_grep_allowed"] is True
+    assert next(check for check in data["checks"] if check["name"] == "local_mirror_policy")["explicit_opt_in"] is True
+
+
+def test_agent_pack_doctor_rejects_local_mirror_without_explicit_controls(capsys, tmp_path):
+    overrides = _local_mirror_manifest_overrides()
+    overrides["local_mirror_policy"] = {"explicit_opt_in": True}
+    package = _agent_pack_package(tmp_path, manifest_overrides=overrides)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 1
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "failed"
+    assert next(check for check in data["checks"] if check["name"] == "local_mirror_policy")["status"] == "failed"
+
+
+def test_agent_pack_doctor_rejects_local_mirror_current_claims_without_remote(capsys, tmp_path):
+    overrides = _local_mirror_manifest_overrides()
+    overrides["runtime_access"] = {**overrides["runtime_access"], "current_claims_require_remote": False}
+    overrides["freshness_policy"] = {
+        **overrides["freshness_policy"],
+        "require_remote_for_current_claims": False,
+        "offline_current_claims_allowed": True,
+    }
+    package = _agent_pack_package(tmp_path, manifest_overrides=overrides)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 1
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "failed"
+    assert next(check for check in data["checks"] if check["name"] == "runtime_access")["status"] == "failed"
+    assert next(check for check in data["checks"] if check["name"] == "freshness_policy")["status"] == "failed"
+
+
+def test_agent_pack_doctor_rejects_local_mirror_edits(capsys, tmp_path):
+    overrides = _local_mirror_manifest_overrides()
+    overrides["runtime_access"] = {**overrides["runtime_access"], "local_edits_allowed": True}
+    package = _agent_pack_package(tmp_path, manifest_overrides=overrides)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 1
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "failed"
+    assert next(check for check in data["checks"] if check["name"] == "runtime_access")["status"] == "failed"
+
+
+def test_agent_pack_docs_local_mirror_manifest_passes_doctor(capsys, tmp_path):
+    manifest = _agent_pack_docs_json_blocks()[2]
+    package = _agent_pack_package(tmp_path, manifest_overrides=manifest)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 0
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "passed"
+    assert data["package"]["mode"] == "local-mirror"
