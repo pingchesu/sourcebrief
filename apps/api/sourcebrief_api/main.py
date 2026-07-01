@@ -35,7 +35,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, load_only
 
-from sourcebrief_api import agent_packs, runtime_install
+from sourcebrief_api import agent_packs, git_env, runtime_install
 from sourcebrief_api.app_factory import cors_origins, create_app, run_migrations_if_requested
 from sourcebrief_api.auth import (
     Principal,
@@ -510,6 +510,17 @@ def _sanitize_public_uri(uri: str) -> str:
     return _agent_pack_public_source_uri(sanitize_remote_url(uri))
 
 
+def _git_env_read(resource: Resource) -> GitResourceEnvRead:
+    return git_env.git_env_read(
+        resource,
+        sanitize_metadata_text=_sanitize_metadata_text,
+        sanitize_public_uri=_sanitize_public_uri,
+    )
+
+
+_validate_auth_token_env = git_env.validate_auth_token_env
+
+
 def _sanitize_metadata_text(value: str | None) -> str:
     return _agent_pack_public_text(value, "unknown")
 
@@ -884,37 +895,6 @@ def _agent_file_response(
         repo_agent_count=len(repo_resources),
         files=files,
     )
-
-
-def _git_env_read(resource: Resource) -> GitResourceEnvRead:
-    source_config = resource.source_config or {}
-    return GitResourceEnvRead(
-        resource_id=resource.id,
-        name=_sanitize_metadata_text(resource.name),
-        uri=_sanitize_public_uri(resource.uri),
-        branch=source_config.get("branch") or source_config.get("ref"),
-        auth_token_env=source_config.get("auth_token_env"),
-        clone_timeout=source_config.get("clone_timeout"),
-        max_file_bytes=source_config.get("max_file_bytes"),
-        max_repo_files=source_config.get("max_repo_files"),
-        max_repo_bytes=source_config.get("max_repo_bytes"),
-        update_frequency=resource.update_frequency,
-        next_refresh_at=resource.next_refresh_at,
-    )
-
-
-_ENV_VAR_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
-
-
-def _validate_auth_token_env(value: object) -> str | None:
-    if value is None:
-        return None
-    env_name = str(value).strip()
-    if not env_name:
-        return None
-    if not _ENV_VAR_NAME_RE.match(env_name):
-        raise HTTPException(status_code=422, detail="auth_token_env must be an environment variable name, not a raw token value")
-    return env_name
 
 
 def _require_project_access(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal) -> Project:
