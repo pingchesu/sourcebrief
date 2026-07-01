@@ -22,8 +22,8 @@ integration makes it agent infrastructure:
 | Project instructions drift or get copied by hand. | Generated skills and agent packs point runtimes back to SourceBrief citations. |
 
 This page is the practical runtime guide: MCP setup, scoped tokens, remote-code
-safety, generated skills, Context Pack Skill Exports, and the workflow agents
-should follow before editing or reviewing code. For agents, **MCP plus skills are
+safety, Agent Packs, generated skills, Context Pack Skill Exports, and the workflow agents
+should follow before editing or reviewing code. For agents, **MCP plus Agent Packs/skills are
 the primary path**. The CLI is the control plane and fallback path for setup,
 resource lifecycle automation, validation, and CI.
 
@@ -51,7 +51,9 @@ Developer / agent asks a question
 ```
 
 SourceBrief is not the agent, not the editor, and not a production executor. It
-is the evidence service behind the agent.
+is the evidence service behind the agent. See [Agent Packs](AGENT_PACKS.md) for
+the install model: packs install thin runtime adapters and route agents back to
+SourceBrief remote evidence; they do not sync the full corpus by default.
 
 For code work, that distinction matters:
 

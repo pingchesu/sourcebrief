@@ -12,7 +12,8 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | 4 | [Product walkthrough](WALKTHROUGH.md) | Real UI screenshots and captured `agent-context` output before installing. |
 | 5 | [Concepts](CONCEPTS.md) | Source -> Snapshot -> Evidence -> Review -> Runtime mental model. |
 | 6 | [Quick start](QUICKSTART.md) | Run the local stack and reach the first cited answer. |
-| 7 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Long-form operator guide for Hermes, Claude Code, Codex, Cursor, MCP clients, scopes, skills, and failure modes. |
+| 7 | [Agent Packs](AGENT_PACKS.md) | Product model for Resource Graphs, Repo/Project Agents, Skill Packs, and remote-live install boundaries. |
+| 8 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Long-form operator guide for Hermes, Claude Code, Codex, Cursor, MCP clients, scopes, skills, and failure modes. |
 | Reference | [Default credential policy](DEFAULT_CREDENTIAL_POLICY.md) | Why SourceBrief has no universal `changeme` login and how local demos authenticate. |
 
 ## Proof and demos
@@ -34,6 +35,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | Doc | Status | Use it for |
 | --- | --- | --- |
 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Active runtime guide | MCP tools, runtime-specific setup, token scopes, skills, remote-code safety, failure modes. |
+| [Agent Packs](AGENT_PACKS.md) | Active product/runtime model | Resource Graph, Repo/Project Agent, Skill Pack, remote-live install, pinned snapshot, and local-mirror boundaries. |
 | [Runtime install plan](RUNTIME_INSTALL_PLAN.md) | Active runtime guide | Dry-run setup plans, validation, apply boundary, rollback receipts. |
 | [Operations](OPERATIONS.md) | Active runbook | Health checks, logs, queues, migrations, stuck jobs, rollback, restore/purge, reset. |
 | [Project status](STATUS.md) | Active status | Shipped alpha capabilities, experimental areas, non-goals, safe wording. |
@@ -43,6 +45,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | Doc | Status | Use it for |
 | --- | --- | --- |
 | [Architecture](ARCHITECTURE.md) | Active reference | FastAPI, Postgres/pgvector, Redis/RQ, Next.js, agent-context, MCP, graph/code-symbol retrieval, tenant boundaries. |
+| [Agent Pack remote-live ADR](decisions/ADR-0001-agent-packs-remote-live.md) | Accepted decision | Why Agent Packs install adapters, not the corpus; remote-live default; pinned/local modes. |
 | [Install and use](INSTALL_AND_USE.md) | User guide | Short install/use path, resource CRUD commands, product advantages, and embedding/rerank test boundaries. |
 | [Guide](GUIDE.md) | API/CLI reference | Hands-on API/CLI walkthroughs beyond the quick start. |
 | [Eval manifests](EVAL_MANIFESTS.md) | Eval/release reference | Structured real-corpus eval manifests, hashable question artifacts, max-10 batching, and grading schema. |
