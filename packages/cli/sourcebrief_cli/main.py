@@ -1638,7 +1638,7 @@ def cmd_skill_uninstall(_client: SourceBriefClient, args: argparse.Namespace) ->
 
 
 def _agent_pack_check(name: str, status: str, **fields: Any) -> dict[str, Any]:
-    return {"name": name, "status": status, **fields}
+    return {"name": name, "status": status, **_redact_manifest_value(fields)}
 
 
 def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]]:

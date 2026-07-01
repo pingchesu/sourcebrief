@@ -2648,3 +2648,32 @@ def test_agent_pack_doctor_redacts_secret_like_package_summary_fields(capsys, tm
 
     assert secret_pack_key not in output
     assert data["package"]["pack_key"] == "[redacted-secret-like-value]"
+
+
+def test_agent_pack_doctor_redacts_secret_like_values_from_all_check_fields(capsys, tmp_path):
+    secret = "sourcebrieftokenabcd1234"
+    package = _agent_pack_package(
+        tmp_path,
+        manifest_overrides={
+            "agent_pack_schema_version": secret,
+            "mode": secret,
+            "local_payload": {
+                "contains_full_resource": False,
+                "contains_raw_source": False,
+                "contains_embeddings": False,
+                "contains_graph_index": secret,
+            },
+        },
+    )
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 1
+    output = capsys.readouterr().out
+    data = json.loads(output)
+
+    assert secret not in output
+    manifest_schema = next(check for check in data["checks"] if check["name"] == "manifest_schema")
+    runtime_access = next(check for check in data["checks"] if check["name"] == "runtime_access")
+    local_payload = next(check for check in data["checks"] if check["name"] == "local_payload")
+    assert manifest_schema["agent_pack_schema_version"] == "[redacted-secret-like-value]"
+    assert runtime_access["mode"] == "[redacted-secret-like-value]"
+    assert local_payload["contains_graph_index"] == "[redacted-secret-like-value]"
