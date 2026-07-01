@@ -2384,3 +2384,101 @@ def test_runtime_rollback_rejects_forged_backup_path(tmp_path, capsys):
 
     assert cli_main(["runtime", "rollback", "--receipt", str(receipt)]) == 1
     assert "managed backup directory" in capsys.readouterr().err
+
+
+def _agent_pack_package(tmp_path: Path, *, manifest_overrides: dict[str, Any] | None = None) -> Path:
+    package = tmp_path / "agent-pack"
+    package.mkdir()
+    skill_content = b"---\nname: demo\n---\n"
+    manifest_hash_content = json.dumps({"schema_version": "skill-export.v2"}).encode() + b"\n"
+    (package / "SKILL.md").write_bytes(skill_content)
+    (package / "manifest.hash.json").write_bytes(manifest_hash_content)
+    package_inputs = {
+        "schema_version": "skill-export.v2",
+        "package_kind": "sourcebrief_skill_pack",
+        "export_type": "hermes_skill",
+        "pack_key": "default",
+        "pack_version": 3,
+        "pack_hash": "sha256:" + "b" * 64,
+        "files": [
+            {"path": "SKILL.md", "sha256": skill_install.sha256_bytes(skill_content), "bytes": len(skill_content)},
+            {"path": "manifest.hash.json", "sha256": skill_install.sha256_bytes(manifest_hash_content), "bytes": len(manifest_hash_content)},
+        ],
+    }
+    package_hash = skill_install.sha256_bytes((json.dumps(package_inputs, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
+    manifest: dict[str, Any] = {
+        "package_kind": "sourcebrief_skill_pack",
+        "export_status": "approved",
+        "package_hash": package_hash,
+        "pack_key": "default",
+        "pack_version": 3,
+        "pack_hash": "sha256:" + "b" * 64,
+        "agent_pack_schema_version": "sourcebrief.agent-pack.v1",
+        "mode": "remote-live",
+        "requires_sourcebrief_remote": True,
+        "runtime_access": {
+            "mode": "remote-live",
+            "requires_sourcebrief_remote": True,
+            "local_repo_required": False,
+            "local_grep_allowed": False,
+            "local_edits_allowed": False,
+            "current_claims_require_remote": True,
+        },
+        "runtime_tools": {"mcp_required": ["sourcebrief.get_agent_context"], "mcp_optional": ["sourcebrief.graph_query"], "cli": ["sourcebrief skill install --dry-run"]},
+        "local_payload": {
+            "contains_full_resource": False,
+            "contains_raw_source": False,
+            "contains_embeddings": False,
+            "contains_graph_index": False,
+        },
+        "freshness_policy": {"require_remote_for_current_claims": True},
+        "security_policy": {
+            "requires_runtime_auth": True,
+            "supports_revocation": True,
+            "plaintext_tokens_allowed": False,
+            "server_side_local_apply_allowed": False,
+            "cache_mode": "none",
+        },
+        "cache_policy": {"mode": "none", "pinned_snapshot": False, "local_mirror": False, "full_resource_sync_default": False},
+        "package_hash_inputs": package_inputs,
+    }
+    if manifest_overrides:
+        manifest.update(manifest_overrides)
+    (package / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    return package
+
+
+def test_agent_pack_doctor_validates_local_package_without_remote_calls(capsys, tmp_path):
+    package = _agent_pack_package(tmp_path)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 0
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "passed"
+    assert data["package"]["mode"] == "remote-live"
+    assert [check["name"] for check in data["checks"]][:3] == ["package_integrity", "manifest_schema", "runtime_access"]
+    assert data["remote_smoke"] is None
+
+
+def test_agent_pack_doctor_runs_optional_remote_smoke(monkeypatch, capsys, tmp_path):
+    patch_client(monkeypatch)
+    package = _agent_pack_package(tmp_path)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package), "--workspace-id", "ws-1", "--project-id", "proj-1", "--query", "hello runtime"]) == 0
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "passed"
+    assert data["remote_smoke"]["status"] == "passed"
+    assert "remote_mcp_context" in [check["name"] for check in data["checks"]]
+    assert any(call[1] == "/mcp/ws-1/proj-1" for call in FakeClient.instances[-1].calls)
+
+
+def test_agent_pack_doctor_fails_unsafe_local_payload_policy(capsys, tmp_path):
+    package = _agent_pack_package(tmp_path, manifest_overrides={"local_payload": {"contains_full_resource": True}})
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 1
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "failed"
+    local_payload_check = next(check for check in data["checks"] if check["name"] == "local_payload")
+    assert local_payload_check["status"] == "failed"

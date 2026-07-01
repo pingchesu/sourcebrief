@@ -1556,6 +1556,131 @@ def cmd_skill_uninstall(_client: SourceBriefClient, args: argparse.Namespace) ->
     return skill_install.uninstall(Path(args.receipt), force=args.force)
 
 
+def _agent_pack_check(name: str, status: str, **fields: Any) -> dict[str, Any]:
+    return {"name": name, "status": status, **fields}
+
+
+def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    checks.append(
+        _agent_pack_check(
+            "manifest_schema",
+            "passed" if manifest.get("agent_pack_schema_version") == "sourcebrief.agent-pack.v1" else "warning",
+            agent_pack_schema_version=manifest.get("agent_pack_schema_version"),
+            message=None if manifest.get("agent_pack_schema_version") == "sourcebrief.agent-pack.v1" else "manifest predates Agent Pack policy metadata",
+        )
+    )
+    checks.append(
+        _agent_pack_check(
+            "runtime_access",
+            "passed" if manifest.get("mode") == "remote-live" and manifest.get("requires_sourcebrief_remote") is True else "failed",
+            mode=manifest.get("mode"),
+            requires_sourcebrief_remote=manifest.get("requires_sourcebrief_remote"),
+        )
+    )
+    raw_local_payload = manifest.get("local_payload")
+    local_payload = raw_local_payload if isinstance(raw_local_payload, dict) else {}
+    checks.append(
+        _agent_pack_check(
+            "local_payload",
+            "passed"
+            if local_payload.get("contains_full_resource") is False
+            and local_payload.get("contains_raw_source") is False
+            and local_payload.get("contains_embeddings") is False
+            and local_payload.get("contains_graph_index") is False
+            else "failed",
+            contains_full_resource=local_payload.get("contains_full_resource"),
+            contains_raw_source=local_payload.get("contains_raw_source"),
+            contains_embeddings=local_payload.get("contains_embeddings"),
+            contains_graph_index=local_payload.get("contains_graph_index"),
+        )
+    )
+    raw_security_policy = manifest.get("security_policy")
+    security_policy = raw_security_policy if isinstance(raw_security_policy, dict) else {}
+    checks.append(
+        _agent_pack_check(
+            "security_policy",
+            "passed" if security_policy.get("plaintext_tokens_allowed") is False and security_policy.get("server_side_local_apply_allowed") is False else "failed",
+            plaintext_tokens_allowed=security_policy.get("plaintext_tokens_allowed"),
+            server_side_local_apply_allowed=security_policy.get("server_side_local_apply_allowed"),
+            supports_revocation=security_policy.get("supports_revocation"),
+        )
+    )
+    raw_cache_policy = manifest.get("cache_policy")
+    cache_policy = raw_cache_policy if isinstance(raw_cache_policy, dict) else {}
+    checks.append(
+        _agent_pack_check(
+            "cache_policy",
+            "passed"
+            if cache_policy.get("mode") in {"none", None}
+            and cache_policy.get("full_resource_sync_default") is not True
+            and cache_policy.get("local_mirror") is not True
+            else "failed",
+            mode=cache_policy.get("mode"),
+            pinned_snapshot=cache_policy.get("pinned_snapshot"),
+            local_mirror=cache_policy.get("local_mirror"),
+            full_resource_sync_default=cache_policy.get("full_resource_sync_default"),
+        )
+    )
+    raw_runtime_tools = manifest.get("runtime_tools")
+    runtime_tools = raw_runtime_tools if isinstance(raw_runtime_tools, dict) else {}
+    raw_required = runtime_tools.get("mcp_required")
+    required = raw_required if isinstance(raw_required, list) else []
+    raw_optional = runtime_tools.get("mcp_optional")
+    optional = raw_optional if isinstance(raw_optional, list) else []
+    checks.append(
+        _agent_pack_check(
+            "runtime_tools",
+            "passed" if "sourcebrief.get_agent_context" in required else "warning",
+            mcp_required=required,
+            mcp_optional=optional,
+            message=None if "sourcebrief.get_agent_context" in required else "manifest does not declare sourcebrief.get_agent_context as required",
+        )
+    )
+    return checks
+
+
+def cmd_agent_pack_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    package = skill_install.load_package(Path(args.package))
+    manifest = package.manifest
+    checks: list[dict[str, Any]] = [
+        _agent_pack_check(
+            "package_integrity",
+            "passed",
+            package_hash=package.package_hash,
+            file_count=len(package.files),
+            package_kind=manifest.get("package_kind"),
+            export_status=manifest.get("export_status"),
+        ),
+        *_agent_pack_manifest_checks(manifest),
+    ]
+    remote_result = None
+    if args.query:
+        if not args.workspace_id and manifest.get("workspace_id"):
+            args.workspace_id = str(manifest.get("workspace_id"))
+        if not args.project_id and manifest.get("project_id"):
+            args.project_id = str(manifest.get("project_id"))
+        remote_result = cmd_doctor(client, args)
+        for check in remote_result.get("checks", []):
+            if isinstance(check, dict):
+                checks.append({**check, "name": f"remote_{check.get('name')}"})
+    failed = [check for check in checks if check["status"] == "failed"]
+    incomplete = [check for check in checks if check["status"] == "incomplete"]
+    warnings = [check for check in checks if check["status"] == "warning"]
+    return {
+        "status": "failed" if failed else "incomplete" if incomplete else "warning" if warnings else "passed",
+        "package": {
+            "path": str(Path(args.package).expanduser()),
+            "package_hash": package.package_hash,
+            "pack_key": manifest.get("pack_key"),
+            "pack_version": manifest.get("pack_version"),
+            "mode": manifest.get("mode"),
+        },
+        "checks": checks,
+        "remote_smoke": remote_result,
+    }
+
+
 def cmd_agent_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     _require_scope(args, project=False)
     return client.request("GET", f"/workspaces/{args.workspace_id}/agents")
@@ -1853,6 +1978,19 @@ def build_parser() -> argparse.ArgumentParser:
     graph.add_argument("--limit", type=int, default=50)
     graph.set_defaults(func=cmd_resource_graph)
 
+    agent_packs = sub.add_parser("agent-pack", help="Agent Pack package validation commands").add_subparsers(dest="agent_pack_command")
+    agent_pack_doctor = agent_packs.add_parser("doctor", help="validate a local Agent Pack package and optional remote smoke query")
+    agent_pack_doctor.add_argument("--package", required=True, help="package directory or .zip from sourcebrief skill export")
+    agent_pack_doctor.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
+    agent_pack_doctor.add_argument("--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection")
+    agent_pack_doctor.add_argument("--project", help="project name; defaults to sourcebrief use selection")
+    agent_pack_doctor.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
+    agent_pack_doctor.add_argument("--query", help="optional MCP context smoke-test query")
+    agent_pack_doctor.add_argument("--runtime", default="hermes", choices=["api", "hermes", "claude", "codex", "cursor"])
+    agent_pack_doctor.add_argument("--resource-id", action="append")
+    agent_pack_doctor.add_argument("--top-k", type=int, default=3)
+    agent_pack_doctor.set_defaults(func=cmd_agent_pack_doctor)
+
     agents = sub.add_parser("agent", help="agent registry commands").add_subparsers(dest="agent_command")
     agent_list = agents.add_parser("list", help="list project agents in a workspace")
     agent_list.add_argument("--workspace", help="workspace name or slug")
@@ -2138,7 +2276,7 @@ def _print_default(command: str | None, data: Any) -> None:
             print(f"- {data.get('next_command')}")
             print(f"- {data.get('cleanup')}")
             return
-        if command in {"agent-context", "mcp-context", "ask", "agent", "token", "runtime", "skill", "use", "status", "doctor", "login", "logout"}:
+        if command in {"agent-context", "mcp-context", "ask", "agent", "agent-pack", "token", "runtime", "skill", "use", "status", "doctor", "login", "logout"}:
             _print_json(data)
             return
     _print_json(data)
@@ -2175,7 +2313,7 @@ def main(argv: list[str] | None = None) -> int:
     except (SourceBriefCliError, runtime_apply.RuntimeApplyError, skill_install.SkillInstallError, RegressionProposalError) as exc:
         print(f"sourcebrief: error: {exc}", file=sys.stderr)
         return 1
-    exit_code = 1 if args.command == "doctor" and isinstance(data, dict) and data.get("status") in {"failed", "incomplete"} else 0
+    exit_code = 1 if args.command in {"doctor", "agent-pack"} and isinstance(data, dict) and data.get("status") in {"failed", "incomplete"} else 0
     if args.json:
         _print_json(data)
     else:

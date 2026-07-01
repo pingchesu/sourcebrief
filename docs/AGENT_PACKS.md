@@ -157,11 +157,22 @@ A successful install is not just files on disk. It is a verified remote evidence
 7. The runtime agent edits/tests only in a user-provided local checkout.
 ```
 
-A future CLI surface can expose this as:
+The first concrete CLI surface is package validation:
+
+```bash
+sourcebrief agent-pack doctor \
+  --package ./sourcebrief-skill \
+  --workspace "<workspace>" \
+  --project "<project>" \
+  --query "What does this project contain?"
+```
+
+`agent-pack doctor` validates package integrity and manifest policy locally. When `--query` is provided, it also runs the existing remote SourceBrief/MCP context smoke path so operators can prove the installed runtime has live cited evidence.
+
+Future CLI surfaces may add lifecycle commands around that validated package model:
 
 ```bash
 sourcebrief agent-pack install ...
-sourcebrief agent-pack doctor ...
 sourcebrief agent-pack update ...
 sourcebrief agent-pack uninstall ...
 sourcebrief agent-pack export --mode remote-live
