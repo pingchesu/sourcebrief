@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import getpass
 import json
-import os
 import shlex
 import sys
 import tempfile
@@ -11,9 +9,9 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
-from dotenv import dotenv_values
-
 from sourcebrief_cli import agent_pack_doctor, runtime_apply, skill_install
+from sourcebrief_cli import auth as cli_auth
+from sourcebrief_cli import scope as cli_scope
 from sourcebrief_cli.client import SourceBriefClient, SourceBriefCliError
 from sourcebrief_cli.config import (
     SESSION_EMAIL_CONFIG_KEY,
@@ -67,10 +65,32 @@ from sourcebrief_shared.validation_gate import (
     write_validation_gate_result,
 )
 
-DEFAULT_API_URL = "http://localhost:18000"
-DEFAULT_EMAIL = "demo@example.com"
+DEFAULT_API_URL = cli_scope.DEFAULT_API_URL
+DEFAULT_EMAIL = cli_scope.DEFAULT_EMAIL
 CONTEXT_RUNTIME_SCOPES = ["project:read", "project:query", "resource:read", "review:read"]
 READ_CODE_RUNTIME_SCOPES = [*CONTEXT_RUNTIME_SCOPES, "code:read"]
+
+_dotenv_path = cli_auth.dotenv_path
+_dotenv_value = cli_auth.dotenv_value
+_env_login_email = cli_auth.env_login_email
+_env_login_password = cli_auth.env_login_password
+_first_env = cli_auth.first_env
+_login_with_password = cli_auth.login_with_password
+_login_password_from_args = cli_auth.login_password_from_args
+_resolve_auth = cli_auth.resolve_auth
+_casefold = cli_scope.casefold
+_matches_workspace_selector = cli_scope.matches_workspace_selector
+_matches_project_selector = cli_scope.matches_project_selector
+_workspace_candidate = cli_scope.workspace_candidate
+_project_candidate = cli_scope.project_candidate
+_resolve_workspace_selector = cli_scope.resolve_workspace_selector
+_resolve_project_selector = cli_scope.resolve_project_selector
+_resolve_named_scope = cli_scope.resolve_named_scope
+_command_uses_selected_scope = cli_scope.command_uses_selected_scope
+_apply_selected_defaults = cli_scope.apply_selected_defaults
+_resolve_api_url = cli_scope.resolve_api_url
+_resolve_email = cli_scope.resolve_email
+_require_scope = cli_scope.require_scope
 
 
 def _print_json(data: Any) -> None:
@@ -113,168 +133,6 @@ def _split_csv_or_repeated(values: str | list[str] | None) -> list[str] | None:
     return result or None
 
 
-def _casefold(value: str) -> str:
-    return value.strip().casefold()
-
-
-def _matches_workspace_selector(workspace: dict[str, Any], selector: str) -> bool:
-    wanted = _casefold(selector)
-    return wanted in {
-        _casefold(str(workspace.get("id") or "")),
-        _casefold(str(workspace.get("name") or "")),
-        _casefold(str(workspace.get("slug") or "")),
-    }
-
-
-def _matches_project_selector(project: dict[str, Any], selector: str) -> bool:
-    wanted = _casefold(selector)
-    return wanted in {
-        _casefold(str(project.get("id") or "")),
-        _casefold(str(project.get("name") or "")),
-    }
-
-
-def _workspace_candidate(workspace: dict[str, Any]) -> str:
-    return f"{workspace.get('name')} (slug={workspace.get('slug')}, id={workspace.get('id')})"
-
-
-def _project_candidate(project: dict[str, Any]) -> str:
-    return f"{project.get('name')} (id={project.get('id')})"
-
-
-def _resolve_workspace_selector(client: SourceBriefClient, selector: str) -> dict[str, Any]:
-    workspaces = client.request("GET", "/workspaces")
-    if not isinstance(workspaces, list):
-        raise SourceBriefCliError("workspace resolver expected /workspaces to return a list")
-    matches = [workspace for workspace in workspaces if isinstance(workspace, dict) and _matches_workspace_selector(workspace, selector)]
-    if not matches:
-        raise SourceBriefCliError(f"workspace {selector!r} was not found or is not accessible")
-    if len(matches) > 1:
-        choices = "; ".join(_workspace_candidate(workspace) for workspace in matches)
-        raise SourceBriefCliError(f"workspace {selector!r} is ambiguous; choose one of: {choices}")
-    return matches[0]
-
-
-def _resolve_project_selector(client: SourceBriefClient, workspace_id: str, selector: str) -> dict[str, Any]:
-    projects = client.request("GET", f"/workspaces/{workspace_id}/projects")
-    if not isinstance(projects, list):
-        raise SourceBriefCliError("project resolver expected /projects to return a list")
-    matches = [project for project in projects if isinstance(project, dict) and _matches_project_selector(project, selector)]
-    if not matches:
-        raise SourceBriefCliError(f"project {selector!r} was not found or is not accessible in the selected workspace")
-    if len(matches) > 1:
-        choices = "; ".join(_project_candidate(project) for project in matches)
-        raise SourceBriefCliError(f"project {selector!r} is ambiguous in the selected workspace; choose one of: {choices}")
-    return matches[0]
-
-
-def _resolve_named_scope(client: SourceBriefClient, args: argparse.Namespace, config: dict[str, Any]) -> None:
-    workspace_selector = getattr(args, "workspace", None)
-    project_selector = getattr(args, "project", None)
-    project_refs = getattr(args, "project_ref", None)
-    if not (workspace_selector or project_selector or project_refs):
-        return
-    if workspace_selector and getattr(args, "workspace_id", None):
-        raise SourceBriefCliError("use either --workspace or --workspace-id, not both")
-    if project_selector and getattr(args, "project_id", None):
-        raise SourceBriefCliError("use either --project or --project-id, not both")
-    if workspace_selector:
-        workspace = _resolve_workspace_selector(client, workspace_selector)
-        args.workspace_id = str(workspace["id"])
-        args._resolved_workspace_name = workspace.get("name")
-        args._resolved_workspace_slug = workspace.get("slug")
-    elif not getattr(args, "workspace_id", None):
-        saved_workspace_id = _selected_value(config, "workspace_id")
-        if saved_workspace_id:
-            args.workspace_id = saved_workspace_id
-    if project_selector:
-        if not getattr(args, "workspace_id", None):
-            raise SourceBriefCliError("--project requires --workspace or a saved workspace selection")
-        project = _resolve_project_selector(client, str(args.workspace_id), project_selector)
-        args.project_id = str(project["id"])
-        args._resolved_project_name = project.get("name")
-    if project_refs:
-        if not getattr(args, "workspace_id", None):
-            raise SourceBriefCliError("--project requires --workspace or a saved workspace selection")
-        resolved_project_ids = list(getattr(args, "project_id", None) or [])
-        for selector in project_refs:
-            project = _resolve_project_selector(client, str(args.workspace_id), selector)
-            resolved_project_ids.append(str(project["id"]))
-        args.project_id = resolved_project_ids
-
-
-def _dotenv_path() -> Path:
-    override = os.getenv("SOURCEBRIEF_DOTENV_PATH")
-    return Path(override).expanduser() if override else Path(".env")
-
-
-def _dotenv_value(name: str) -> str | None:
-    path = _dotenv_path()
-    if not path.exists():
-        return None
-    value = dotenv_values(path).get(name)
-    return value if isinstance(value, str) and value else None
-
-
-def _first_env(*names: str) -> str | None:
-    for name in names:
-        value = os.getenv(name)
-        if value:
-            return value
-    for name in names:
-        value = _dotenv_value(name)
-        if value:
-            return value
-    return None
-
-
-def _env_login_email(args: argparse.Namespace) -> str | None:
-    explicit_email = getattr(args, "email", None) if getattr(args, "_email_explicit", False) else None
-    return explicit_email or _first_env(
-        "SOURCEBRIEF_ADMIN_EMAIL",
-        "SOURCEBRIEF_EMAIL",
-        "CONTEXTSMITH_ADMIN_EMAIL",
-        "CONTEXTSMITH_EMAIL",
-    ) or getattr(args, "email", None)
-
-
-def _env_login_password() -> str | None:
-    return _first_env(
-        "SOURCEBRIEF_ADMIN_PASSWORD",
-        "SOURCEBRIEF_PASSWORD",
-        "CONTEXTSMITH_ADMIN_PASSWORD",
-        "CONTEXTSMITH_PASSWORD",
-    )
-
-
-def _resolve_auth(args: argparse.Namespace, config: dict[str, Any]) -> None:
-    args._auth_mode = "email_header"
-    args._session_email = None
-    args._session_login_password = None
-    if args.token:
-        args._auth_mode = "bearer_token"
-        return
-    saved_session = _selected_value(config, SESSION_TOKEN_CONFIG_KEY)
-    if saved_session:
-        args.token = saved_session
-        args._auth_mode = "saved_session"
-        args._session_email = _selected_value(config, SESSION_EMAIL_CONFIG_KEY)
-        return
-    password = _env_login_password()
-    if password:
-        args._auth_mode = "session_login_env"
-        args._session_email = _env_login_email(args)
-        args._session_login_password = password
-
-
-def _login_with_password(client: SourceBriefClient, email: str, password: str) -> str:
-    login = client.request("POST", "/auth/login", body={"email": email, "password": password})
-    session_token = login.get("session_token") if isinstance(login, dict) else None
-    if not isinstance(session_token, str) or not session_token:
-        raise SourceBriefCliError("/auth/login response did not include session_token")
-    return session_token
-
-
 def _agent_pack_doctor_package_only(args: argparse.Namespace) -> bool:
     return args.command == "agent-pack" and getattr(args, "agent_pack_command", None) == "doctor" and not getattr(args, "query", None)
 
@@ -292,91 +150,7 @@ def _command_uses_authenticated_api(args: argparse.Namespace) -> bool:
 
 
 def _maybe_session_login(client: SourceBriefClient, args: argparse.Namespace) -> None:
-    if getattr(args, "_auth_mode", None) != "session_login_env":
-        return
-    if not _command_uses_authenticated_api(args):
-        return
-    email = getattr(args, "_session_email", None) or args.email
-    password = getattr(args, "_session_login_password", None)
-    if not password:
-        return
-    client.token = _login_with_password(client, email, password)
-    args.token = client.token
-
-
-def _command_uses_selected_scope(args: argparse.Namespace) -> bool:
-    if args.command in {"ask", "search", "agent-context", "mcp-context", "doctor"}:
-        return True
-    if args.command == "agent-pack" and getattr(args, "agent_pack_command", None) == "doctor":
-        return True
-    if args.command == "project" and getattr(args, "project_command", None) == "create":
-        return True
-    if args.command == "token" and getattr(args, "token_command", None) in {"create", "create-runtime", "list", "revoke"}:
-        return True
-    if args.command == "agent" and getattr(args, "agent_command", None) in {"list", "profile"}:
-        return True
-    if args.command == "skill" and getattr(args, "skill_command", None) == "export":
-        return True
-    if args.command == "resource" and getattr(args, "resource_command", None) in {
-        "add-doc",
-        "add-repo",
-        "add-upload",
-        "add-url",
-        "archive",
-        "delete",
-        "get",
-        "list",
-        "refresh",
-        "restore",
-        "purge",
-        "schedule-due",
-        "graph",
-        "update",
-        "update-git",
-    }:
-        return True
-    return args.command == "runtime" and getattr(args, "runtime_command", None) in {"plan", "setup"}
-
-
-def _apply_selected_defaults(args: argparse.Namespace, config: dict[str, Any]) -> None:
-    if not _command_uses_selected_scope(args):
-        return
-    workspace_id_explicit = bool(args.__dict__.get("workspace_id"))
-    if "workspace_id" in args.__dict__ and not args.__dict__.get("workspace_id") and not getattr(args, "workspace", None):
-        args.workspace_id = _selected_value(config, "workspace_id")
-    if (
-        "project_id" in args.__dict__
-        and not args.__dict__.get("project_id")
-        and args.command != "token"
-        and not workspace_id_explicit
-        and not getattr(args, "workspace", None)
-        and not getattr(args, "project", None)
-        and not getattr(args, "project_ref", None)
-    ):
-        args.project_id = _selected_value(config, "project_id")
-
-
-def _resolve_api_url(args: argparse.Namespace, config: dict[str, Any]) -> None:
-    env_api_url = os.getenv("SOURCEBRIEF_API_URL", os.getenv("CONTEXTSMITH_API_URL"))
-    explicit_api_url = args.api_url is not None
-    args._api_url_explicit = explicit_api_url
-    args.api_url = args.api_url or env_api_url or _selected_value(config, "api_url") or DEFAULT_API_URL
-
-
-def _resolve_email(args: argparse.Namespace) -> None:
-    args._email_explicit = args.email is not None
-    args.email = args.email or _first_env("SOURCEBRIEF_EMAIL", "CONTEXTSMITH_EMAIL") or DEFAULT_EMAIL
-
-
-def _require_scope(args: argparse.Namespace, *, workspace: bool = True, project: bool = True) -> None:
-    missing: list[str] = []
-    if workspace and "workspace_id" in args.__dict__ and not args.__dict__.get("workspace_id"):
-        missing.append("--workspace / --workspace-id")
-    if project and "project_id" in args.__dict__ and not args.__dict__.get("project_id"):
-        missing.append("--project / --project-id")
-    if missing:
-        joined = " and ".join(missing)
-        raise SourceBriefCliError(f"{joined} required; pass a name explicitly or run sourcebrief use first")
+    cli_auth.maybe_session_login(client, args, command_uses_authenticated_api=_command_uses_authenticated_api)
 
 
 def _wait_for_run(client: SourceBriefClient, workspace_id: str, index_run_id: str, timeout: int) -> dict[str, Any]:
@@ -442,19 +216,6 @@ def cmd_status(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
         "token_set": bool(args.token),
         "password_env_set": bool(getattr(args, "_session_login_password", None)),
     }
-
-
-def _login_password_from_args(args: argparse.Namespace) -> str:
-    env_name = getattr(args, "password_env", None)
-    if env_name:
-        value = os.getenv(env_name) or _dotenv_value(env_name)
-        if not value:
-            raise SourceBriefCliError(f"password environment variable or .env key {env_name} is not set")
-        return value
-    env_password = _env_login_password()
-    if env_password:
-        return env_password
-    return getpass.getpass("SourceBrief password: ")
 
 
 def cmd_login(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
