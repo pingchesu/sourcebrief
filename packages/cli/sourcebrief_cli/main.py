@@ -15,6 +15,22 @@ from dotenv import dotenv_values
 
 from sourcebrief_cli import agent_pack_doctor, runtime_apply, skill_install
 from sourcebrief_cli.client import SourceBriefClient, SourceBriefCliError
+from sourcebrief_cli.config import (
+    SESSION_EMAIL_CONFIG_KEY,
+    SESSION_TOKEN_CONFIG_KEY,
+)
+from sourcebrief_cli.config import (
+    config_path as _config_path,
+)
+from sourcebrief_cli.config import (
+    load_cli_config as _load_cli_config,
+)
+from sourcebrief_cli.config import (
+    save_cli_config as _save_cli_config,
+)
+from sourcebrief_cli.config import (
+    selected_value as _selected_value,
+)
 from sourcebrief_shared.github_pr_review import (
     GitHubPRBundleError,
     build_review_bundle_from_github_pr_metadata,
@@ -53,8 +69,6 @@ from sourcebrief_shared.validation_gate import (
 
 DEFAULT_API_URL = "http://localhost:18000"
 DEFAULT_EMAIL = "demo@example.com"
-SESSION_TOKEN_CONFIG_KEY = "session_token"
-SESSION_EMAIL_CONFIG_KEY = "session_email"
 CONTEXT_RUNTIME_SCOPES = ["project:read", "project:query", "resource:read", "review:read"]
 READ_CODE_RUNTIME_SCOPES = [*CONTEXT_RUNTIME_SCOPES, "code:read"]
 
@@ -97,51 +111,6 @@ def _split_csv_or_repeated(values: str | list[str] | None) -> list[str] | None:
     for value in raw_values:
         result.extend(part.strip() for part in value.split(",") if part.strip())
     return result or None
-
-
-def _config_path() -> Path:
-    override = os.getenv("SOURCEBRIEF_CONFIG_PATH")
-    if override:
-        return Path(override).expanduser()
-    config_home = os.getenv("XDG_CONFIG_HOME")
-    if config_home:
-        return Path(config_home).expanduser() / "sourcebrief" / "config.json"
-    return Path.home() / ".config" / "sourcebrief" / "config.json"
-
-
-def _load_cli_config() -> dict[str, Any]:
-    path = _config_path()
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise SourceBriefCliError(f"invalid CLI config at {path}: {exc}") from exc
-    if not isinstance(data, dict):
-        raise SourceBriefCliError(f"invalid CLI config at {path}: expected object")
-    return data
-
-
-def _save_cli_config(config: dict[str, Any]) -> Path:
-    path = _config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(config, indent=2, sort_keys=True) + "\n"
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
-    temp_path = Path(temp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(payload)
-        temp_path.chmod(0o600)
-        os.replace(temp_path, path)
-        path.chmod(0o600)
-    finally:
-        temp_path.unlink(missing_ok=True)
-    return path
-
-
-def _selected_value(config: dict[str, Any], key: str) -> str | None:
-    value = config.get(key)
-    return value if isinstance(value, str) and value else None
 
 
 def _casefold(value: str) -> str:
