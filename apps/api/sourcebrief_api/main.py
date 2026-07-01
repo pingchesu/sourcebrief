@@ -7,7 +7,6 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import zipfile
 from collections import Counter
 from collections.abc import Mapping
@@ -20,7 +19,6 @@ from uuid import UUID, uuid4
 
 from fastapi import (
     Depends,
-    FastAPI,
     File,
     Form,
     HTTPException,
@@ -31,7 +29,6 @@ from fastapi import (
     status,
 )
 from fastapi.encoders import jsonable_encoder
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 from redis import Redis
@@ -40,6 +37,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, load_only
 
+from sourcebrief_api.app_factory import cors_origins, create_app, run_migrations_if_requested
 from sourcebrief_api.auth import (
     Principal,
     hash_password,
@@ -386,43 +384,7 @@ from sourcebrief_worker.manifest_diff import (
     page_diff_rows,
 )
 
-app = FastAPI(title="SourceBrief API", version="0.1.0")
 
-def _cors_origins() -> list[str]:
-    raw = os.getenv("SOURCEBRIEF_CORS_ORIGINS", os.getenv("CONTEXTSMITH_CORS_ORIGINS"))
-    if raw:
-        return [origin.strip() for origin in raw.split(",") if origin.strip()]
-    # Keep the packaged/demo web port and common local dev/e2e Next.js ports in
-    # the default allow-list. Otherwise the first-source browser flow fails as a
-    # CORS-only "Failed to fetch" even though the form submitted correctly.
-    return [
-        "http://localhost:13000",
-        "http://127.0.0.1:13000",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3105",
-        "http://127.0.0.1:3105",
-        "http://localhost:3205",
-        "http://127.0.0.1:3205",
-    ]
-
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins(),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.include_router(system_router.router)
-
-
-def run_migrations_if_requested() -> None:
-    if os.getenv("SOURCEBRIEF_AUTO_MIGRATE", os.getenv("CONTEXTSMITH_AUTO_MIGRATE", "false")).lower() == "true":
-        subprocess.run(["alembic", "upgrade", "head"], check=True)
-
-
-@app.on_event("startup")
 def on_startup() -> None:
     run_migrations_if_requested()
     try:
@@ -431,6 +393,10 @@ def on_startup() -> None:
         # A concurrent API replica may have inserted the same bootstrap rows first.
         # Treat that as benign; the next readiness/login path will observe those rows.
         return
+
+
+_cors_origins = cors_origins
+app = create_app(startup_handler=on_startup, routers=[system_router.router])
 
 
 def _sanitize_public_uri(uri: str) -> str:
