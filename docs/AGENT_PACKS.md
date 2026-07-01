@@ -89,6 +89,8 @@ Exceptional explicit opt-in. A local mirror may include full source/resource/ind
 
 Use only with purge/update commands, TTL/freshness checks, sensitivity labels, drift detection, local access-control guidance, and audit receipts.
 
+`agent-pack doctor` can validate an explicit local-mirror manifest policy, but SourceBrief still does not generate, install, update, or purge a local mirror in the normal remote-live flow. A valid local-mirror package must be operator-produced/approved, must keep server-side apply disabled, must forbid local edits, and must fail closed when the mirror is stale or drift is not checked.
+
 ## Manifest contract
 
 Generated packs should declare their data and runtime policy explicitly. A representative manifest shape:
@@ -198,6 +200,59 @@ For explicit `pinned-snapshot` packages, the mode-specific fields must look like
     "local_mirror": false,
     "full_resource_sync_default": false,
     "max_snapshot_age_days": 7
+  }
+}
+```
+
+For explicit `local-mirror` packages, the mode-specific fields must look like this class of policy. This validates policy declarations only; it does not prove SourceBrief generated the mirror or that lifecycle commands exist.
+
+```json
+{
+  "mode": "local-mirror",
+  "requires_sourcebrief_remote": false,
+  "runtime_access": {
+    "mode": "local-mirror",
+    "requires_sourcebrief_remote": false,
+    "local_repo_required": false,
+    "local_grep_allowed": true,
+    "local_edits_allowed": false,
+    "current_claims_require_remote": true
+  },
+  "local_payload": {
+    "contains_full_resource": true,
+    "contains_raw_source": true,
+    "contains_embeddings": true,
+    "contains_graph_index": true,
+    "contains_resource_map_summary": true,
+    "contains_cited_excerpts": "bounded",
+    "sensitivity_label": "confidential"
+  },
+  "freshness_policy": {
+    "require_remote_for_current_claims": true,
+    "offline_current_claims_allowed": false,
+    "max_mirror_age_hours": 24,
+    "drift_check_required": true,
+    "fail_closed_on_expired_mirror": true
+  },
+  "cache_policy": {
+    "mode": "local-mirror",
+    "pinned_snapshot": false,
+    "local_mirror": true,
+    "full_resource_sync_default": false,
+    "purge_required": true,
+    "update_required": true,
+    "audit_receipts_required": true
+  },
+  "local_mirror_policy": {
+    "explicit_opt_in": true,
+    "purge_command_required": true,
+    "update_command_required": true,
+    "drift_detection_required": true,
+    "audit_receipts_required": true,
+    "sensitivity_labels_required": true,
+    "local_access_control_required": true,
+    "encryption_at_rest_required": true,
+    "server_side_apply_allowed": false
   }
 }
 ```
