@@ -668,7 +668,7 @@ export default function SourcesPage() {
 
 
     <section className="card">
-      <div className="section-card-head"><div><h2 className="section-card-title">Skill Export</h2><p className="muted section-card-desc">Compile reviewable Skill Packs from approved published Context Packs: references, task playbooks, smoke queries, checksums, and SourceBrief citation policy. Drafts are preview-only; download/copy requires approval.</p></div><button className="btn secondary" disabled={skillExportBusy || !selectedPack} onClick={() => void refreshSkillExports(selectedPack)}>Reload exports</button></div>
+      <div className="section-card-head"><div><h2 className="section-card-title">Skill Export (Agent Pack format)</h2><p className="muted section-card-desc">Compile reviewable Skill Packs from approved published Context Packs when you need this packaging format. For the primary runtime workflow, use Repo Agents: Publish Agent → Install Agent Pack → Validate Runtime.</p></div><button className="btn secondary" disabled={skillExportBusy || !selectedPack} onClick={() => void refreshSkillExports(selectedPack)}>Reload exports</button></div>
       {skillExportError ? <div className="notice error">{skillExportError}</div> : null}
       <div className="grid two" style={{ marginTop: 12 }}>
         <div className="grid">

@@ -145,6 +145,12 @@ The exact schema can evolve, but the generated pack must be honest about whether
 
 ## Runtime flow
 
+The web UI should make **Repo Agents / Publish Agent Packs** the primary runtime entry point. The visible path is:
+
+```text
+Review graph -> Publish Agent -> Install Agent Pack -> Validate Runtime
+```
+
 A successful install is not just files on disk. It is a verified remote evidence loop:
 
 ```text
