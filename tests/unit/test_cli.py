@@ -2636,3 +2636,15 @@ def test_agent_pack_doctor_fails_missing_required_remote_context_tool(capsys, tm
     assert data["status"] == "failed"
     runtime_tools = next(check for check in data["checks"] if check["name"] == "runtime_tools")
     assert runtime_tools["status"] == "failed"
+
+
+def test_agent_pack_doctor_redacts_secret_like_package_summary_fields(capsys, tmp_path):
+    secret_pack_key = "sourcebrieftokenabcd1234"
+    package = _agent_pack_package(tmp_path, manifest_overrides={"pack_key": secret_pack_key})
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 0
+    output = capsys.readouterr().out
+    data = json.loads(output)
+
+    assert secret_pack_key not in output
+    assert data["package"]["pack_key"] == "[redacted-secret-like-value]"

@@ -1739,8 +1739,8 @@ def cmd_agent_pack_doctor(client: SourceBriefClient, args: argparse.Namespace) -
             "passed",
             package_hash=package.package_hash,
             file_count=len(package.files),
-            package_kind=manifest.get("package_kind"),
-            export_status=manifest.get("export_status"),
+            package_kind=_redact_manifest_value(manifest.get("package_kind")),
+            export_status=_redact_manifest_value(manifest.get("export_status")),
         ),
         *_agent_pack_manifest_checks(manifest),
     ]
@@ -1763,9 +1763,9 @@ def cmd_agent_pack_doctor(client: SourceBriefClient, args: argparse.Namespace) -
         "package": {
             "path": str(Path(args.package).expanduser()),
             "package_hash": package.package_hash,
-            "pack_key": manifest.get("pack_key"),
-            "pack_version": manifest.get("pack_version"),
-            "mode": manifest.get("mode"),
+            "pack_key": _redact_manifest_value(manifest.get("pack_key")),
+            "pack_version": _redact_manifest_value(manifest.get("pack_version")),
+            "mode": _redact_manifest_value(manifest.get("mode")),
         },
         "checks": checks,
         "remote_smoke": remote_result,
