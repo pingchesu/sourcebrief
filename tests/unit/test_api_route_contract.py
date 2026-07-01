@@ -51,5 +51,5 @@ def test_runtime_agent_route_contract_is_stable() -> None:
     assert not missing
 
 
-def test_total_route_count_is_stable() -> None:
-    assert len(app.routes) == 129
+def test_recursive_route_signature_count_is_stable() -> None:
+    assert len(_route_signatures()) == 131
