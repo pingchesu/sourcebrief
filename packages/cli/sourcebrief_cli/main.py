@@ -1643,6 +1643,7 @@ def _agent_pack_check(name: str, status: str, **fields: Any) -> dict[str, Any]:
 
 def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
+    mode = manifest.get("mode")
     checks.append(
         _agent_pack_check(
             "manifest_schema",
@@ -1651,29 +1652,39 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             message=None if manifest.get("agent_pack_schema_version") == "sourcebrief.agent-pack.v1" else "manifest predates Agent Pack policy metadata",
         )
     )
+    runtime_access_ok = mode in {"remote-live", "pinned-snapshot"} and manifest.get("requires_sourcebrief_remote") is True
     checks.append(
         _agent_pack_check(
             "runtime_access",
-            "passed" if manifest.get("mode") == "remote-live" and manifest.get("requires_sourcebrief_remote") is True else "failed",
-            mode=manifest.get("mode"),
+            "passed" if runtime_access_ok else "failed",
+            mode=mode,
             requires_sourcebrief_remote=manifest.get("requires_sourcebrief_remote"),
         )
     )
     raw_local_payload = manifest.get("local_payload")
     local_payload = raw_local_payload if isinstance(raw_local_payload, dict) else {}
+    local_payload_ok = (
+        local_payload.get("contains_full_resource") is False
+        and local_payload.get("contains_raw_source") is False
+        and local_payload.get("contains_embeddings") is False
+        and local_payload.get("contains_graph_index") is False
+    )
+    if mode == "pinned-snapshot":
+        local_payload_ok = (
+            local_payload_ok
+            and local_payload.get("contains_resource_map_summary") is True
+            and local_payload.get("contains_cited_excerpts") == "bounded"
+        )
     checks.append(
         _agent_pack_check(
             "local_payload",
-            "passed"
-            if local_payload.get("contains_full_resource") is False
-            and local_payload.get("contains_raw_source") is False
-            and local_payload.get("contains_embeddings") is False
-            and local_payload.get("contains_graph_index") is False
-            else "failed",
+            "passed" if local_payload_ok else "failed",
             contains_full_resource=local_payload.get("contains_full_resource"),
             contains_raw_source=local_payload.get("contains_raw_source"),
             contains_embeddings=local_payload.get("contains_embeddings"),
             contains_graph_index=local_payload.get("contains_graph_index"),
+            contains_resource_map_summary=local_payload.get("contains_resource_map_summary"),
+            contains_cited_excerpts=local_payload.get("contains_cited_excerpts"),
         )
     )
     raw_security_policy = manifest.get("security_policy")
@@ -1694,14 +1705,47 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             supports_revocation=security_policy.get("supports_revocation"),
         )
     )
+    raw_freshness_policy = manifest.get("freshness_policy")
+    freshness_policy = raw_freshness_policy if isinstance(raw_freshness_policy, dict) else {}
+    snapshot_age_days = freshness_policy.get("max_snapshot_age_days")
+    freshness_ok = freshness_policy.get("require_remote_for_current_claims") is True
+    if mode == "pinned-snapshot":
+        freshness_ok = (
+            freshness_ok
+            and freshness_policy.get("pinned_snapshot") is True
+            and freshness_policy.get("offline_current_claims_allowed") is False
+            and isinstance(snapshot_age_days, int)
+            and snapshot_age_days > 0
+        )
+    checks.append(
+        _agent_pack_check(
+            "freshness_policy",
+            "passed" if freshness_ok else "failed",
+            require_remote_for_current_claims=freshness_policy.get("require_remote_for_current_claims"),
+            pinned_snapshot=freshness_policy.get("pinned_snapshot"),
+            offline_current_claims_allowed=freshness_policy.get("offline_current_claims_allowed"),
+            max_snapshot_age_days=freshness_policy.get("max_snapshot_age_days"),
+        )
+    )
     raw_cache_policy = manifest.get("cache_policy")
     cache_policy = raw_cache_policy if isinstance(raw_cache_policy, dict) else {}
-    cache_ok = (
-        cache_policy.get("mode") == "none"
-        and cache_policy.get("pinned_snapshot") is False
-        and cache_policy.get("full_resource_sync_default") is False
-        and cache_policy.get("local_mirror") is False
-    )
+    if mode == "pinned-snapshot":
+        cache_snapshot_age_days = cache_policy.get("max_snapshot_age_days")
+        cache_ok = (
+            cache_policy.get("mode") == "pinned-snapshot"
+            and cache_policy.get("pinned_snapshot") is True
+            and cache_policy.get("full_resource_sync_default") is False
+            and cache_policy.get("local_mirror") is False
+            and isinstance(cache_snapshot_age_days, int)
+            and cache_snapshot_age_days > 0
+        )
+    else:
+        cache_ok = (
+            cache_policy.get("mode") == "none"
+            and cache_policy.get("pinned_snapshot") is False
+            and cache_policy.get("full_resource_sync_default") is False
+            and cache_policy.get("local_mirror") is False
+        )
     checks.append(
         _agent_pack_check(
             "cache_policy",
@@ -1710,6 +1754,7 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             pinned_snapshot=cache_policy.get("pinned_snapshot"),
             local_mirror=cache_policy.get("local_mirror"),
             full_resource_sync_default=cache_policy.get("full_resource_sync_default"),
+            max_snapshot_age_days=cache_policy.get("max_snapshot_age_days"),
         )
     )
     raw_runtime_tools = manifest.get("runtime_tools")
