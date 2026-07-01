@@ -9,6 +9,7 @@ from typing import Any
 from sourcebrief_cli import skill_install
 
 RemoteDoctor = Callable[[Any, argparse.Namespace], dict[str, Any]]
+CommandHandler = Callable[[Any, argparse.Namespace], Any]
 
 
 SECRET_LIKE_RE = re.compile(
@@ -348,3 +349,38 @@ def cmd_agent_pack_doctor(
         "checks": checks,
         "remote_smoke": remote_result,
     }
+
+
+def register_agent_pack_commands(
+    subparsers: Any,
+    *,
+    doctor_command: CommandHandler,
+) -> None:
+    agent_packs = subparsers.add_parser(
+        "agent-pack", help="Agent Pack package validation commands"
+    ).add_subparsers(dest="agent_pack_command")
+    agent_pack_doctor = agent_packs.add_parser(
+        "doctor", help="validate a local Agent Pack package and optional remote smoke query"
+    )
+    agent_pack_doctor.add_argument(
+        "--package", required=True, help="package directory or .zip from sourcebrief skill export"
+    )
+    agent_pack_doctor.add_argument(
+        "--workspace", help="workspace name or slug; defaults to sourcebrief use selection"
+    )
+    agent_pack_doctor.add_argument(
+        "--workspace-id", help="advanced: workspace ID; defaults to sourcebrief use selection"
+    )
+    agent_pack_doctor.add_argument(
+        "--project", help="project name; defaults to sourcebrief use selection"
+    )
+    agent_pack_doctor.add_argument(
+        "--project-id", help="advanced: project ID; defaults to sourcebrief use selection"
+    )
+    agent_pack_doctor.add_argument("--query", help="optional MCP context smoke-test query")
+    agent_pack_doctor.add_argument(
+        "--runtime", default="hermes", choices=["api", "hermes", "claude", "codex", "cursor"]
+    )
+    agent_pack_doctor.add_argument("--resource-id", action="append")
+    agent_pack_doctor.add_argument("--top-k", type=int, default=3)
+    agent_pack_doctor.set_defaults(func=doctor_command)
