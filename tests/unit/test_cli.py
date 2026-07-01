@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import stat
 import time
 from datetime import UTC, datetime
@@ -2763,3 +2764,99 @@ def test_agent_pack_doctor_rejects_pinned_snapshot_full_resource_sync(capsys, tm
 
     assert data["status"] == "failed"
     assert next(check for check in data["checks"] if check["name"] == "local_payload")["status"] == "failed"
+
+
+def test_agent_pack_doctor_rejects_pinned_snapshot_unsafe_nested_runtime_access(capsys, tmp_path):
+    overrides = _pinned_snapshot_manifest_overrides()
+    overrides["runtime_access"] = {
+        "mode": "local-mirror",
+        "requires_sourcebrief_remote": False,
+        "local_repo_required": True,
+        "local_grep_allowed": True,
+        "local_edits_allowed": True,
+        "current_claims_require_remote": False,
+    }
+    package = _agent_pack_package(tmp_path, manifest_overrides=overrides)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 1
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "failed"
+    runtime_access = next(check for check in data["checks"] if check["name"] == "runtime_access")
+    assert runtime_access["status"] == "failed"
+    assert runtime_access["runtime_access_current_claims_require_remote"] is False
+
+
+def test_agent_pack_doctor_rejects_pinned_snapshot_schema_mismatch(capsys, tmp_path):
+    overrides = _pinned_snapshot_manifest_overrides()
+    overrides["agent_pack_schema_version"] = None
+    package = _agent_pack_package(tmp_path, manifest_overrides=overrides)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 1
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "failed"
+    assert next(check for check in data["checks"] if check["name"] == "manifest_schema")["status"] == "failed"
+
+
+def test_agent_pack_doctor_rejects_pinned_snapshot_boolean_snapshot_age(capsys, tmp_path):
+    overrides = _pinned_snapshot_manifest_overrides()
+    overrides["freshness_policy"] = {
+        "require_remote_for_current_claims": True,
+        "pinned_snapshot": True,
+        "offline_current_claims_allowed": False,
+        "max_snapshot_age_days": True,
+    }
+    overrides["cache_policy"] = {
+        "mode": "pinned-snapshot",
+        "pinned_snapshot": True,
+        "local_mirror": False,
+        "full_resource_sync_default": False,
+        "max_snapshot_age_days": True,
+    }
+    package = _agent_pack_package(tmp_path, manifest_overrides=overrides)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 1
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "failed"
+    assert next(check for check in data["checks"] if check["name"] == "freshness_policy")["status"] == "failed"
+    assert next(check for check in data["checks"] if check["name"] == "cache_policy")["status"] == "failed"
+
+
+def test_agent_pack_doctor_rejects_pinned_snapshot_loose_snapshot_age(capsys, tmp_path):
+    overrides = _pinned_snapshot_manifest_overrides()
+    overrides["freshness_policy"] = {
+        "require_remote_for_current_claims": True,
+        "pinned_snapshot": True,
+        "offline_current_claims_allowed": False,
+        "max_snapshot_age_days": 365,
+    }
+    overrides["cache_policy"] = {
+        "mode": "pinned-snapshot",
+        "pinned_snapshot": True,
+        "local_mirror": False,
+        "full_resource_sync_default": False,
+        "max_snapshot_age_days": 365,
+    }
+    package = _agent_pack_package(tmp_path, manifest_overrides=overrides)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 1
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "failed"
+    assert next(check for check in data["checks"] if check["name"] == "freshness_policy")["status"] == "failed"
+    assert next(check for check in data["checks"] if check["name"] == "cache_policy")["status"] == "failed"
+
+
+def test_agent_pack_docs_representative_remote_live_manifest_passes_doctor(capsys, tmp_path):
+    docs = (Path(__file__).resolve().parents[2] / "docs" / "AGENT_PACKS.md").read_text(encoding="utf-8")
+    manifest_json = re.findall(r"```json\n(.*?)\n```", docs, re.S)[0]
+    manifest = json.loads(manifest_json)
+    package = _agent_pack_package(tmp_path, manifest_overrides=manifest)
+
+    assert cli_main(["--json", "agent-pack", "doctor", "--package", str(package)]) == 0
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["status"] == "passed"
+    assert data["package"]["mode"] == "remote-live"

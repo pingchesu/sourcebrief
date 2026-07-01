@@ -95,8 +95,17 @@ Generated packs should declare their data and runtime policy explicitly. A repre
 
 ```json
 {
-  "schema_version": "sourcebrief.agent-pack.v1",
+  "agent_pack_schema_version": "sourcebrief.agent-pack.v1",
   "mode": "remote-live",
+  "requires_sourcebrief_remote": true,
+  "runtime_access": {
+    "mode": "remote-live",
+    "requires_sourcebrief_remote": true,
+    "local_repo_required": false,
+    "local_grep_allowed": false,
+    "local_edits_allowed": false,
+    "current_claims_require_remote": true
+  },
   "context_pack": {
     "key": "default",
     "version": 1,
@@ -107,15 +116,17 @@ Generated packs should declare their data and runtime policy explicitly. A repre
     "version": 1
   },
   "runtime_tools": {
-    "mcp": [
-      "ask",
-      "lookup",
-      "read_section",
-      "read_file",
-      "grep_code",
-      "find_symbol",
-      "graph_query",
-      "graph_path"
+    "mcp_required": [
+      "sourcebrief.get_agent_context"
+    ],
+    "mcp_optional": [
+      "sourcebrief.lookup",
+      "sourcebrief.read_section",
+      "sourcebrief.read_file",
+      "sourcebrief.grep_code",
+      "sourcebrief.find_symbol",
+      "sourcebrief.graph_query",
+      "sourcebrief.graph_path"
     ],
     "cli": [
       "sourcebrief ask",

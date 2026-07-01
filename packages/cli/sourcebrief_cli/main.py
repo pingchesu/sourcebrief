@@ -1641,24 +1641,46 @@ def _agent_pack_check(name: str, status: str, **fields: Any) -> dict[str, Any]:
     return {"name": name, "status": status, **_redact_manifest_value(fields)}
 
 
+def _strict_positive_int_at_most(value: Any, max_value: int) -> bool:
+    return type(value) is int and 0 < value <= max_value
+
+
 def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     mode = manifest.get("mode")
+    schema_ok = manifest.get("agent_pack_schema_version") == "sourcebrief.agent-pack.v1"
     checks.append(
         _agent_pack_check(
             "manifest_schema",
-            "passed" if manifest.get("agent_pack_schema_version") == "sourcebrief.agent-pack.v1" else "warning",
+            "passed" if schema_ok else "failed" if mode == "pinned-snapshot" else "warning",
             agent_pack_schema_version=manifest.get("agent_pack_schema_version"),
-            message=None if manifest.get("agent_pack_schema_version") == "sourcebrief.agent-pack.v1" else "manifest predates Agent Pack policy metadata",
+            message=None if schema_ok else "manifest predates Agent Pack policy metadata" if mode != "pinned-snapshot" else "pinned-snapshot manifests require sourcebrief.agent-pack.v1",
         )
     )
-    runtime_access_ok = mode in {"remote-live", "pinned-snapshot"} and manifest.get("requires_sourcebrief_remote") is True
+    raw_runtime_access = manifest.get("runtime_access")
+    runtime_access = raw_runtime_access if isinstance(raw_runtime_access, dict) else {}
+    runtime_access_ok = (
+        mode in {"remote-live", "pinned-snapshot"}
+        and manifest.get("requires_sourcebrief_remote") is True
+        and runtime_access.get("mode") == mode
+        and runtime_access.get("requires_sourcebrief_remote") is True
+        and runtime_access.get("local_repo_required") is False
+        and runtime_access.get("local_grep_allowed") is False
+        and runtime_access.get("local_edits_allowed") is False
+        and runtime_access.get("current_claims_require_remote") is True
+    )
     checks.append(
         _agent_pack_check(
             "runtime_access",
             "passed" if runtime_access_ok else "failed",
             mode=mode,
             requires_sourcebrief_remote=manifest.get("requires_sourcebrief_remote"),
+            runtime_access_mode=runtime_access.get("mode"),
+            runtime_access_requires_sourcebrief_remote=runtime_access.get("requires_sourcebrief_remote"),
+            runtime_access_local_repo_required=runtime_access.get("local_repo_required"),
+            runtime_access_local_grep_allowed=runtime_access.get("local_grep_allowed"),
+            runtime_access_local_edits_allowed=runtime_access.get("local_edits_allowed"),
+            runtime_access_current_claims_require_remote=runtime_access.get("current_claims_require_remote"),
         )
     )
     raw_local_payload = manifest.get("local_payload")
@@ -1714,8 +1736,7 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             freshness_ok
             and freshness_policy.get("pinned_snapshot") is True
             and freshness_policy.get("offline_current_claims_allowed") is False
-            and isinstance(snapshot_age_days, int)
-            and snapshot_age_days > 0
+            and _strict_positive_int_at_most(snapshot_age_days, 7)
         )
     checks.append(
         _agent_pack_check(
@@ -1736,8 +1757,7 @@ def _agent_pack_manifest_checks(manifest: dict[str, Any]) -> list[dict[str, Any]
             and cache_policy.get("pinned_snapshot") is True
             and cache_policy.get("full_resource_sync_default") is False
             and cache_policy.get("local_mirror") is False
-            and isinstance(cache_snapshot_age_days, int)
-            and cache_snapshot_age_days > 0
+            and _strict_positive_int_at_most(cache_snapshot_age_days, 7)
         )
     else:
         cache_ok = (
