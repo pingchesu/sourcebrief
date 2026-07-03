@@ -61,7 +61,21 @@ EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES = {
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}/reject", "reject_context_artifact"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES
+
+EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES = {
+    ("PATCH", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", "update_resource"),
+    ("DELETE", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", "delete_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/archive", "archive_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/restore", "restore_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", "purge_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/review", "review_resource"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resource-review", "list_resource_review"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resource-usage", "resource_usage"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources", "list_resources"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/snapshots", "list_snapshots"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -135,5 +149,12 @@ def test_repo_agent_openapi_metadata_remains_untagged() -> None:
 def test_resource_artifact_openapi_metadata_remains_untagged() -> None:
     openapi = app.openapi()
     for method, path, _name in EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_resource_lifecycle_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES:
         operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation
