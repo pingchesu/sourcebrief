@@ -131,7 +131,15 @@ EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES = {
     ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/index-runs", "list_resource_index_runs"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES | EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES | EXPECTED_RETRIEVAL_EVAL_ROUTE_SIGNATURES | EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES
+EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement", "get_self_improvement_overview"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/history", "list_self_improvement_history"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/artifacts/{artifact_id}", "get_self_improvement_artifact"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/mvp-smoke", "run_self_improvement_mvp_smoke"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/sleep", "run_self_improvement_sleep"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES | EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES | EXPECTED_RETRIEVAL_EVAL_ROUTE_SIGNATURES | EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES | EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -247,5 +255,12 @@ def test_retrieval_eval_openapi_metadata_remains_untagged() -> None:
 def test_audit_index_openapi_metadata_remains_untagged() -> None:
     openapi = app.openapi()
     for method, path, _name in EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_self_improvement_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES:
         operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation

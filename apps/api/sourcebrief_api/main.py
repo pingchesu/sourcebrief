@@ -6,7 +6,6 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -88,6 +87,7 @@ from sourcebrief_api.routers import resource_artifacts as resource_artifact_rout
 from sourcebrief_api.routers import resource_lifecycle as resource_lifecycle_router
 from sourcebrief_api.routers import retrieval_evals as retrieval_eval_router
 from sourcebrief_api.routers import runtime_agent as runtime_agent_router
+from sourcebrief_api.routers import self_improvement as self_improvement_router
 from sourcebrief_api.routers import skill_exports as skill_export_router
 from sourcebrief_api.routers import system as system_router
 from sourcebrief_api.schemas import (
@@ -139,12 +139,6 @@ from sourcebrief_api.schemas import (
     RuntimeInstallPlanResponse,
     SearchRequest,
     SectionImpactRead,
-    SelfImprovementArtifactResponse,
-    SelfImprovementHistoryResponse,
-    SelfImprovementOverviewResponse,
-    SelfImprovementRunRequest,
-    SelfImprovementRunResponse,
-    SelfImprovementSleepRequest,
     SkillExportGenerateRequest,
     SkillExportRead,
     SkillExportReviewRequest,
@@ -202,17 +196,6 @@ from sourcebrief_shared.models import (
     User,
     Workspace,
     WorkspaceMembership,
-)
-from sourcebrief_shared.review_history import (
-    ReviewHistoryError,
-    scan_review_history,
-    show_review_history_record,
-)
-from sourcebrief_shared.self_improvement_mvp import run_mvp_smoke_path
-from sourcebrief_shared.self_improvement_sleep import (
-    SleepReplayError,
-    run_sleep_replay,
-    write_sleep_replay_summary,
 )
 from sourcebrief_worker.bundle_ingest import (
     HARD_MAX_ZIP_UPLOAD_BYTES,
@@ -1771,175 +1754,16 @@ def get_project(
     return _require_project_access(session, workspace_id, project_id, principal)
 
 
-def _self_improvement_project_root(workspace_id: UUID, project_id: UUID) -> Path:
-    configured = Path(get_settings().self_improvement_root).expanduser()
-    base = configured if configured.is_absolute() else Path.cwd() / configured
-    return base / str(workspace_id) / str(project_id)
+_self_improvement_project_root = self_improvement_router.self_improvement_project_root
+_history_response = self_improvement_router.history_response
+_run_dir = self_improvement_router.run_dir
 
-
-def _history_response(root: Path) -> dict[str, Any]:
-    if not root.exists():
-        return {"root": str(root), "records": [], "metrics": {"record_count": 0}, "provenance": []}
-    return scan_review_history(root).model_dump(mode="json")
-
-
-def _run_dir(root: Path, prefix: str) -> Path:
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    return root / "runs" / f"{prefix}-{stamp}"
-
-
-@app.get(
-    "/workspaces/{workspace_id}/projects/{project_id}/self-improvement",
-    response_model=SelfImprovementOverviewResponse,
+_self_improvement_router_deps = self_improvement_router.SelfImprovementRouterDeps(
+    require_project_access=_require_project_access,
+    require_project_member=_require_project_member,
 )
-def get_self_improvement_overview(
-    workspace_id: UUID,
-    project_id: UUID,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> dict[str, Any]:
-    require_scope(principal, "review:read")
-    _require_project_access(session, workspace_id, project_id, principal)
-    root = _self_improvement_project_root(workspace_id, project_id)
-    return {
-        "workspace_id": workspace_id,
-        "project_id": project_id,
-        "root": str(root),
-        "no_silent_mutation": True,
-        "shipped_surfaces": [
-            "review-bundle capture",
-            "local reviewer report",
-            "regression proposal",
-            "deterministic validation gate",
-            "staged patch/receipt",
-            "review history",
-            "MVP smoke",
-            "sleep/replay dry-run",
-        ],
-        "next_safe_actions": [
-            "Run MVP smoke to create a complete local artifact chain.",
-            "Inspect redacted artifact history before adopting any proposed improvement.",
-            "Run sleep/replay dry-run only after multiple proposal artifacts exist.",
-        ],
-        "history": _history_response(root),
-    }
 
-
-@app.get(
-    "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/history",
-    response_model=SelfImprovementHistoryResponse,
-)
-def list_self_improvement_history(
-    workspace_id: UUID,
-    project_id: UUID,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> dict[str, Any]:
-    require_scope(principal, "review:read")
-    _require_project_access(session, workspace_id, project_id, principal)
-    return _history_response(_self_improvement_project_root(workspace_id, project_id))
-
-
-@app.get(
-    "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/artifacts/{artifact_id}",
-    response_model=SelfImprovementArtifactResponse,
-)
-def get_self_improvement_artifact(
-    workspace_id: UUID,
-    project_id: UUID,
-    artifact_id: str,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> dict[str, Any]:
-    require_scope(principal, "review:read")
-    _require_project_access(session, workspace_id, project_id, principal)
-    root = _self_improvement_project_root(workspace_id, project_id)
-    try:
-        return show_review_history_record(root, artifact_id)
-    except ReviewHistoryError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@app.post(
-    "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/mvp-smoke",
-    response_model=SelfImprovementRunResponse,
-)
-def run_self_improvement_mvp_smoke(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: SelfImprovementRunRequest,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> dict[str, Any]:
-    require_scope(principal, "review:write")
-    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"review:write"})
-    root = _self_improvement_project_root(workspace_id, project_id)
-    out_dir = _run_dir(root, "mvp-smoke")
-    try:
-        summary = run_mvp_smoke_path(out_dir=out_dir, finding_id=payload.finding_id, owner=payload.owner)
-        history = _history_response(root)
-    except (OSError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    session.add(
-        AuditEvent(
-            workspace_id=workspace_id,
-            actor_user_id=principal.user.id,
-            actor_token_id=principal.token_id,
-            action="self_improvement.mvp_smoke",
-            target_type="project",
-            target_id=project_id,
-            meta={"out_dir": str(out_dir), "proposal_id": summary.get("proposal_id"), "gate_decision": summary.get("gate_decision")},
-        )
-    )
-    session.commit()
-    return {"status": "completed", "out_dir": str(out_dir), "summary": summary, "history": history}
-
-
-@app.post(
-    "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/sleep",
-    response_model=SelfImprovementRunResponse,
-)
-def run_self_improvement_sleep(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: SelfImprovementSleepRequest,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> dict[str, Any]:
-    require_scope(principal, "review:write")
-    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"review:write"})
-    root = _self_improvement_project_root(workspace_id, project_id)
-    root.mkdir(parents=True, exist_ok=True)
-    out_dir = _run_dir(root, "sleep")
-    try:
-        summary_model = run_sleep_replay(
-            root,
-            out_dir=out_dir,
-            min_occurrences=payload.min_occurrences,
-            max_artifacts=payload.max_artifacts,
-            dry_run=True,
-        )
-        summary_path = out_dir / "summary.json"
-        write_sleep_replay_summary(summary_path, summary_model)
-        history = _history_response(root)
-    except (OSError, SleepReplayError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    summary = summary_model.model_dump(mode="json")
-    summary["summary_path"] = str(summary_path)
-    session.add(
-        AuditEvent(
-            workspace_id=workspace_id,
-            actor_user_id=principal.user.id,
-            actor_token_id=principal.token_id,
-            action="self_improvement.sleep_dry_run",
-            target_type="project",
-            target_id=project_id,
-            meta={"out_dir": str(out_dir), "candidate_count": len(summary_model.candidates)},
-        )
-    )
-    session.commit()
-    return {"status": "completed", "out_dir": str(out_dir), "summary": summary, "history": history}
-
+app.include_router(self_improvement_router.create_router(_self_improvement_router_deps))
 
 @app.get("/workspaces/{workspace_id}/agents", response_model=list[AgentProfileRead])
 def list_agents(
