@@ -36,7 +36,6 @@ from sourcebrief_api.auth import (
     hash_password,
     hash_token,
     new_plaintext_token,
-    require_any_scope,
     require_principal,
     require_scope,
     require_workspace_member,
@@ -80,6 +79,7 @@ from sourcebrief_api.retrieval import (
     retrieve_context_candidates,
 )
 from sourcebrief_api.routers import agent_context as agent_context_router
+from sourcebrief_api.routers import audit_index as audit_index_router
 from sourcebrief_api.routers import context_packs as context_pack_router
 from sourcebrief_api.routers import graphs as graph_router
 from sourcebrief_api.routers import remote_code as remote_code_router
@@ -100,7 +100,6 @@ from sourcebrief_api.schemas import (
     ApiTokenCreate,
     ApiTokenCreateResponse,
     ApiTokenRead,
-    AuditEventRead,
     AuthLoginRequest,
     AuthLoginResponse,
     AuthLogoutResponse,
@@ -1176,19 +1175,7 @@ def _workspace_member_read(session: Session, membership: WorkspaceMembership) ->
     )
 
 
-def _audit_event_read(event: AuditEvent) -> AuditEventRead:
-    return AuditEventRead(
-        id=event.id,
-        workspace_id=event.workspace_id,
-        actor_user_id=event.actor_user_id,
-        actor_token_id=event.actor_token_id,
-        action=event.action,
-        target_type=event.target_type,
-        target_id=event.target_id,
-        target_ref=event.target_ref or {},
-        metadata=event.meta or {},
-        created_at=event.created_at,
-    )
+_audit_event_read = audit_index_router.audit_event_read
 
 
 def _api_token_read(token: ApiToken) -> ApiTokenRead:
@@ -2969,57 +2956,13 @@ def enqueue_scheduled_refreshes(
     return DueRefreshResponse.model_validate(result)
 
 
-@app.get("/workspaces/{workspace_id}/audit-events", response_model=list[AuditEventRead])
-def list_audit_events(
-    workspace_id: UUID,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> list[AuditEventRead]:
-    require_scope(principal, "token:admin")
-    _require_workspace_admin(session, workspace_id, principal)
-    events = list(
-        session.scalars(
-            select(AuditEvent)
-            .where(AuditEvent.workspace_id == workspace_id)
-            .order_by(AuditEvent.created_at.desc())
-        )
-    )
-    return [
-        AuditEventRead(
-            id=event.id,
-            workspace_id=event.workspace_id,
-            actor_user_id=event.actor_user_id,
-            actor_token_id=event.actor_token_id,
-            action=event.action,
-            target_type=event.target_type,
-            target_id=event.target_id,
-            target_ref=event.target_ref,
-            metadata=event.meta,
-            created_at=event.created_at,
-        )
-        for event in events
-    ]
+_audit_index_router_deps = audit_index_router.AuditIndexRouterDeps(
+    require_workspace_admin=_require_workspace_admin,
+    require_project_access=_require_project_access,
+    resolve_resource=_resolve_resource,
+)
 
-
-@app.get("/workspaces/{workspace_id}/index-runs/{index_run_id}", response_model=IndexRunRead)
-def get_index_run(
-    workspace_id: UUID,
-    index_run_id: UUID,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> IndexRun:
-    require_any_scope(principal, {"project:read", "resource:read", "resource:refresh"})
-    require_workspace_member(session, workspace_id, principal)
-    run = session.scalar(
-        select(IndexRun).where(IndexRun.workspace_id == workspace_id, IndexRun.id == index_run_id)
-    )
-    if run is None:
-        raise HTTPException(status_code=404, detail="index run not found")
-    if not token_allows_resource(principal, run.resource_id):
-        raise HTTPException(status_code=404, detail="index run not found")
-    _require_project_access(session, workspace_id, run.project_id, principal)
-    return run
-
+app.include_router(audit_index_router.create_router(_audit_index_router_deps))
 
 _resource_review_item = resource_lifecycle_router.resource_review_item
 
@@ -3079,32 +3022,6 @@ def _assert_graph_merge_publishable(session: Session, version: GraphMergeVersion
 
 
 app.include_router(graph_router.create_router(_graph_router_deps))
-
-@app.get(
-    "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/index-runs",
-    response_model=list[IndexRunRead],
-)
-def list_resource_index_runs(
-    workspace_id: UUID,
-    project_id: UUID,
-    resource_id: UUID,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> list[IndexRun]:
-    require_scope(principal, "resource:read")
-    _require_project_access(session, workspace_id, project_id, principal)
-    _resolve_resource(session, workspace_id, project_id, resource_id, principal)
-    return list(
-        session.scalars(
-            select(IndexRun)
-            .where(
-                IndexRun.workspace_id == workspace_id,
-                IndexRun.resource_id == resource_id,
-            )
-            .order_by(IndexRun.created_at.desc())
-        )
-    )
-
 
 _make_snippet = remote_code_router._make_snippet
 _remote_code_error = remote_code_router._remote_code_error
