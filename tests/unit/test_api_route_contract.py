@@ -75,7 +75,27 @@ EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES = {
     ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/snapshots", "list_snapshots"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES
+
+EXPECTED_GRAPH_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges", "list_graph_merges"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}", "get_graph_merge"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges", "compile_graph_merge_endpoint"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/publish", "publish_graph_merge"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/invalidate", "invalidate_graph_merge_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/archive", "archive_graph_merge"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/data", "get_graph_merge_data"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/candidates/{candidate_key}/review", "review_graph_merge_candidate"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/path", "get_graph_merge_path"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graphs", "list_graph_streams"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}", "get_graph_stream"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph/versions", "compile_resource_graph_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/versions/{version_number}/publish", "publish_graph_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/versions/{version_number}/invalidate", "invalidate_graph_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/archive", "archive_graph_stream"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph", "get_resource_graph"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -156,5 +176,12 @@ def test_resource_artifact_openapi_metadata_remains_untagged() -> None:
 def test_resource_lifecycle_openapi_metadata_remains_untagged() -> None:
     openapi = app.openapi()
     for method, path, _name in EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_graph_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_GRAPH_ROUTE_SIGNATURES:
         operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation
