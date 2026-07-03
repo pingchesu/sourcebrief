@@ -72,6 +72,7 @@ from sourcebrief_api.routers import audit_index as audit_index_router
 from sourcebrief_api.routers import auth_workspace as auth_workspace_router
 from sourcebrief_api.routers import context_packs as context_pack_router
 from sourcebrief_api.routers import graphs as graph_router
+from sourcebrief_api.routers import mcp_context as mcp_context_router
 from sourcebrief_api.routers import remote_code as remote_code_router
 from sourcebrief_api.routers import repo_agents as repo_agent_router
 from sourcebrief_api.routers import resource_artifacts as resource_artifact_router
@@ -3400,8 +3401,7 @@ def _runtime_help(args: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-@app.post("/mcp/{workspace_id}/{project_id}", response_model=None)
-async def mcp_endpoint(
+async def _mcp_endpoint_action(
     workspace_id: UUID,
     project_id: UUID,
     request: Request,
@@ -3544,12 +3544,7 @@ async def mcp_endpoint(
     return _json_rpc_error(rpc_id, -32601, "method not found")
 
 
-@app.post(
-    "/workspaces/{workspace_id}/projects/{project_id}/context-packets",
-    response_model=ContextPacketRead,
-    status_code=201,
-)
-def create_context_packet(
+def _create_context_packet_action(
     workspace_id: UUID,
     project_id: UUID,
     payload: ContextPacketRequest,
@@ -3732,3 +3727,10 @@ def create_context_packet(
             session.add(failed)
             session.commit()
         raise HTTPException(status_code=500, detail="context packet retrieval failed") from exc
+
+_mcp_context_router_deps = mcp_context_router.McpContextRouterDeps(
+    mcp_endpoint_action=_mcp_endpoint_action,
+    create_context_packet_action=_create_context_packet_action,
+)
+
+app.include_router(mcp_context_router.create_router(_mcp_context_router_deps))
