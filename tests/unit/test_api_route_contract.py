@@ -145,7 +145,25 @@ EXPECTED_AGENT_PROFILE_ROUTE_SIGNATURES = {
     ("PATCH", "/workspaces/{workspace_id}/projects/{project_id}/agent-profile", "update_agent_profile"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES | EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES | EXPECTED_RETRIEVAL_EVAL_ROUTE_SIGNATURES | EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES | EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES | EXPECTED_AGENT_PROFILE_ROUTE_SIGNATURES
+EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES = {
+    ("POST", "/auth/login", "login"),
+    ("GET", "/auth/me", "me"),
+    ("POST", "/auth/logout", "logout"),
+    ("POST", "/workspaces", "create_workspace"),
+    ("GET", "/workspaces", "list_workspaces"),
+    ("GET", "/workspaces/{workspace_id}", "get_workspace"),
+    ("POST", "/workspaces/{workspace_id}/api-tokens", "create_api_token"),
+    ("GET", "/workspaces/{workspace_id}/api-tokens", "list_api_tokens"),
+    ("DELETE", "/workspaces/{workspace_id}/api-tokens/{token_id}", "revoke_api_token"),
+    ("GET", "/workspaces/{workspace_id}/projects", "list_projects"),
+    ("GET", "/workspaces/{workspace_id}/members", "list_workspace_members"),
+    ("POST", "/workspaces/{workspace_id}/members", "create_workspace_member"),
+    ("PATCH", "/workspaces/{workspace_id}/members/{membership_id}", "update_workspace_member"),
+    ("POST", "/workspaces/{workspace_id}/projects", "create_project"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}", "get_project"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES | EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES | EXPECTED_RETRIEVAL_EVAL_ROUTE_SIGNATURES | EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES | EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES | EXPECTED_AGENT_PROFILE_ROUTE_SIGNATURES | EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -275,5 +293,12 @@ def test_self_improvement_openapi_metadata_remains_untagged() -> None:
 def test_agent_profile_openapi_metadata_remains_untagged() -> None:
     openapi = app.openapi()
     for method, path, _name in EXPECTED_AGENT_PROFILE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_auth_workspace_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES:
         operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation
