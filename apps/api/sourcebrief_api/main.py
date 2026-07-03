@@ -78,6 +78,7 @@ from sourcebrief_api.retrieval import (
     retrieve_context_candidates,
 )
 from sourcebrief_api.routers import agent_context as agent_context_router
+from sourcebrief_api.routers import agent_profiles as agent_profile_router
 from sourcebrief_api.routers import audit_index as audit_index_router
 from sourcebrief_api.routers import context_packs as context_pack_router
 from sourcebrief_api.routers import graphs as graph_router
@@ -95,8 +96,6 @@ from sourcebrief_api.schemas import (
     AgentContextCitation,
     AgentContextRequest,
     AgentContextResponse,
-    AgentProfileRead,
-    AgentProfileUpdate,
     ApiTokenCreate,
     ApiTokenCreateResponse,
     ApiTokenRead,
@@ -524,75 +523,7 @@ def _require_pr_workflow_enabled(profile: AgentProfile | None) -> None:
         raise HTTPException(status_code=403, detail="PR workflow is disabled for this project")
 
 
-def _agent_profile_read(session: Session, workspace_id: UUID, project: Project, profile: AgentProfile) -> AgentProfileRead:
-    stats = cast(
-        Mapping[str, Any],
-        session.execute(
-            text(
-                """
-            WITH current_snapshots AS (
-              SELECT current_snapshot_id
-              FROM resources
-              WHERE workspace_id = :ws
-                AND project_id = :proj
-                AND deleted_at IS NULL
-                AND current_snapshot_id IS NOT NULL
-            )
-            SELECT
-              (
-                SELECT COUNT(*)
-                FROM resources r
-                WHERE r.workspace_id = :ws
-                  AND r.project_id = :proj
-                  AND r.deleted_at IS NULL
-              ) AS resource_count,
-              (SELECT COUNT(*) FROM current_snapshots) AS current_snapshot_count,
-              (
-                SELECT COUNT(*)
-                FROM graph_nodes gn
-                WHERE gn.workspace_id = :ws
-                  AND gn.project_id = :proj
-                  AND gn.source_snapshot_id IN (SELECT current_snapshot_id FROM current_snapshots)
-              ) AS graph_node_count,
-              (
-                SELECT COUNT(*)
-                FROM graph_edges ge
-                WHERE ge.workspace_id = :ws
-                  AND ge.project_id = :proj
-                  AND ge.source_snapshot_id IN (SELECT current_snapshot_id FROM current_snapshots)
-              ) AS graph_edge_count,
-              (
-                SELECT MAX(ir.finished_at)
-                FROM index_runs ir
-                WHERE ir.workspace_id = :ws
-                  AND ir.project_id = :proj
-                  AND ir.status = 'succeeded'
-              ) AS last_index_finished_at
-            """
-            ),
-            {"ws": workspace_id, "proj": project.id},
-        ).mappings().first()
-        or {},
-    )
-    return AgentProfileRead(
-        id=profile.id,
-        workspace_id=profile.workspace_id,
-        project_id=profile.project_id,
-        name=profile.name,
-        description=profile.description,
-        default_runtime=profile.default_runtime,
-        system_prompt=profile.system_prompt,
-        tool_policy=profile.tool_policy,
-        resource_count=int(stats.get("resource_count") or 0),
-        current_snapshot_count=int(stats.get("current_snapshot_count") or 0),
-        graph_node_count=int(stats.get("graph_node_count") or 0),
-        graph_edge_count=int(stats.get("graph_edge_count") or 0),
-        last_index_finished_at=stats.get("last_index_finished_at"),
-        mcp_endpoint=f"/mcp/{workspace_id}/{project.id}",
-        agent_context_endpoint=f"/workspaces/{workspace_id}/projects/{project.id}/agent-context",
-        created_at=profile.created_at,
-        updated_at=profile.updated_at,
-    )
+_agent_profile_read = agent_profile_router.agent_profile_read
 
 
 def _current_project_resources(session: Session, workspace_id: UUID, project_id: UUID) -> list[Resource]:
@@ -1765,84 +1696,13 @@ _self_improvement_router_deps = self_improvement_router.SelfImprovementRouterDep
 
 app.include_router(self_improvement_router.create_router(_self_improvement_router_deps))
 
-@app.get("/workspaces/{workspace_id}/agents", response_model=list[AgentProfileRead])
-def list_agents(
-    workspace_id: UUID,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> list[AgentProfileRead]:
-    user = principal.user
-    require_scope(principal, "project:read")
-    require_workspace_member(session, workspace_id, principal)
-    projects = list(
-        session.scalars(
-            select(Project)
-            .where(Project.workspace_id == workspace_id, Project.deleted_at.is_(None))
-            .order_by(Project.created_at.asc())
-        )
-    )
-    agents: list[AgentProfileRead] = []
-    for project in projects:
-        try:
-            _require_project_access(session, workspace_id, project.id, principal)
-        except HTTPException:
-            continue
-        profile = _ensure_agent_profile(session, workspace_id, project, user.id)
-        agents.append(_agent_profile_read(session, workspace_id, project, profile))
-    session.commit()
-    return agents
+_agent_profile_router_deps = agent_profile_router.AgentProfileRouterDeps(
+    require_project_access=_require_project_access,
+    require_project_member=_require_project_member,
+    ensure_agent_profile=_ensure_agent_profile,
+)
 
-
-@app.get("/workspaces/{workspace_id}/projects/{project_id}/agent-profile", response_model=AgentProfileRead)
-def get_agent_profile(
-    workspace_id: UUID,
-    project_id: UUID,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> AgentProfileRead:
-    user = principal.user
-    require_scope(principal, "project:read")
-    project = _require_project_access(session, workspace_id, project_id, principal)
-    profile = _ensure_agent_profile(session, workspace_id, project, user.id)
-    session.commit()
-    return _agent_profile_read(session, workspace_id, project, profile)
-
-
-@app.patch("/workspaces/{workspace_id}/projects/{project_id}/agent-profile", response_model=AgentProfileRead)
-def update_agent_profile(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: AgentProfileUpdate,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> AgentProfileRead:
-    user = principal.user
-    require_scope(principal, "token:admin")
-    project = _require_project_member(session, workspace_id, project_id, principal, required_scopes={"token:admin"})
-    profile = _ensure_agent_profile(session, workspace_id, project, user.id)
-    fields = payload.model_dump(exclude_unset=True)
-    nullable_forbidden = {"name", "default_runtime", "tool_policy"}
-    bad_null = sorted(key for key in nullable_forbidden if key in fields and fields[key] is None)
-    if bad_null:
-        raise HTTPException(status_code=422, detail=f"fields cannot be null: {', '.join(bad_null)}")
-    for key, value in fields.items():
-        setattr(profile, key, value)
-    profile.updated_by = user.id
-    profile.updated_at = datetime.now(UTC)
-    session.add(
-        AuditEvent(
-            workspace_id=workspace_id,
-            actor_user_id=user.id,
-            actor_token_id=principal.token_id,
-            action="agent_profile.update",
-            target_type="agent_profile",
-            target_id=profile.id,
-            meta={"fields": sorted(fields.keys())},
-        )
-    )
-    session.commit()
-    return _agent_profile_read(session, workspace_id, project, profile)
-
+app.include_router(agent_profile_router.create_router(_agent_profile_router_deps))
 
 app.include_router(
     runtime_agent_router.create_router(
