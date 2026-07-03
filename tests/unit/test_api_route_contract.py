@@ -109,7 +109,16 @@ EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES = {
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/code/rpc", "remote_code_rpc"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES
+
+EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/agent-context", "agent_context"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries", "list_agent_card_summaries"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/run", "run_agent_card_summary_audit"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/{summary_id}/acknowledge", "acknowledge_agent_card_summary"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{resource_id}/brief", "get_repo_agent_brief"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES | EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -204,5 +213,12 @@ def test_graph_openapi_metadata_remains_untagged() -> None:
 def test_remote_code_openapi_metadata_remains_untagged() -> None:
     openapi = app.openapi()
     for method, path, _name in EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_agent_context_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES:
         operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation

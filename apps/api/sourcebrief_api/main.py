@@ -81,6 +81,7 @@ from sourcebrief_api.retrieval import (
     retrieval_profile_manifest,
     retrieve_context_candidates,
 )
+from sourcebrief_api.routers import agent_context as agent_context_router
 from sourcebrief_api.routers import context_packs as context_pack_router
 from sourcebrief_api.routers import graphs as graph_router
 from sourcebrief_api.routers import remote_code as remote_code_router
@@ -91,9 +92,6 @@ from sourcebrief_api.routers import runtime_agent as runtime_agent_router
 from sourcebrief_api.routers import skill_exports as skill_export_router
 from sourcebrief_api.routers import system as system_router
 from sourcebrief_api.schemas import (
-    AgentCardSummaryAcknowledgeRequest,
-    AgentCardSummaryListResponse,
-    AgentCardSummaryRead,
     AgentContextAnswer,
     AgentContextCitation,
     AgentContextRequest,
@@ -173,13 +171,11 @@ from sourcebrief_api.schemas import (
 from sourcebrief_api.skill_exports import (
     SKILL_EXPORT_STATUS_APPROVED,
 )
-from sourcebrief_shared.agent_card_auditor import run_agent_card_auditor
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_session, get_sessionmaker
 from sourcebrief_shared.embeddings import current_embedding_config
 from sourcebrief_shared.lifecycle import compute_next_refresh_at
 from sourcebrief_shared.models import (
-    AgentCardSummary,
     AgentProfile,
     ApiToken,
     AuditEvent,
@@ -4006,206 +4002,32 @@ def _build_agent_context_response(
     )
 
 
-@app.post(
-    "/workspaces/{workspace_id}/projects/{project_id}/agent-context",
-    response_model=AgentContextResponse,
+_agent_card_summary_read = agent_context_router.agent_card_summary_read
+
+_agent_context_router_deps = agent_context_router.AgentContextRouterDeps(
+    require_project_access=_require_project_access,
+    require_project_member=_require_project_member,
+    resolve_resource=_resolve_resource,
+    effective_resource_ids=_effective_resource_ids,
+    agent_context_with_resource_ref=_agent_context_with_resource_ref,
+    resolve_runtime_pack_version=_resolve_runtime_pack_version,
+    build_agent_context_response=_build_agent_context_response,
+    build_pack_agent_context_response=_build_pack_agent_context_response,
+    repo_agent_brief_response=_repo_agent_brief_response,
 )
+
+
 def agent_context(
     workspace_id: UUID,
     project_id: UUID,
     payload: AgentContextRequest,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
+    principal: Principal,
+    session: Session,
 ) -> AgentContextResponse:
-    require_scope(principal, "project:query")
-    _require_project_access(session, workspace_id, project_id, principal)
-    payload = _agent_context_with_resource_ref(session, workspace_id, project_id, principal, payload)
-    resource_ids = _effective_resource_ids(principal, payload.resource_ids)
-    payload = payload.model_copy(update={"resource_ids": resource_ids})
-    pack_version = _resolve_runtime_pack_version(session, workspace_id, project_id, payload, principal)
-    if pack_version is not None:
-        return _build_pack_agent_context_response(
-            session,
-            workspace_id=workspace_id,
-            project_id=project_id,
-            payload=payload,
-            principal=principal,
-            pack_version=pack_version,
-        )
-    return _build_agent_context_response(
-        session,
-        workspace_id=workspace_id,
-        project_id=project_id,
-        payload=payload,
-        principal=principal,
-    )
+    return agent_context_router.create_router(_agent_context_router_deps).routes[0].endpoint(workspace_id, project_id, payload, principal, session)  # type: ignore[attr-defined]
 
 
-def _agent_card_summary_read(summary: AgentCardSummary) -> AgentCardSummaryRead:
-    return AgentCardSummaryRead(
-        id=summary.id,
-        workspace_id=summary.workspace_id,
-        project_id=summary.project_id,
-        resource_id=summary.resource_id,
-        status=summary.status,
-        severity=summary.severity,
-        summary=summary.summary,
-        findings=list(summary.findings or []),
-        metrics=dict(summary.metrics or {}),
-        source=summary.source,
-        acknowledged_at=summary.acknowledged_at,
-        acknowledged_by=summary.acknowledged_by,
-        suppressed_until=summary.suppressed_until,
-        created_at=summary.created_at,
-    )
-
-
-@app.get(
-    "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries",
-    response_model=AgentCardSummaryListResponse,
-)
-def list_agent_card_summaries(
-    workspace_id: UUID,
-    project_id: UUID,
-    latest_only: bool = Query(default=True),
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> AgentCardSummaryListResponse:
-    require_scope(principal, "review:read")
-    _require_project_access(session, workspace_id, project_id, principal)
-    predicates = [
-        AgentCardSummary.workspace_id == workspace_id,
-        AgentCardSummary.project_id == project_id,
-        Resource.id == AgentCardSummary.resource_id,
-        Resource.workspace_id == AgentCardSummary.workspace_id,
-        Resource.project_id == AgentCardSummary.project_id,
-        Resource.deleted_at.is_(None),
-        Resource.archived_at.is_(None),
-    ]
-    if principal.api_token is not None and principal.api_token.allowed_resource_ids is not None:
-        predicates.append(AgentCardSummary.resource_id.in_(principal.api_token.allowed_resource_ids))
-    summaries = list(
-        session.scalars(
-            select(AgentCardSummary)
-            .where(*predicates)
-            .order_by(AgentCardSummary.resource_id.asc(), AgentCardSummary.created_at.desc())
-            .limit(300)
-        )
-    )
-    if latest_only:
-        latest_by_resource: dict[UUID, AgentCardSummary] = {}
-        for summary in summaries:
-            latest_by_resource.setdefault(summary.resource_id, summary)
-        items = [_agent_card_summary_read(summary) for summary in latest_by_resource.values()]
-    else:
-        items = [_agent_card_summary_read(summary) for summary in summaries[:100]]
-    return AgentCardSummaryListResponse(count=len(items), summaries=items)
-
-
-@app.post(
-    "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/run",
-    response_model=AgentCardSummaryListResponse,
-)
-def run_agent_card_summary_audit(
-    workspace_id: UUID,
-    project_id: UUID,
-    dry_run: bool = Query(default=True),
-    resource_ids: list[UUID] | None = Query(default=None),
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> AgentCardSummaryListResponse:
-    require_scope(principal, "review:read")
-    if not dry_run:
-        require_scope(principal, "review:write")
-        _require_project_member(session, workspace_id, project_id, principal, required_scopes={"review:read", "review:write"})
-    else:
-        _require_project_access(session, workspace_id, project_id, principal)
-    effective_resource_ids = _effective_resource_ids(principal, resource_ids)
-    summaries = run_agent_card_auditor(
-        session,
-        workspace_id=workspace_id,
-        project_id=project_id,
-        resource_ids=effective_resource_ids,
-        actor_user_id=principal.user.id,
-        actor_token_id=principal.token_id,
-        persist=not dry_run,
-    )
-    return AgentCardSummaryListResponse(count=len(summaries), summaries=[_agent_card_summary_read(summary) for summary in summaries])
-
-
-@app.post(
-    "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/{summary_id}/acknowledge",
-    response_model=AgentCardSummaryRead,
-)
-def acknowledge_agent_card_summary(
-    workspace_id: UUID,
-    project_id: UUID,
-    summary_id: UUID,
-    payload: AgentCardSummaryAcknowledgeRequest,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> AgentCardSummaryRead:
-    require_scope(principal, "review:write")
-    _require_project_member(session, workspace_id, project_id, principal, required_scopes={"review:write"})
-    summary = session.scalar(
-        select(AgentCardSummary).where(
-            AgentCardSummary.id == summary_id,
-            AgentCardSummary.workspace_id == workspace_id,
-            AgentCardSummary.project_id == project_id,
-        )
-    )
-    if summary is None:
-        raise HTTPException(status_code=404, detail="agent card summary not found")
-    if not token_allows_resource(principal, summary.resource_id):
-        raise HTTPException(status_code=403, detail="token is not allowed to access this resource")
-    previous = {
-        "acknowledged_at": summary.acknowledged_at.isoformat() if summary.acknowledged_at else None,
-        "acknowledged_by": str(summary.acknowledged_by) if summary.acknowledged_by else None,
-        "suppressed_until": summary.suppressed_until.isoformat() if summary.suppressed_until else None,
-    }
-    now = datetime.now(UTC)
-    summary.acknowledged_at = now
-    summary.acknowledged_by = principal.user.id
-    summary.suppressed_until = now + timedelta(hours=payload.suppress_for_hours) if payload.suppress_for_hours else None
-    session.add(
-        AuditEvent(
-            workspace_id=workspace_id,
-            actor_user_id=principal.user.id,
-            actor_token_id=principal.token_id,
-            action="agent_card.summary_acknowledged",
-            target_type="agent_card_summary",
-            target_id=summary.id,
-            target_ref={"resource_id": str(summary.resource_id)},
-            meta={
-                "previous": previous,
-                "new": {
-                    "acknowledged_at": summary.acknowledged_at.isoformat(),
-                    "acknowledged_by": str(summary.acknowledged_by),
-                    "suppressed_until": summary.suppressed_until.isoformat() if summary.suppressed_until else None,
-                },
-            },
-        )
-    )
-    session.commit()
-    return _agent_card_summary_read(summary)
-
-
-@app.get(
-    "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{resource_id}/brief",
-    response_model=RepoAgentBriefRead,
-)
-def get_repo_agent_brief(
-    workspace_id: UUID,
-    project_id: UUID,
-    resource_id: UUID,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> RepoAgentBriefRead:
-    require_scope(principal, "project:read")
-    _require_project_access(session, workspace_id, project_id, principal)
-    resource = _resolve_resource(session, workspace_id, project_id, resource_id, principal)
-    return _repo_agent_brief_response(session, workspace_id, project_id, resource)
-
+app.include_router(agent_context_router.create_router(_agent_context_router_deps))
 
 def _eval_run_visible_to_principal(principal: Principal, run: RetrievalEvalRun) -> bool:
     token = principal.api_token
