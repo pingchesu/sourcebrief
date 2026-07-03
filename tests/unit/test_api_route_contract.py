@@ -40,7 +40,19 @@ EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES = {
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}/invalidate", "invalidate_context_pack_version"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES
+EXPECTED_REPO_AGENT_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents", "list_repo_agents"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/repo-agent", "create_repo_agent"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}", "get_repo_agent"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/refresh", "refresh_repo_agent"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/publish", "publish_repo_agent_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/rollback-draft", "create_repo_agent_rollback_draft"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/archive", "archive_repo_agent"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/invalidate", "invalidate_repo_agent_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/scrub", "scrub_repo_agent_version"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -100,5 +112,12 @@ def test_skill_export_openapi_metadata_remains_untagged() -> None:
 def test_context_pack_openapi_metadata_remains_untagged() -> None:
     openapi = app.openapi()
     for method, path, _name in EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_repo_agent_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_REPO_AGENT_ROUTE_SIGNATURES:
         operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation
