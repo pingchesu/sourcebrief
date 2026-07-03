@@ -95,7 +95,21 @@ EXPECTED_GRAPH_ROUTE_SIGNATURES = {
     ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph", "get_resource_graph"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES
+
+EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/search", "search_project"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/code-search", "code_search_project"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch", "remote_generate_patch"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr", "remote_open_pr"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/search_code", "remote_search_code"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/grep_code", "remote_grep_code"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/read_file", "remote_read_file"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/find_symbol", "remote_find_symbol"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/code/rpc/spec", "remote_code_rpc_spec"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/code/rpc", "remote_code_rpc"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -183,5 +197,12 @@ def test_resource_lifecycle_openapi_metadata_remains_untagged() -> None:
 def test_graph_openapi_metadata_remains_untagged() -> None:
     openapi = app.openapi()
     for method, path, _name in EXPECTED_GRAPH_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_remote_code_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES:
         operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation
