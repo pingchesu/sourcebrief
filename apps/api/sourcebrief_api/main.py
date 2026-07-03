@@ -67,6 +67,7 @@ from sourcebrief_api.retrieval import (
 )
 from sourcebrief_api.routers import agent_context as agent_context_router
 from sourcebrief_api.routers import agent_profiles as agent_profile_router
+from sourcebrief_api.routers import architecture as architecture_router
 from sourcebrief_api.routers import audit_index as audit_index_router
 from sourcebrief_api.routers import auth_workspace as auth_workspace_router
 from sourcebrief_api.routers import context_packs as context_pack_router
@@ -2743,9 +2744,11 @@ def _runtime_graph_overview(session: Session, workspace_id: UUID, project_id: UU
         "truncated": truncated,
     }
 
-@app.get("/workspaces/{workspace_id}/projects/{project_id}/architecture")
-def get_project_architecture(workspace_id: UUID, project_id: UUID, max_resources: int = 20, max_items: int = 20, principal: Principal = Depends(require_principal), session: Session = Depends(get_session)) -> dict[str, Any]:
-    return _runtime_graph_overview(session, workspace_id, project_id, principal, {"max_resources": max_resources, "max_items": max_items})
+_architecture_router_deps = architecture_router.ArchitectureRouterDeps(
+    runtime_graph_overview=_runtime_graph_overview,
+)
+
+app.include_router(architecture_router.create_router(_architecture_router_deps))
 
 
 def _runtime_get_graph_inventory(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
