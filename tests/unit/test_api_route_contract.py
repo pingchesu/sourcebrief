@@ -163,7 +163,19 @@ EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES = {
     ("GET", "/workspaces/{workspace_id}/projects/{project_id}", "get_project"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES | EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES | EXPECTED_RETRIEVAL_EVAL_ROUTE_SIGNATURES | EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES | EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES | EXPECTED_AGENT_PROFILE_ROUTE_SIGNATURES | EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES
+EXPECTED_RESOURCE_CORE_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources", "create_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/upload-folder-bundle", "upload_folder_bundle"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", "get_resource"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/manifest", "get_resource_manifest"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/manifest-diff", "get_resource_manifest_diff"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/snapshot-sections", "get_resource_snapshot_sections"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/section-impact", "get_resource_section_impact"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh", "refresh_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes", "enqueue_scheduled_refreshes"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES | EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES | EXPECTED_RETRIEVAL_EVAL_ROUTE_SIGNATURES | EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES | EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES | EXPECTED_AGENT_PROFILE_ROUTE_SIGNATURES | EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES | EXPECTED_RESOURCE_CORE_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -300,5 +312,12 @@ def test_agent_profile_openapi_metadata_remains_untagged() -> None:
 def test_auth_workspace_openapi_metadata_remains_untagged() -> None:
     openapi = app.openapi()
     for method, path, _name in EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_resource_core_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_RESOURCE_CORE_ROUTE_SIGNATURES:
         operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation
