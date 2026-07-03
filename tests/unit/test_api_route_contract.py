@@ -52,7 +52,16 @@ EXPECTED_REPO_AGENT_ROUTE_SIGNATURES = {
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/scrub", "scrub_repo_agent_version"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES
+
+EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map", "compile_resource_map_artifact"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts", "list_resource_context_artifacts"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}", "get_context_artifact"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}/approve", "approve_context_artifact"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}/reject", "reject_context_artifact"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -119,5 +128,12 @@ def test_context_pack_openapi_metadata_remains_untagged() -> None:
 def test_repo_agent_openapi_metadata_remains_untagged() -> None:
     openapi = app.openapi()
     for method, path, _name in EXPECTED_REPO_AGENT_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_resource_artifact_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES:
         operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation
