@@ -29,7 +29,18 @@ EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES = {
     ("GET", "/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}/download.zip", "download_skill_export_package"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES
+EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions", "create_context_pack_version"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-packs", "list_context_packs"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions", "list_context_pack_versions"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/current", "get_current_context_pack_version"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}", "get_context_pack_version_by_number"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}/publish", "publish_context_pack_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}/rollback", "rollback_context_pack_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}/invalidate", "invalidate_context_pack_version"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -83,4 +94,11 @@ def test_skill_export_openapi_metadata_remains_untagged() -> None:
     for method, path, _name in EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES:
         openapi_path = path.replace("{file_path:path}", "{file_path}")
         operation = openapi["paths"][openapi_path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_context_pack_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation
