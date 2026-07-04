@@ -5,7 +5,9 @@ from collections.abc import Callable
 from typing import Any
 
 from sourcebrief_cli import auth as cli_auth
+from sourcebrief_cli import support as cli_support
 from sourcebrief_cli.client import SourceBriefClient, SourceBriefCliError
+from sourcebrief_cli.commands import context as context_commands
 from sourcebrief_cli.config import (
     SESSION_EMAIL_CONFIG_KEY,
     SESSION_TOKEN_CONFIG_KEY,
@@ -104,6 +106,77 @@ def cmd_logout(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
     config.pop(SESSION_EMAIL_CONFIG_KEY, None)
     path = _save_cli_config(config)
     return {"status": "logged_out", "config_path": str(path), "removed_session": had_session}
+
+
+def cmd_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    checks: list[dict[str, Any]] = []
+    try:
+        health = client.request("GET", "/readyz")
+        checks.append(cli_support.check_result("api", "passed", api_url=args.api_url.rstrip("/"), response=health))
+    except SourceBriefCliError as exc:
+        checks.append(cli_support.check_result("api", "failed", api_url=args.api_url.rstrip("/"), error=str(exc)))
+
+    auth_mode = getattr(args, "_auth_mode", "bearer_token" if args.token else "email_header")
+    checks.append(
+        cli_support.check_result(
+            "auth_mode",
+            "info",
+            mode=auth_mode,
+            email=getattr(args, "_session_email", None) if auth_mode in {"saved_session", "session_login_env"} else (None if args.token else args.email),
+            token_set=bool(args.token),
+            password_env_set=bool(getattr(args, "_session_login_password", None)),
+            message="auth mode selected; authenticated project/MCP checks below prove access",
+        )
+    )
+
+    if args.workspace_id and args.project_id:
+        try:
+            resources = client.request("GET", f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources")
+            checks.append(cli_support.check_result("project", "passed", workspace_id=args.workspace_id, project_id=args.project_id, resource_count=len(resources) if isinstance(resources, list) else None))
+        except SourceBriefCliError as exc:
+            checks.append(cli_support.check_result("project", "failed", workspace_id=args.workspace_id, project_id=args.project_id, error=str(exc)))
+        if args.query:
+            try:
+                mcp = context_commands.cmd_mcp_context(client, args)
+                error = cli_support.mcp_error_message(mcp)
+                if error:
+                    checks.append(cli_support.check_result("mcp_context", "failed", query=args.query, error=error))
+                elif getattr(args, "require_citations", False):
+                    citation_count = cli_support.mcp_citation_count(mcp)
+                    if citation_count <= 0:
+                        checks.append(cli_support.check_result("mcp_context", "failed", query=args.query, error="MCP smoke returned no citations", citation_count=citation_count))
+                    else:
+                        checks.append(cli_support.check_result("mcp_context", "passed", query=args.query, has_result=bool(mcp), citation_count=citation_count))
+                else:
+                    checks.append(cli_support.check_result("mcp_context", "passed", query=args.query, has_result=bool(mcp)))
+            except SourceBriefCliError as exc:
+                checks.append(cli_support.check_result("mcp_context", "failed", query=args.query, error=str(exc)))
+    else:
+        next_step = 'run `sourcebrief use --workspace "..." --project "..."` or rerun doctor with --workspace "..." --project "..."'
+        checks.append(
+            cli_support.check_result(
+                "project",
+                "warning",
+                message=f"workspace/project not selected; {next_step}",
+            )
+        )
+        if args.query:
+            checks.append(
+                cli_support.check_result(
+                    "mcp_context",
+                    "incomplete",
+                    query=args.query,
+                    message="MCP smoke was not run: workspace/project not selected.",
+                    next_step=next_step,
+                )
+            )
+
+    failed = [check for check in checks if check["status"] == "failed"]
+    incomplete = [check for check in checks if check["status"] == "incomplete"]
+    warnings = [check for check in checks if check["status"] == "warning"]
+    return {"status": "failed" if failed else "incomplete" if incomplete else "warning" if warnings else "passed", "checks": checks}
+
+
 
 
 def register_core_commands(
