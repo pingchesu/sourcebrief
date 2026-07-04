@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
@@ -100,10 +99,6 @@ _maybe_refresh = cli_support.maybe_refresh
 _pick_answer_lines = cli_support.pick_answer_lines
 _human_answer_brief = cli_support.human_answer_brief
 _capture_review_bundle = cli_support.capture_review_bundle
-_runtime_plan_request = cli_support.runtime_plan_request
-_validation_preview = cli_support.validation_preview
-_runtime_token_command = cli_support.runtime_token_command
-_read_validated_runtime_plan = cli_support.read_validated_runtime_plan
 _skill_export_generate_path = cli_support.skill_export_generate_path
 _skill_export_download_url = cli_support.skill_export_download_url
 _skill_profile = cli_support.skill_profile
@@ -552,71 +547,6 @@ def cmd_review_sleep(_client: SourceBriefClient, args: argparse.Namespace) -> An
 
 
 
-def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    return _runtime_plan_request(client, args)
-
-
-
-
-
-def cmd_runtime_setup(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    plan = _runtime_plan_request(client, args)
-    validation = _validation_preview(plan, args.target, args.max_age_seconds)
-    if args.plan_out:
-        out = Path(args.plan_out).expanduser()
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        plan_path: str | None = str(out)
-    else:
-        plan_path = None
-    plan_ref = plan_path or "<save first with: sourcebrief runtime setup hermes --plan-out plan.json>"
-    return {
-        "status": "dry_run_ready",
-        "target": args.target,
-        "workspace_id": plan.get("workspace_id"),
-        "project_id": plan.get("project_id"),
-        "server_name": plan.get("server_name"),
-        "plan_path": plan_path,
-        "plan": plan,
-        "validation": validation,
-        "token_command": _runtime_token_command(plan),
-        "next_steps": [
-            "Review the plan and generated MCP config.",
-            f"Create/export a runtime token: {_runtime_token_command(plan)}",
-            f"Run `sourcebrief runtime validate --plan {plan_ref} --run` after exporting SOURCEBRIEF_TOKEN.",
-            f"Apply only with `sourcebrief runtime apply --plan {plan_ref} --target hermes --apply` when ready.",
-        ],
-    }
-
-
-
-def cmd_runtime_detect(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    return runtime_apply.detect(runtime_apply.hermes_config_path(args.config))
-
-
-def cmd_runtime_apply(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    validation = _read_validated_runtime_plan(args)
-    config_path = runtime_apply.hermes_config_path(args.config)
-    if args.dry_run:
-        if args.apply or args.yes:
-            raise SourceBriefCliError("runtime apply accepts only one of --dry-run or --apply/--yes")
-        return runtime_apply.dry_run_apply(validation, config_path)
-    if not (args.apply or args.yes):
-        raise SourceBriefCliError("runtime apply requires --dry-run or explicit --apply")
-    return runtime_apply.apply_plan(validation, config_path, runtime_apply.receipt_path(args.receipt))
-
-
-def cmd_runtime_rollback(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    return runtime_apply.rollback(Path(args.receipt), force=args.force)
-
-
-def cmd_runtime_validate(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    validation = _read_validated_runtime_plan(args)
-    return runtime_apply.validate_plan(validation, run=args.run)
-
-
-
-
 def cmd_skill_export(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     payload: dict[str, Any] = {"export_type": "hermes_skill", "title": args.title}
     if args.summary:
@@ -760,12 +690,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     runtime_commands.register_runtime_commands(
         sub,
-        plan_command=cmd_runtime_plan,
-        setup_command=cmd_runtime_setup,
-        detect_command=cmd_runtime_detect,
-        apply_command=cmd_runtime_apply,
-        rollback_command=cmd_runtime_rollback,
-        validate_command=cmd_runtime_validate,
+        plan_command=runtime_commands.cmd_runtime_plan,
+        setup_command=runtime_commands.cmd_runtime_setup,
+        detect_command=runtime_commands.cmd_runtime_detect,
+        apply_command=runtime_commands.cmd_runtime_apply,
+        rollback_command=runtime_commands.cmd_runtime_rollback,
+        validate_command=runtime_commands.cmd_runtime_validate,
     )
 
     skill_commands.register_skill_commands(
