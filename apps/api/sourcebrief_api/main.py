@@ -102,12 +102,13 @@ from sourcebrief_api.schemas import (
     SkillExportReviewRequest,
 )
 from sourcebrief_api.services import access as access_service
-from sourcebrief_api.services import agent_context_runtime, mcp_runtime_contract
+from sourcebrief_api.services import (
+    agent_context_runtime,
+    mcp_runtime_contract,
+    runtime_skill_packs,
+)
 from sourcebrief_api.services import context_packets as context_packet_service
 from sourcebrief_api.services import mcp_endpoint as mcp_endpoint_service
-from sourcebrief_api.skill_exports import (
-    SKILL_EXPORT_STATUS_APPROVED,
-)
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_sessionmaker
 from sourcebrief_shared.embeddings import current_embedding_config
@@ -2800,6 +2801,22 @@ def _runtime_discover(session: Session, workspace_id: UUID, project_id: UUID, pr
 
 
 
+
+
+
+
+
+
+
+
+
+_runtime_skill_pack_deps = runtime_skill_packs.RuntimeSkillPackDeps(
+    resolve_pack_version=_resolve_pack_version,
+    generate_skill_export=generate_skill_export,
+    approve_skill_export=approve_skill_export,
+)
+
+
 def _runtime_generate_skill_pack(
     session: Session,
     workspace_id: UUID,
@@ -2807,44 +2824,14 @@ def _runtime_generate_skill_pack(
     principal: Principal,
     args: Mapping[str, Any],
 ) -> dict[str, Any]:
-    pack_key = str(args.get("pack_key") or "default")
-    version_number = int(args["version"]) if args.get("version") is not None else _resolve_pack_version(session, workspace_id, project_id, pack_key, "current").version
-    payload = SkillExportGenerateRequest(
-        title=str(args.get("title") or "SourceBrief runtime skill"),
-        summary=str(args["summary"]) if args.get("summary") is not None else None,
+    return runtime_skill_packs.generate_skill_pack(
+        session,
+        workspace_id,
+        project_id,
+        principal,
+        args,
+        _runtime_skill_pack_deps,
     )
-    export = generate_skill_export(workspace_id, project_id, pack_key, version_number, payload, principal, session)
-    approve_comment = args.get("approve_comment")
-    if approve_comment:
-        export = approve_skill_export(
-            workspace_id,
-            project_id,
-            export.id,
-            SkillExportReviewRequest(comment=str(approve_comment)),
-            principal,
-            session,
-        )
-    export_dict = jsonable_encoder(export)
-    download_path = f"/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export.id}/download.zip"
-    return {
-        "status": export.status,
-        "skill_export": export_dict,
-        "download_path": download_path,
-        "download_available": export.status == SKILL_EXPORT_STATUS_APPROVED,
-        "local_install": {
-            "dry_run": "sourcebrief skill install --package <package-dir-or-zip> --target hermes --dry-run",
-            "apply": "sourcebrief skill install --package <package-dir-or-zip> --target hermes --apply",
-            "uninstall": "sourcebrief skill uninstall --receipt <receipt.json>",
-        },
-        "mutation_boundary": "MCP generation never writes local runtime files; install is a separate local CLI action.",
-    }
-
-
-
-
-
-
-
 
 _mcp_endpoint_deps = mcp_endpoint_service.McpEndpointDeps(
     require_project_access=_require_project_access,
