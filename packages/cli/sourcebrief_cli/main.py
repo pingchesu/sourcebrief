@@ -99,13 +99,8 @@ _maybe_refresh = cli_support.maybe_refresh
 _pick_answer_lines = cli_support.pick_answer_lines
 _human_answer_brief = cli_support.human_answer_brief
 _capture_review_bundle = cli_support.capture_review_bundle
-_skill_export_generate_path = cli_support.skill_export_generate_path
-_skill_export_download_url = cli_support.skill_export_download_url
-_skill_profile = cli_support.skill_profile
-_skill_skills_dir = cli_support.skill_skills_dir
 _add_common_resource_args = cli_support.add_common_resource_args
 _print_default = cli_support.print_default
-sh_quote = cli_support.sh_quote
 cmd_resource_add_doc = cli_resources.cmd_resource_add_doc
 cmd_resource_add_repo = cli_resources.cmd_resource_add_repo
 cmd_resource_add_url = cli_resources.cmd_resource_add_url
@@ -547,59 +542,6 @@ def cmd_review_sleep(_client: SourceBriefClient, args: argparse.Namespace) -> An
 
 
 
-def cmd_skill_export(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    payload: dict[str, Any] = {"export_type": "hermes_skill", "title": args.title}
-    if args.summary:
-        payload["summary"] = args.summary
-    export = client.request("POST", _skill_export_generate_path(client, args), body=payload)
-    if args.approve_comment:
-        export = client.request(
-            "POST",
-            f"/workspaces/{args.workspace_id}/projects/{args.project_id}/skill-exports/{export['id']}/approve",
-            body={"comment": args.approve_comment},
-        )
-    out_result = None
-    if args.out:
-        out_result = skill_install.write_export_files(export, Path(args.out), force=args.force)
-    return {
-        "status": "exported",
-        "export": export,
-        "download_url": _skill_export_download_url(client, args, export),
-        "local_package": out_result,
-        "next_steps": [
-            "Review generated package files before installing.",
-            "Approve the export before local install if it is still draft.",
-            f"Install with: sourcebrief skill install --package {sh_quote(args.out or '<package-dir>')} --target hermes --dry-run",
-        ],
-    }
-
-
-
-
-def cmd_skill_install(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    skills_dir = _skill_skills_dir(args)
-    profile = _skill_profile(args)
-    package = Path(args.package)
-    if args.dry_run:
-        if args.apply:
-            raise SourceBriefCliError("skill install accepts only one of --dry-run or --apply")
-        return skill_install.dry_run_install(package, skills_dir=skills_dir, profile=profile, skill_name=args.name)
-    if not args.apply:
-        raise SourceBriefCliError("skill install requires --dry-run or explicit --apply")
-    return skill_install.install_package(
-        package,
-        skills_dir=skills_dir,
-        receipt_file=skill_install.receipt_path(args.receipt),
-        profile=profile,
-        skill_name=args.name,
-        force=args.force,
-    )
-
-
-def cmd_skill_uninstall(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    return skill_install.uninstall(Path(args.receipt), force=args.force)
-
-
 def cmd_agent_pack_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     return agent_pack_doctor.cmd_agent_pack_doctor(client, args, remote_doctor=cmd_doctor)
 
@@ -700,9 +642,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     skill_commands.register_skill_commands(
         sub,
-        export_command=cmd_skill_export,
-        install_command=cmd_skill_install,
-        uninstall_command=cmd_skill_uninstall,
+        export_command=skill_commands.cmd_skill_export,
+        install_command=skill_commands.cmd_skill_install,
+        uninstall_command=skill_commands.cmd_skill_uninstall,
     )
 
     return parser
