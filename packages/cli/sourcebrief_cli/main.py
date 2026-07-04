@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
-from typing import Any
 
 from sourcebrief_cli import agent_pack_doctor, runtime_apply, skill_install
 from sourcebrief_cli import auth as cli_auth
@@ -22,9 +20,6 @@ from sourcebrief_cli.config import (
 )
 from sourcebrief_cli.config import (
     load_cli_config as _load_cli_config,
-)
-from sourcebrief_cli.config import (
-    save_cli_config as _save_cli_config,
 )
 from sourcebrief_shared.regression_proposal import (
     RegressionProposalError,
@@ -106,123 +101,6 @@ def _maybe_session_login(client: SourceBriefClient, args: argparse.Namespace) ->
 
 
 
-def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    health = client.request("GET", "/readyz")
-    workspace_slug = args.slug or f"sourcebrief-demo-{int(time.time())}"
-    workspace = client.request("POST", "/workspaces", body={"name": args.workspace_name, "slug": workspace_slug}, expected={201})
-    project = client.request(
-        "POST",
-        f"/workspaces/{workspace['id']}/projects",
-        body={"name": args.project_name, "description": "Isolated SourceBrief CLI quickstart demo"},
-        expected={201},
-    )
-    content = (
-        "# Payment retry runbook\n\n"
-        "If a payment job fails with retryable upstream errors, retry it with exponential backoff. "
-        "Escalate after three failed attempts and include the order id, upstream status, and retry timestamps.\n"
-    )
-    resource_result = cmd_resource_add_doc(
-        client,
-        argparse.Namespace(
-            workspace_id=workspace["id"],
-            project_id=project["id"],
-            name="Payment retry runbook",
-            uri="demo://payment-retry-runbook",
-            update_frequency="manual",
-            content=content,
-            content_file=None,
-            path="runbooks/payment-retry.md",
-            title="Payment retry runbook",
-            refresh=True,
-            wait=True,
-            timeout=args.timeout,
-        ),
-    )
-    resource = resource_result["resource"]
-    answer_packet = context_commands.cmd_agent_context(
-        client,
-        argparse.Namespace(
-            workspace_id=workspace["id"],
-            project_id=project["id"],
-            query="What should an operator do when a payment job hits retryable upstream errors?",
-            runtime="api",
-            top_k=3,
-            resource_id=None,
-            resource=["Payment retry runbook"],
-            include_code_symbols=False,
-            max_chars=6000,
-        ),
-    )
-    mcp_validation: dict[str, Any] | None = None
-    if args.validate_mcp:
-        mcp_response = context_commands.cmd_mcp_context(
-            client,
-            argparse.Namespace(
-                workspace_id=workspace["id"],
-                project_id=project["id"],
-                query="What should an operator do when a payment job hits retryable upstream errors?",
-                runtime="api",
-                top_k=3,
-                resource_id=None,
-                resource=["Payment retry runbook"],
-            ),
-        )
-        error = _mcp_error_message(mcp_response)
-        mcp_validation = {"status": "failed" if error else "passed", "error": error}
-    saved_config = dict(getattr(args, "_sourcebrief_config", {}) or {})
-    saved_config.update(
-        {
-            "api_url": args.api_url.rstrip("/"),
-            "workspace_id": workspace["id"],
-            "workspace_name": workspace.get("name"),
-            "workspace_slug": workspace.get("slug"),
-            "project_id": project["id"],
-            "project_name": project.get("name"),
-        }
-    )
-    config_path = _save_cli_config(saved_config)
-    review_bundle = None
-    if getattr(args, "review_bundle_out", None):
-        review_args = argparse.Namespace(
-            **{
-                **vars(args),
-                "workspace_id": workspace["id"],
-                "project_id": project["id"],
-                "runtime": "api",
-                "top_k": 3,
-                "max_chars": 6000,
-                "resource_id": [resource["id"]],
-            }
-        )
-        review_bundle = _capture_review_bundle(
-            agent_context=answer_packet,
-            args=review_args,
-            query="What should an operator do when a payment job hits retryable upstream errors?",
-            kind="cli_demo",
-            task_brief="Capture the deterministic quickstart demo answer for autonomous review.",
-        )
-    result = {
-        "status": "indexed_and_ready_for_retrieval",
-        "health": health,
-        "workspace_id": workspace["id"],
-        "project_id": project["id"],
-        "resource_id": resource["id"],
-        "workspace_name": workspace.get("name"),
-        "project_name": project.get("name"),
-        "resource_name": resource.get("name"),
-        "config_path": str(config_path),
-        "mcp_validation": mcp_validation,
-        "index_run": resource_result.get("index_run"),
-        "answer": _human_answer_brief(answer_packet),
-        "next_command": 'sourcebrief ask --resource "Payment retry runbook" "What should an operator do when payment retries fail?"',
-        "cleanup": "Delete the demo workspace from the web console when finished, or keep it for CLI experiments.",
-    }
-    if review_bundle:
-        result["review_bundle"] = review_bundle
-    return result
-
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sourcebrief", description="SourceBrief CLI")
     parser.add_argument(
@@ -252,7 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
         status_command=core_commands.cmd_status,
         login_command=core_commands.cmd_login,
         logout_command=core_commands.cmd_logout,
-        quickstart_demo_command=cmd_quickstart_demo,
+        quickstart_demo_command=core_commands.cmd_quickstart_demo,
         doctor_command=core_commands.cmd_doctor,
     )
 
