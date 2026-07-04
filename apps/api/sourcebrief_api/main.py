@@ -28,8 +28,6 @@ from sourcebrief_api.auth import (
     hash_password,
     require_principal,
     require_scope,
-    require_workspace_member,
-    token_allows_project,
     token_allows_resource,
 )
 from sourcebrief_api.constants import (
@@ -115,6 +113,7 @@ from sourcebrief_api.schemas import (
     SkillExportRead,
     SkillExportReviewRequest,
 )
+from sourcebrief_api.services import access as access_service
 from sourcebrief_api.skill_exports import (
     SKILL_EXPORT_STATUS_APPROVED,
 )
@@ -211,6 +210,17 @@ _agent_pack_changelog = agent_packs.changelog
 _agent_pack_golden_questions = agent_packs.golden_questions
 _agent_pack_zip_files = agent_packs.zip_files
 _agent_pack_zip_bytes = agent_packs.zip_bytes
+
+_resolve_project = access_service.resolve_project
+_ensure_agent_profile = access_service.ensure_agent_profile
+_normalize_email = access_service.normalize_email
+_current_project_resources = access_service.current_project_resources
+_require_project_access = access_service.require_project_access
+_require_project_member = access_service.require_project_member
+_resolve_resource = access_service.resolve_resource
+_require_requested_resources_allowed = access_service.require_requested_resources_allowed
+_effective_resource_ids = access_service.effective_resource_ids
+_is_empty_scope = access_service.is_empty_scope
 
 
 def _agent_pack_prepare(
@@ -318,44 +328,10 @@ def _sanitize_metadata_text(value: str | None) -> str:
     return _agent_pack_public_text(value, "unknown")
 
 
-def _resolve_project(session: Session, workspace_id: UUID, project_id: UUID) -> Project:
-    project = session.scalar(
-        select(Project).where(Project.id == project_id, Project.workspace_id == workspace_id)
-    )
-    if project is None or project.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="project not found")
-    return project
 
 
-def _ensure_agent_profile(
-    session: Session, workspace_id: UUID, project: Project, user_id: UUID
-) -> AgentProfile:
-    profile = session.scalar(
-        select(AgentProfile).where(
-            AgentProfile.workspace_id == workspace_id,
-            AgentProfile.project_id == project.id,
-        )
-    )
-    if profile is not None:
-        return profile
-    profile = AgentProfile(
-        workspace_id=workspace_id,
-        project_id=project.id,
-        name=project.name,
-        description=project.description,
-        default_runtime="hermes",
-        system_prompt=None,
-        tool_policy={"production_mutations": "external_approval_required"},
-        created_by=user_id,
-        updated_by=user_id,
-    )
-    session.add(profile)
-    session.flush()
-    return profile
 
 
-def _normalize_email(email: str) -> str:
-    return email.strip().lower()
 
 
 def _bootstrap_default_admin() -> None:
@@ -473,68 +449,13 @@ def _require_pr_workflow_enabled(profile: AgentProfile | None) -> None:
 _agent_profile_read = agent_profile_router.agent_profile_read
 
 
-def _current_project_resources(session: Session, workspace_id: UUID, project_id: UUID) -> list[Resource]:
-    return list(
-        session.scalars(
-            select(Resource)
-            .where(
-                Resource.workspace_id == workspace_id,
-                Resource.project_id == project_id,
-                Resource.deleted_at.is_(None),
-            )
-            .order_by(Resource.type.asc(), Resource.name.asc())
-        )
-    )
 
 
 _agent_file_response = agent_files.agent_file_response
 
 
-def _require_project_access(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal) -> Project:
-    """Resolve a project and enforce visibility/membership plus token project scope."""
-    require_workspace_member(session, workspace_id, principal)
-    if not token_allows_project(principal, project_id):
-        raise HTTPException(status_code=404, detail="project not found")
-    project = _resolve_project(session, workspace_id, project_id)
-    if project.visibility in {"workspace", "public"}:
-        return project
-    membership = session.scalar(
-        select(ProjectMembership).where(
-            ProjectMembership.workspace_id == workspace_id,
-            ProjectMembership.project_id == project_id,
-            ProjectMembership.user_id == principal.user.id,
-        )
-    )
-    if membership is None:
-        raise HTTPException(status_code=404, detail="project not found")
-    return project
 
 
-def _require_project_member(
-    session: Session,
-    workspace_id: UUID,
-    project_id: UUID,
-    principal: Principal,
-    *,
-    required_scopes: set[str] | None = None,
-) -> Project:
-    """Resolve a project and require explicit project membership plus token/project scope for mutations."""
-    membership = require_workspace_member(session, workspace_id, principal)
-    for required_scope in required_scopes or set():
-        require_scope(principal, required_scope, membership)
-    if not token_allows_project(principal, project_id):
-        raise HTTPException(status_code=404, detail="project not found")
-    project = _resolve_project(session, workspace_id, project_id)
-    membership = session.scalar(
-        select(ProjectMembership).where(
-            ProjectMembership.workspace_id == workspace_id,
-            ProjectMembership.project_id == project_id,
-            ProjectMembership.user_id == principal.user.id,
-        )
-    )
-    if membership is None:
-        raise HTTPException(status_code=404, detail="project not found")
-    return project
 
 
 def _validate_source_config(resource_type: str, uri: str, source_config: dict) -> dict:
@@ -607,27 +528,6 @@ def _validate_source_config(resource_type: str, uri: str, source_config: dict) -
     return config
 
 
-def _resolve_resource(
-    session: Session,
-    workspace_id: UUID,
-    project_id: UUID,
-    resource_id: UUID,
-    principal: Principal | None = None,
-    *,
-    include_deleted: bool = False,
-) -> Resource:
-    if principal is not None and not token_allows_resource(principal, resource_id):
-        raise HTTPException(status_code=404, detail="resource not found")
-    resource = session.scalar(
-        select(Resource).where(
-            Resource.id == resource_id,
-            Resource.project_id == project_id,
-            Resource.workspace_id == workspace_id,
-        )
-    )
-    if resource is None or (resource.deleted_at is not None and not include_deleted):
-        raise HTTPException(status_code=404, detail="resource not found")
-    return resource
 
 
 _ENTRYPOINT_RE = re.compile(r"(^|/)(main|app|server|cli|manage|index|worker|run|startup)\.(py|ts|tsx|js|go|rs|java)$", re.I)
@@ -1004,28 +904,10 @@ _current_user_response = auth_workspace_router.current_user_response
 _session_scopes_for_role = auth_workspace_router.session_scopes_for_role_alias
 
 
-def _require_requested_resources_allowed(principal: Principal, resource_ids: list[UUID] | None) -> None:
-    if not resource_ids:
-        return
-    denied = [resource_id for resource_id in resource_ids if not token_allows_resource(principal, resource_id)]
-    if denied:
-        raise HTTPException(status_code=404, detail="resource not found")
 
 
-def _effective_resource_ids(principal: Principal, resource_ids: list[UUID] | None) -> list[UUID] | None:
-    token = principal.api_token
-    requested = resource_ids
-    if token is None or token.allowed_resource_ids is None:
-        _require_requested_resources_allowed(principal, requested)
-        return requested
-    if requested is None:
-        return list(token.allowed_resource_ids)
-    _require_requested_resources_allowed(principal, requested)
-    return requested
 
 
-def _is_empty_scope(resource_ids: list[UUID] | None) -> bool:
-    return resource_ids is not None and len(resource_ids) == 0
 _revoke_user_sessions = auth_workspace_router.revoke_user_sessions
 _admin_count = auth_workspace_router.admin_count
 _is_admin_role = auth_workspace_router.is_admin_role

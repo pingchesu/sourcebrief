@@ -8,7 +8,7 @@ After the API router extraction train and CLI refactor train, `apps/api/sourcebr
 
 Current measured shape:
 
-- `apps/api/sourcebrief_api/main.py`: 3,736 lines / 195,014 bytes / 113 top-level functions
+- `apps/api/sourcebrief_api/main.py`: 3,618 lines / 190,256 bytes / 103 top-level functions
 - `packages/cli/sourcebrief_cli/main.py`: 236 lines / 9,564 bytes / 4 top-level functions
 - Route contract coverage: `tests/unit/test_api_route_contract.py` snapshots 131 recursive route signatures and untagged OpenAPI metadata for the already-extracted routers
 - Entrypoint growth guardrail: `tests/unit/test_entrypoint_size_guardrails.py` now caps API and CLI entrypoint line/function counts
@@ -42,9 +42,8 @@ The following API route families already live under focused router modules and a
 These clusters remain in `main.py` because they share access-control helpers, SQLAlchemy model queries, runtime/MCP tool dispatch, and compatibility aliases:
 
 1. Project/auth/resource access helpers
-   - Examples: `_require_project_access`, `_require_project_member`, `_validate_source_config`, `_resolve_resource`, `_effective_resource_ids`
-   - Extraction target: `sourcebrief_api.services.access` or `sourcebrief_api.services.resources`
-   - Risk: many routers inject these callables today; moving them needs import-identity smoke coverage for private compatibility aliases.
+   - Status: core access helpers were extracted to `sourcebrief_api.services.access`; `main.py` keeps compatibility aliases for injected router dependencies and existing private imports.
+   - Still in `main.py`: `_validate_source_config`, because it depends on ingestion limits, git-env validation, and upload/folder policy wiring.
 
 2. Agent-context synthesis and coverage helpers
    - Examples: `_build_agent_context_response`, `_build_pack_agent_context_response`, `_agent_context_retrieval_metadata`, `_synthesize_agent_answer`
@@ -65,7 +64,7 @@ These clusters remain in `main.py` because they share access-control helpers, SQ
 
 Continue only with cohesive API service-boundary PRs, not one-route-per-issue churn:
 
-1. Extract access/resource helper service while preserving `sourcebrief_api.main` compatibility aliases.
+1. Extract access/resource helper service while preserving `sourcebrief_api.main` compatibility aliases. (Core access helpers complete; `_validate_source_config` remains with resource config policy.)
 2. Extract agent-context synthesis helpers and move direct unit imports to the service module while keeping aliases.
 3. Extract MCP/runtime tool implementation as a single runtime service with explicit dependency injection.
 4. Extract context-packet action after agent-context/runtime service boundaries are stable.
