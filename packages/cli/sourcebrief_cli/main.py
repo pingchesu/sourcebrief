@@ -3,8 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from sourcebrief_cli import agent_pack_doctor, runtime_apply, skill_install
 from sourcebrief_cli import auth as cli_auth
@@ -27,39 +26,8 @@ from sourcebrief_cli.config import (
 from sourcebrief_cli.config import (
     save_cli_config as _save_cli_config,
 )
-from sourcebrief_shared.github_pr_review import (
-    GitHubPRBundleError,
-    build_review_bundle_from_github_pr_metadata,
-    fetch_github_pr_metadata,
-    load_pr_metadata_fixture,
-)
 from sourcebrief_shared.regression_proposal import (
     RegressionProposalError,
-    load_reviewer_report,
-    proposal_from_finding,
-    select_finding,
-    write_regression_proposal,
-)
-from sourcebrief_shared.review_bundle import (
-    write_review_bundle,
-)
-from sourcebrief_shared.review_history import scan_review_history, show_review_history_record
-from sourcebrief_shared.review_runner import (
-    ReviewRunnerError,
-    ReviewRunOptions,
-    run_review_bundle_path,
-    write_reviewer_report,
-)
-from sourcebrief_shared.self_improvement_mvp import run_mvp_smoke_path
-from sourcebrief_shared.self_improvement_sleep import (
-    SleepReplayError,
-    run_sleep_replay,
-    write_sleep_replay_summary,
-)
-from sourcebrief_shared.staged_adoption import stage_regression_proposal
-from sourcebrief_shared.validation_gate import (
-    validate_regression_proposal_file,
-    write_validation_gate_result,
 )
 
 DEFAULT_API_URL = cli_scope.DEFAULT_API_URL
@@ -400,148 +368,6 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
     return result
 
 
-def cmd_review_pr_bundle(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    try:
-        metadata_source: Literal["live", "fixture"] = "live"
-        if args.metadata_fixture:
-            metadata_source = "fixture"
-            metadata = load_pr_metadata_fixture(args.metadata_fixture)
-            metadata.setdefault("repo", args.repo or metadata.get("repo") or metadata.get("repository"))
-            metadata["fixture_path"] = str(Path(args.metadata_fixture).expanduser())
-        else:
-            if args.pr is None:
-                raise GitHubPRBundleError("--pr is required when --metadata-fixture is not provided")
-            metadata = fetch_github_pr_metadata(repo=args.repo or "", pr_number=args.pr)
-        bundle = build_review_bundle_from_github_pr_metadata(
-            metadata,
-            workspace_id=args.workspace_id,
-            project_id=args.project_id,
-            reviewer_backend=args.reviewer_backend,
-            metadata_source=metadata_source,
-        )
-        written = write_review_bundle(args.bundle_out, bundle)
-    except (OSError, ValueError) as exc:
-        raise SourceBriefCliError(str(exc)) from exc
-    subject = bundle.reviewer_notes[0] if bundle.reviewer_notes else ""
-    return {
-        "status": "pr_review_bundle_written",
-        "bundle_path": str(written),
-        "bundle_id": bundle.bundle_id,
-        "subject": subject,
-        "changed_paths": [source_ref.path for source_ref in bundle.source_refs if source_ref.path],
-        "bundle": bundle.model_dump(mode="json"),
-    }
-
-
-def cmd_review_run(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    options = ReviewRunOptions(backend=args.backend, allow_incomplete=args.allow_incomplete)
-    try:
-        report = run_review_bundle_path(args.bundle, options=options)
-    except ReviewRunnerError as exc:
-        raise SourceBriefCliError(str(exc)) from exc
-    output_path = args.report_out
-    if output_path:
-        written = write_reviewer_report(output_path, report)
-        return {
-            "status": "reviewed",
-            "verdict": report.verdict,
-            "report_path": str(written),
-            "report": report.model_dump(mode="json"),
-        }
-    return report.model_dump(mode="json")
-
-
-def cmd_review_propose(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    report = load_reviewer_report(args.report)
-    finding = select_finding(report, args.finding_id)
-    proposal = proposal_from_finding(report, finding, owner=args.owner)
-    if args.proposal_out:
-        written = write_regression_proposal(args.proposal_out, proposal)
-        return {
-            "status": "proposal_written",
-            "proposal_path": str(written),
-            "proposal": proposal.model_dump(mode="json"),
-        }
-    return proposal.model_dump(mode="json")
-
-
-def cmd_review_gate(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    result = validate_regression_proposal_file(args.proposal)
-    if args.result_out:
-        written = write_validation_gate_result(args.result_out, result)
-        return {
-            "status": "gate_evaluated",
-            "decision": result.decision,
-            "result_path": str(written),
-            "result": result.model_dump(mode="json"),
-        }
-    return result.model_dump(mode="json")
-
-
-def cmd_review_stage(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    try:
-        receipt = stage_regression_proposal(
-            proposal_path=args.proposal,
-            gate_result_path=args.gate_result,
-            out_dir=args.out_dir,
-        )
-    except (OSError, ValueError) as exc:
-        raise SourceBriefCliError(str(exc)) from exc
-    return {
-        "status": "staged",
-        "stage_dir": receipt.stage_dir,
-        "receipt_path": str(Path(receipt.stage_dir) / "receipt.json"),
-        "patch_path": receipt.patch_path,
-        "apply_command": receipt.apply_command,
-        "rollback_command": receipt.rollback_command,
-        "receipt": receipt.model_dump(mode="json"),
-    }
-
-
-def cmd_review_history_list(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    try:
-        summary = scan_review_history(args.dir)
-    except (OSError, ValueError) as exc:
-        raise SourceBriefCliError(str(exc)) from exc
-    return summary.model_dump(mode="json")
-
-
-def cmd_review_history_show(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    try:
-        return show_review_history_record(args.dir, args.artifact)
-    except (OSError, ValueError) as exc:
-        raise SourceBriefCliError(str(exc)) from exc
-
-
-def cmd_review_mvp_smoke(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    try:
-        return run_mvp_smoke_path(
-            out_dir=args.out_dir,
-            bundle_path=Path(args.bundle).expanduser() if args.bundle else None,
-            finding_id=args.finding_id,
-            owner=args.owner,
-        )
-    except (OSError, ValueError) as exc:
-        raise SourceBriefCliError(str(exc)) from exc
-
-
-def cmd_review_sleep(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    try:
-        summary = run_sleep_replay(
-            args.dir,
-            out_dir=args.out_dir,
-            min_occurrences=args.min_occurrences,
-            max_artifacts=args.max_artifacts,
-            dry_run=True,
-        )
-        if args.summary_out:
-            write_sleep_replay_summary(args.summary_out, summary)
-    except (OSError, SleepReplayError) as exc:
-        raise SourceBriefCliError(str(exc)) from exc
-    return summary.model_dump(mode="json")
-
-
-
 def cmd_agent_pack_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     return agent_pack_doctor.cmd_agent_pack_doctor(client, args, remote_doctor=cmd_doctor)
 
@@ -619,15 +445,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     review_commands.register_review_commands(
         sub,
-        pr_bundle_command=cmd_review_pr_bundle,
-        run_command=cmd_review_run,
-        propose_command=cmd_review_propose,
-        gate_command=cmd_review_gate,
-        stage_command=cmd_review_stage,
-        history_list_command=cmd_review_history_list,
-        history_show_command=cmd_review_history_show,
-        mvp_smoke_command=cmd_review_mvp_smoke,
-        sleep_command=cmd_review_sleep,
+        pr_bundle_command=review_commands.cmd_review_pr_bundle,
+        run_command=review_commands.cmd_review_run,
+        propose_command=review_commands.cmd_review_propose,
+        gate_command=review_commands.cmd_review_gate,
+        stage_command=review_commands.cmd_review_stage,
+        history_list_command=review_commands.cmd_review_history_list,
+        history_show_command=review_commands.cmd_review_history_show,
+        mvp_smoke_command=review_commands.cmd_review_mvp_smoke,
+        sleep_command=review_commands.cmd_review_sleep,
     )
 
     runtime_commands.register_runtime_commands(
