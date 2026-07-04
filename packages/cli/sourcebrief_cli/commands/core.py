@@ -4,7 +4,106 @@ import argparse
 from collections.abc import Callable
 from typing import Any
 
+from sourcebrief_cli import auth as cli_auth
+from sourcebrief_cli.client import SourceBriefClient, SourceBriefCliError
+from sourcebrief_cli.config import (
+    SESSION_EMAIL_CONFIG_KEY,
+    SESSION_TOKEN_CONFIG_KEY,
+)
+from sourcebrief_cli.config import (
+    config_path as _config_path,
+)
+from sourcebrief_cli.config import (
+    save_cli_config as _save_cli_config,
+)
+from sourcebrief_cli.config import (
+    selected_value as _selected_value,
+)
+
 CommandHandler = Callable[[Any, argparse.Namespace], Any]
+
+
+def cmd_health(client: SourceBriefClient, _args: argparse.Namespace) -> Any:
+    return client.request("GET", "/readyz")
+
+
+def cmd_use(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    config = dict(getattr(args, "_sourcebrief_config", {}) or {})
+    if args.clear:
+        for key in ("workspace_id", "project_id", "workspace_name", "workspace_slug", "project_name"):
+            config.pop(key, None)
+    if args.workspace_id:
+        config["workspace_id"] = args.workspace_id
+        if getattr(args, "_resolved_workspace_name", None):
+            config["workspace_name"] = args._resolved_workspace_name
+        if getattr(args, "_resolved_workspace_slug", None):
+            config["workspace_slug"] = args._resolved_workspace_slug
+        if not args.project_id and not args.clear:
+            config.pop("project_id", None)
+            config.pop("project_name", None)
+    if args.project_id:
+        config["project_id"] = args.project_id
+        if getattr(args, "_resolved_project_name", None):
+            config["project_name"] = args._resolved_project_name
+    if getattr(args, "_api_url_explicit", False) or "api_url" not in config:
+        config["api_url"] = args.api_url.rstrip("/")
+    path = _save_cli_config(config)
+    return {
+        "status": "saved",
+        "config_path": str(path),
+        "api_url": config.get("api_url"),
+        "workspace": config.get("workspace_name") or config.get("workspace_slug"),
+        "project": config.get("project_name"),
+        "workspace_id": config.get("workspace_id"),
+        "project_id": config.get("project_id"),
+    }
+
+
+def cmd_status(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    config = getattr(args, "_sourcebrief_config", {}) or {}
+    return {
+        "config_path": str(_config_path()),
+        "api_url": args.api_url.rstrip("/"),
+        "workspace": _selected_value(config, "workspace_name") or _selected_value(config, "workspace_slug"),
+        "project": _selected_value(config, "project_name"),
+        "workspace_id": _selected_value(config, "workspace_id"),
+        "project_id": _selected_value(config, "project_id"),
+        "auth_mode": getattr(args, "_auth_mode", "bearer_token" if args.token else "email_header"),
+        "email": getattr(args, "_session_email", None) if getattr(args, "_auth_mode", None) in {"saved_session", "session_login_env"} else (None if args.token else args.email),
+        "token_set": bool(args.token),
+        "password_env_set": bool(getattr(args, "_session_login_password", None)),
+    }
+
+
+def cmd_login(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    email = getattr(args, "login_email", None) or cli_auth.env_login_email(args)
+    if not email:
+        raise SourceBriefCliError("login requires --email or SOURCEBRIEF_ADMIN_EMAIL/SOURCEBRIEF_EMAIL")
+    password = cli_auth.login_password_from_args(args)
+    login_client = type(client)(args.api_url, email, token=None)
+    session_token = cli_auth.login_with_password(login_client, email, password)
+    config = dict(getattr(args, "_sourcebrief_config", {}) or {})
+    config[SESSION_TOKEN_CONFIG_KEY] = session_token
+    config[SESSION_EMAIL_CONFIG_KEY] = email
+    if getattr(args, "_api_url_explicit", False) or "api_url" not in config:
+        config["api_url"] = args.api_url.rstrip("/")
+    path = _save_cli_config(config)
+    return {
+        "status": "logged_in",
+        "config_path": str(path),
+        "api_url": config.get("api_url"),
+        "email": email,
+        "auth_mode": "saved_session",
+        "token_set": True,
+    }
+
+
+def cmd_logout(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    config = dict(getattr(args, "_sourcebrief_config", {}) or {})
+    had_session = bool(config.pop(SESSION_TOKEN_CONFIG_KEY, None))
+    config.pop(SESSION_EMAIL_CONFIG_KEY, None)
+    path = _save_cli_config(config)
+    return {"status": "logged_out", "config_path": str(path), "removed_session": had_session}
 
 
 def register_core_commands(
