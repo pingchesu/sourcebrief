@@ -89,10 +89,6 @@ cmd_resource_graph = cli_resources.cmd_resource_graph
 
 
 
-def _agent_pack_doctor_package_only(args: argparse.Namespace) -> bool:
-    return args.command == "agent-pack" and getattr(args, "agent_pack_command", None) == "doctor" and not getattr(args, "query", None)
-
-
 def _command_uses_authenticated_api(args: argparse.Namespace) -> bool:
     if args.command == "use":
         return bool(getattr(args, "workspace", None) or getattr(args, "project", None))
@@ -100,7 +96,7 @@ def _command_uses_authenticated_api(args: argparse.Namespace) -> bool:
         return False
     if args.command == "runtime" and getattr(args, "runtime_command", None) in {"detect", "apply", "rollback", "validate"}:
         return False
-    if _agent_pack_doctor_package_only(args):
+    if agent_pack_doctor.is_package_only_doctor(args):
         return False
     return True
 
@@ -108,75 +104,6 @@ def _command_uses_authenticated_api(args: argparse.Namespace) -> bool:
 def _maybe_session_login(client: SourceBriefClient, args: argparse.Namespace) -> None:
     cli_auth.maybe_session_login(client, args, command_uses_authenticated_api=_command_uses_authenticated_api)
 
-
-
-def cmd_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    checks: list[dict[str, Any]] = []
-    try:
-        health = client.request("GET", "/readyz")
-        checks.append(_check_result("api", "passed", api_url=args.api_url.rstrip("/"), response=health))
-    except SourceBriefCliError as exc:
-        checks.append(_check_result("api", "failed", api_url=args.api_url.rstrip("/"), error=str(exc)))
-
-    auth_mode = getattr(args, "_auth_mode", "bearer_token" if args.token else "email_header")
-    checks.append(
-        _check_result(
-            "auth_mode",
-            "info",
-            mode=auth_mode,
-            email=getattr(args, "_session_email", None) if auth_mode in {"saved_session", "session_login_env"} else (None if args.token else args.email),
-            token_set=bool(args.token),
-            password_env_set=bool(getattr(args, "_session_login_password", None)),
-            message="auth mode selected; authenticated project/MCP checks below prove access",
-        )
-    )
-
-    if args.workspace_id and args.project_id:
-        try:
-            resources = client.request("GET", f"/workspaces/{args.workspace_id}/projects/{args.project_id}/resources")
-            checks.append(_check_result("project", "passed", workspace_id=args.workspace_id, project_id=args.project_id, resource_count=len(resources) if isinstance(resources, list) else None))
-        except SourceBriefCliError as exc:
-            checks.append(_check_result("project", "failed", workspace_id=args.workspace_id, project_id=args.project_id, error=str(exc)))
-        if args.query:
-            try:
-                mcp = context_commands.cmd_mcp_context(client, args)
-                error = _mcp_error_message(mcp)
-                if error:
-                    checks.append(_check_result("mcp_context", "failed", query=args.query, error=error))
-                elif getattr(args, "require_citations", False):
-                    citation_count = _mcp_citation_count(mcp)
-                    if citation_count <= 0:
-                        checks.append(_check_result("mcp_context", "failed", query=args.query, error="MCP smoke returned no citations", citation_count=citation_count))
-                    else:
-                        checks.append(_check_result("mcp_context", "passed", query=args.query, has_result=bool(mcp), citation_count=citation_count))
-                else:
-                    checks.append(_check_result("mcp_context", "passed", query=args.query, has_result=bool(mcp)))
-            except SourceBriefCliError as exc:
-                checks.append(_check_result("mcp_context", "failed", query=args.query, error=str(exc)))
-    else:
-        next_step = 'run `sourcebrief use --workspace "..." --project "..."` or rerun doctor with --workspace "..." --project "..."'
-        checks.append(
-            _check_result(
-                "project",
-                "warning",
-                message=f"workspace/project not selected; {next_step}",
-            )
-        )
-        if args.query:
-            checks.append(
-                _check_result(
-                    "mcp_context",
-                    "incomplete",
-                    query=args.query,
-                    message="MCP smoke was not run: workspace/project not selected.",
-                    next_step=next_step,
-                )
-            )
-
-    failed = [check for check in checks if check["status"] == "failed"]
-    incomplete = [check for check in checks if check["status"] == "incomplete"]
-    warnings = [check for check in checks if check["status"] == "warning"]
-    return {"status": "failed" if failed else "incomplete" if incomplete else "warning" if warnings else "passed", "checks": checks}
 
 
 def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> Any:
@@ -295,10 +222,6 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
     return result
 
 
-def cmd_agent_pack_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    return agent_pack_doctor.cmd_agent_pack_doctor(client, args, remote_doctor=cmd_doctor)
-
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sourcebrief", description="SourceBrief CLI")
@@ -330,7 +253,7 @@ def build_parser() -> argparse.ArgumentParser:
         login_command=core_commands.cmd_login,
         logout_command=core_commands.cmd_logout,
         quickstart_demo_command=cmd_quickstart_demo,
-        doctor_command=cmd_doctor,
+        doctor_command=core_commands.cmd_doctor,
     )
 
     admin_commands.register_workspace_project_token_agent_commands(
@@ -347,7 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     cli_resources.register_resource_commands(sub)
 
-    agent_pack_doctor.register_agent_pack_commands(sub, doctor_command=cmd_agent_pack_doctor)
+    agent_pack_doctor.register_agent_pack_commands(sub, doctor_command=agent_pack_doctor.cmd_agent_pack_doctor_bridge)
 
     context_commands.register_context_commands(
         sub,
@@ -417,7 +340,7 @@ def main(argv: list[str] | None = None) -> int:
     client = SourceBriefClient(args.api_url, args.email, token=args.token)
     try:
         _maybe_session_login(client, args)
-        if not _agent_pack_doctor_package_only(args):
+        if not agent_pack_doctor.is_package_only_doctor(args):
             _resolve_named_scope(client, args, getattr(args, "_sourcebrief_config", {}) or {})
         data = args.func(client, args)
     except (SourceBriefCliError, runtime_apply.RuntimeApplyError, skill_install.SkillInstallError, RegressionProposalError) as exc:

@@ -25,6 +25,10 @@ SECRET_LIKE_RE = re.compile(
 )
 
 
+def is_package_only_doctor(args: argparse.Namespace) -> bool:
+    return args.command == "agent-pack" and getattr(args, "agent_pack_command", None) == "doctor" and not getattr(args, "query", None)
+
+
 def _redact_manifest_key(key: Any) -> str:
     text = str(key)
     return "[redacted-secret-like-key]" if SECRET_LIKE_RE.search(text) else text
@@ -349,6 +353,12 @@ def cmd_agent_pack_doctor(
         "checks": checks,
         "remote_smoke": remote_result,
     }
+
+
+def cmd_agent_pack_doctor_bridge(client: Any, args: argparse.Namespace) -> Any:
+    from sourcebrief_cli.commands import core as core_commands
+
+    return cmd_agent_pack_doctor(client, args, remote_doctor=core_commands.cmd_doctor)
 
 
 def register_agent_pack_commands(
