@@ -21,6 +21,6 @@ def test_api_main_residual_map_tracks_remaining_service_boundaries() -> None:
 
 def test_api_main_residual_map_records_current_guardrail_context() -> None:
     text = DOC.read_text(encoding="utf-8")
-    assert "3,736 lines" in text
-    assert "113 top-level functions" in text
+    assert "3,618 lines" in text
+    assert "103 top-level functions" in text
     assert "tests/unit/test_entrypoint_size_guardrails.py" in text
