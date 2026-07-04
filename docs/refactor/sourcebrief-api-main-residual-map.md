@@ -8,7 +8,7 @@ After the API router extraction train and CLI refactor train, `apps/api/sourcebr
 
 Current measured shape:
 
-- `apps/api/sourcebrief_api/main.py`: 3,618 lines / 190,256 bytes / 103 top-level functions
+- `apps/api/sourcebrief_api/main.py`: 3,364 lines / 177,526 bytes / 94 top-level functions
 - `packages/cli/sourcebrief_cli/main.py`: 236 lines / 9,564 bytes / 4 top-level functions
 - Route contract coverage: `tests/unit/test_api_route_contract.py` snapshots 131 recursive route signatures and untagged OpenAPI metadata for the already-extracted routers
 - Entrypoint growth guardrail: `tests/unit/test_entrypoint_size_guardrails.py` now caps API and CLI entrypoint line/function counts
@@ -46,9 +46,8 @@ These clusters remain in `main.py` because they share access-control helpers, SQ
    - Still in `main.py`: `_validate_source_config`, because it depends on ingestion limits, git-env validation, and upload/folder policy wiring.
 
 2. Agent-context synthesis and coverage helpers
-   - Examples: `_build_agent_context_response`, `_build_pack_agent_context_response`, `_agent_context_retrieval_metadata`, `_synthesize_agent_answer`
-   - Extraction target: `sourcebrief_api.services.agent_context_runtime`
-   - Risk: direct tests import `_agent_context_retrieval_metadata`; integration tests assert exact caveats/citation metadata.
+   - Status: answer synthesis, citation-use selection, retrieval metadata, caveat/budget helpers, and unsupported-claim detection were extracted to `sourcebrief_api.services.agent_context_runtime`; `main.py` keeps compatibility aliases.
+   - Still in `main.py`: full response builders `_build_agent_context_response` and `_build_pack_agent_context_response`, because they still orchestrate SQLAlchemy retrieval, usage persistence, code-search, coverage, and Context Pack queries.
 
 3. MCP/runtime tool implementation
    - Examples: `_mcp_tools`, `_mcp_endpoint_action`, `_runtime_search`, `_runtime_read_section`, `_runtime_graph_overview`, `_runtime_lookup`
@@ -65,7 +64,7 @@ These clusters remain in `main.py` because they share access-control helpers, SQ
 Continue only with cohesive API service-boundary PRs, not one-route-per-issue churn:
 
 1. Extract access/resource helper service while preserving `sourcebrief_api.main` compatibility aliases. (Core access helpers complete; `_validate_source_config` remains with resource config policy.)
-2. Extract agent-context synthesis helpers and move direct unit imports to the service module while keeping aliases.
+2. Extract agent-context synthesis helpers and move direct unit imports to the service module while keeping aliases. (Core pure helpers complete; response builders remain.)
 3. Extract MCP/runtime tool implementation as a single runtime service with explicit dependency injection.
 4. Extract context-packet action after agent-context/runtime service boundaries are stable.
 5. Tighten `tests/unit/test_entrypoint_size_guardrails.py` API limits after each service extraction.

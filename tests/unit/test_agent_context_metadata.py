@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from sourcebrief_api.main import _agent_context_retrieval_metadata
 from sourcebrief_api.retrieval import RetrievalCandidate
+from sourcebrief_api.services.agent_context_runtime import agent_context_retrieval_metadata
 
 
 def _candidate(path: str, diagnostics: dict, resource_id=None) -> RetrievalCandidate:
@@ -23,7 +23,7 @@ def _candidate(path: str, diagnostics: dict, resource_id=None) -> RetrievalCandi
     )
 
 
-def test_agent_context_retrieval_metadata_describes_used_citations_not_full_retriever_pool() -> None:
+def testagent_context_retrieval_metadata_describes_used_citations_not_full_retriever_pool() -> None:
     candidate = _candidate(
         "README.md",
         {
@@ -38,7 +38,7 @@ def test_agent_context_retrieval_metadata_describes_used_citations_not_full_retr
         },
     )
 
-    metadata = _agent_context_retrieval_metadata([candidate])
+    metadata = agent_context_retrieval_metadata([candidate])
 
     assert metadata["selected_count"] == 1
     assert metadata["unique_citation_paths"] == 1
@@ -50,12 +50,12 @@ def test_agent_context_retrieval_metadata_describes_used_citations_not_full_retr
     assert metadata["path_prior_hits"] == {"primary_readme": 1}
 
 
-def test_agent_context_retrieval_metadata_discloses_requested_resource_gaps() -> None:
+def testagent_context_retrieval_metadata_discloses_requested_resource_gaps() -> None:
     resource_a = uuid4()
     resource_b = uuid4()
     candidate = _candidate("README.md", {"path_prior_reasons": ["primary_readme"]}, resource_id=resource_a)
 
-    metadata = _agent_context_retrieval_metadata([candidate], [resource_a, resource_b])
+    metadata = agent_context_retrieval_metadata([candidate], [resource_a, resource_b])
 
     assert metadata["requested_resource_ids"] == [str(resource_a), str(resource_b)]
     assert metadata["cited_resource_counts"] == {str(resource_a): 1}
