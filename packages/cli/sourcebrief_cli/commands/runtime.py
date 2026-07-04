@@ -1,10 +1,75 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+from sourcebrief_cli import runtime_apply
+from sourcebrief_cli import support as cli_support
+from sourcebrief_cli.client import SourceBriefClient, SourceBriefCliError
+
 CommandHandler = Callable[[Any, argparse.Namespace], Any]
+
+
+def cmd_runtime_plan(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    return cli_support.runtime_plan_request(client, args)
+
+
+def cmd_runtime_setup(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    plan = cli_support.runtime_plan_request(client, args)
+    validation = cli_support.validation_preview(plan, args.target, args.max_age_seconds)
+    if args.plan_out:
+        out = Path(args.plan_out).expanduser()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        plan_path: str | None = str(out)
+    else:
+        plan_path = None
+    plan_ref = plan_path or "<save first with: sourcebrief runtime setup hermes --plan-out plan.json>"
+    return {
+        "status": "dry_run_ready",
+        "target": args.target,
+        "workspace_id": plan.get("workspace_id"),
+        "project_id": plan.get("project_id"),
+        "server_name": plan.get("server_name"),
+        "plan_path": plan_path,
+        "plan": plan,
+        "validation": validation,
+        "token_command": cli_support.runtime_token_command(plan),
+        "next_steps": [
+            "Review the plan and generated MCP config.",
+            f"Create/export a runtime token: {cli_support.runtime_token_command(plan)}",
+            f"Run `sourcebrief runtime validate --plan {plan_ref} --run` after exporting SOURCEBRIEF_TOKEN.",
+            f"Apply only with `sourcebrief runtime apply --plan {plan_ref} --target hermes --apply` when ready.",
+        ],
+    }
+
+
+def cmd_runtime_detect(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    return runtime_apply.detect(runtime_apply.hermes_config_path(args.config))
+
+
+def cmd_runtime_apply(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    validation = cli_support.read_validated_runtime_plan(args)
+    config_path = runtime_apply.hermes_config_path(args.config)
+    if args.dry_run:
+        if args.apply or args.yes:
+            raise SourceBriefCliError("runtime apply accepts only one of --dry-run or --apply/--yes")
+        return runtime_apply.dry_run_apply(validation, config_path)
+    if not (args.apply or args.yes):
+        raise SourceBriefCliError("runtime apply requires --dry-run or explicit --apply")
+    return runtime_apply.apply_plan(validation, config_path, runtime_apply.receipt_path(args.receipt))
+
+
+def cmd_runtime_rollback(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    return runtime_apply.rollback(Path(args.receipt), force=args.force)
+
+
+def cmd_runtime_validate(_client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    validation = cli_support.read_validated_runtime_plan(args)
+    return runtime_apply.validate_plan(validation, run=args.run)
 
 
 def register_runtime_commands(
