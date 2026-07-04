@@ -13,6 +13,7 @@ from sourcebrief_cli import resources as cli_resources
 from sourcebrief_cli import scope as cli_scope
 from sourcebrief_cli import support as cli_support
 from sourcebrief_cli.client import SourceBriefClient, SourceBriefCliError
+from sourcebrief_cli.commands import admin as admin_commands
 from sourcebrief_cli.config import (
     SESSION_EMAIL_CONFIG_KEY,
     SESSION_TOKEN_CONFIG_KEY,
@@ -920,73 +921,21 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--top-k", type=int, default=3)
     doctor.set_defaults(func=cmd_doctor)
 
-    ws = sub.add_parser("workspace", help="workspace commands").add_subparsers(dest="workspace_command")
-    ws_create = ws.add_parser("create", help="create a workspace")
-    ws_create.add_argument("--name", required=True)
-    ws_create.add_argument("--slug", required=True)
-    ws_create.set_defaults(func=cmd_workspace_create)
-
-    projects = sub.add_parser("project", help="project commands").add_subparsers(dest="project_command")
-    project_create = projects.add_parser("create", help="create a project")
-    project_create.add_argument("--workspace", help="workspace name or slug")
-    project_create.add_argument("--workspace-id", help="advanced: workspace ID")
-    project_create.add_argument("--name", required=True)
-    project_create.add_argument("--description")
-    project_create.set_defaults(func=cmd_project_create)
-
-    tokens = sub.add_parser("token", help="workspace API token commands").add_subparsers(dest="token_command")
-    token_create = tokens.add_parser("create", help="create a bearer API token for agents/Hermes")
-    token_create.add_argument("--workspace", help="workspace name or slug")
-    token_create.add_argument("--workspace-id", help="advanced: workspace ID")
-    token_create.add_argument("--name", required=True)
-    token_create.add_argument("--scope", action="append", required=True, help="scope, repeatable or comma-separated")
-    token_create.add_argument("--project", dest="project_ref", action="append", help="allowed project name, repeatable")
-    token_create.add_argument("--project-id", action="append", help="advanced: allowed project ID, repeatable or comma-separated")
-    token_create.add_argument("--resource-id", action="append", help="allowed resource ID, repeatable or comma-separated")
-    token_create.add_argument("--expires-at", help="ISO-8601 timestamp")
-    token_create.set_defaults(func=cmd_token_create)
-
-    token_runtime = tokens.add_parser("create-runtime", help="create a preset runtime token")
-    token_runtime.add_argument("--workspace", help="workspace name or slug")
-    token_runtime.add_argument("--workspace-id", help="advanced: workspace ID")
-    token_runtime.add_argument("--name", default="SourceBrief runtime")
-    preset = token_runtime.add_mutually_exclusive_group()
-    preset.add_argument("--context-only", dest="read_code", action="store_false", help="project/query/resource/review read scopes only")
-    preset.add_argument("--read-code", dest="read_code", action="store_true", help="include code:read for source drill-down tools")
-    token_runtime.add_argument("--project", dest="project_ref", action="append", help="allowed project name, repeatable")
-    token_runtime.add_argument("--project-id", action="append", help="advanced: allowed project ID, repeatable or comma-separated")
-    token_runtime.add_argument("--resource-id", action="append", help="allowed resource ID, repeatable or comma-separated")
-    token_runtime.add_argument("--workspace-wide", action="store_true", help="explicitly allow this runtime token across the whole workspace")
-    token_runtime.add_argument("--expires-at", help="ISO-8601 timestamp")
-    token_runtime.set_defaults(func=cmd_token_create_runtime, read_code=False)
-
-    token_list = tokens.add_parser("list", help="list API tokens without plaintext secrets")
-    token_list.add_argument("--workspace", help="workspace name or slug")
-    token_list.add_argument("--workspace-id", help="advanced: workspace ID")
-    token_list.set_defaults(func=cmd_token_list)
-
-    token_revoke = tokens.add_parser("revoke", help="revoke an API token")
-    token_revoke.add_argument("--workspace", help="workspace name or slug")
-    token_revoke.add_argument("--workspace-id", help="advanced: workspace ID")
-    token_revoke.add_argument("--token-id", required=True)
-    token_revoke.set_defaults(func=cmd_token_revoke)
+    admin_commands.register_workspace_project_token_agent_commands(
+        sub,
+        workspace_create_command=cmd_workspace_create,
+        project_create_command=cmd_project_create,
+        token_create_command=cmd_token_create,
+        token_create_runtime_command=cmd_token_create_runtime,
+        token_list_command=cmd_token_list,
+        token_revoke_command=cmd_token_revoke,
+        agent_list_command=cmd_agent_list,
+        agent_profile_command=cmd_agent_profile,
+    )
 
     cli_resources.register_resource_commands(sub)
 
     agent_pack_doctor.register_agent_pack_commands(sub, doctor_command=cmd_agent_pack_doctor)
-
-    agents = sub.add_parser("agent", help="agent registry commands").add_subparsers(dest="agent_command")
-    agent_list = agents.add_parser("list", help="list project agents in a workspace")
-    agent_list.add_argument("--workspace", help="workspace name or slug")
-    agent_list.add_argument("--workspace-id", help="advanced: workspace ID")
-    agent_list.set_defaults(func=cmd_agent_list)
-
-    agent_profile = agents.add_parser("profile", help="show one project agent profile")
-    agent_profile.add_argument("--workspace", help="workspace name or slug")
-    agent_profile.add_argument("--workspace-id", help="advanced: workspace ID")
-    agent_profile.add_argument("--project", help="project name")
-    agent_profile.add_argument("--project-id", help="advanced: project ID")
-    agent_profile.set_defaults(func=cmd_agent_profile)
 
     search = sub.add_parser("search", help="search project context")
     search.add_argument("--workspace", help="workspace name or slug; defaults to sourcebrief use selection")
