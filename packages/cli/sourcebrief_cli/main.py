@@ -14,6 +14,7 @@ from sourcebrief_cli import scope as cli_scope
 from sourcebrief_cli import support as cli_support
 from sourcebrief_cli.client import SourceBriefClient, SourceBriefCliError
 from sourcebrief_cli.commands import admin as admin_commands
+from sourcebrief_cli.commands import runtime as runtime_commands
 from sourcebrief_cli.config import (
     SESSION_EMAIL_CONFIG_KEY,
     SESSION_TOKEN_CONFIG_KEY,
@@ -1048,7 +1049,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_sleep.add_argument("--max-artifacts", type=int, default=100)
     review_sleep.set_defaults(func=cmd_review_sleep)
 
-    runtime_apply.register_runtime_commands(
+    runtime_commands.register_runtime_commands(
         sub,
         plan_command=cmd_runtime_plan,
         setup_command=cmd_runtime_setup,
