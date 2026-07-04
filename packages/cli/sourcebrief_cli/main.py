@@ -15,6 +15,7 @@ from sourcebrief_cli import support as cli_support
 from sourcebrief_cli.client import SourceBriefClient, SourceBriefCliError
 from sourcebrief_cli.commands import admin as admin_commands
 from sourcebrief_cli.commands import runtime as runtime_commands
+from sourcebrief_cli.commands import skill as skill_commands
 from sourcebrief_cli.config import (
     SESSION_EMAIL_CONFIG_KEY,
     SESSION_TOKEN_CONFIG_KEY,
@@ -1059,7 +1060,7 @@ def build_parser() -> argparse.ArgumentParser:
         validate_command=cmd_runtime_validate,
     )
 
-    skill_install.register_skill_commands(
+    skill_commands.register_skill_commands(
         sub,
         export_command=cmd_skill_export,
         install_command=cmd_skill_install,
