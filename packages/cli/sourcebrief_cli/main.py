@@ -32,8 +32,6 @@ from sourcebrief_shared.regression_proposal import (
 
 DEFAULT_API_URL = cli_scope.DEFAULT_API_URL
 DEFAULT_EMAIL = cli_scope.DEFAULT_EMAIL
-CONTEXT_RUNTIME_SCOPES = ["project:read", "project:query", "resource:read", "review:read"]
-READ_CODE_RUNTIME_SCOPES = [*CONTEXT_RUNTIME_SCOPES, "code:read"]
 
 _dotenv_path = cli_auth.dotenv_path
 _dotenv_value = cli_auth.dotenv_value
@@ -57,7 +55,6 @@ _print_kv = cli_support.print_kv
 _resource_ids = cli_support.resource_ids
 _resource_refs = cli_support.resource_refs
 _apply_resource_refs = cli_support.apply_resource_refs
-_split_csv_or_repeated = cli_support.split_csv_or_repeated
 _wait_for_run = cli_support.wait_for_run
 _check_result = cli_support.check_result
 _mcp_error_message = cli_support.mcp_error_message
@@ -182,76 +179,6 @@ def cmd_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     return {"status": "failed" if failed else "incomplete" if incomplete else "warning" if warnings else "passed", "checks": checks}
 
 
-def cmd_workspace_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    return client.request(
-        "POST",
-        "/workspaces",
-        body={"name": args.name, "slug": args.slug},
-        expected={201},
-    )
-
-
-def cmd_project_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args, project=False)
-    return client.request(
-        "POST",
-        f"/workspaces/{args.workspace_id}/projects",
-        body={"name": args.name, "description": args.description},
-        expected={201},
-    )
-
-
-def cmd_token_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args, project=False)
-    return client.request(
-        "POST",
-        f"/workspaces/{args.workspace_id}/api-tokens",
-        body={
-            "name": args.name,
-            "scopes": _split_csv_or_repeated(args.scope) or [],
-            "allowed_project_ids": _split_csv_or_repeated(args.project_id),
-            "allowed_resource_ids": _split_csv_or_repeated(args.resource_id),
-            "expires_at": args.expires_at,
-        },
-        expected={201},
-    )
-
-
-def cmd_token_create_runtime(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args, project=False)
-    allowed_project_ids = _split_csv_or_repeated(args.project_id)
-    allowed_resource_ids = _split_csv_or_repeated(args.resource_id)
-    if not args.workspace_wide and not (allowed_project_ids or allowed_resource_ids):
-        raise SourceBriefCliError(
-            "token create-runtime requires --project/--project-id/--resource-id or explicit --workspace-wide"
-        )
-    scopes = READ_CODE_RUNTIME_SCOPES if args.read_code else CONTEXT_RUNTIME_SCOPES
-    return client.request(
-        "POST",
-        f"/workspaces/{args.workspace_id}/api-tokens",
-        body={
-            "name": args.name,
-            "scopes": scopes,
-            "allowed_project_ids": None if args.workspace_wide else allowed_project_ids,
-            "allowed_resource_ids": None if args.workspace_wide else allowed_resource_ids,
-            "expires_at": args.expires_at,
-        },
-        expected={201},
-    )
-
-
-def cmd_token_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args, project=False)
-    return client.request("GET", f"/workspaces/{args.workspace_id}/api-tokens")
-
-
-def cmd_token_revoke(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args, project=False)
-    return client.request("DELETE", f"/workspaces/{args.workspace_id}/api-tokens/{args.token_id}")
-
-
-
-
 def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     health = client.request("GET", "/readyz")
     workspace_slug = args.slug or f"sourcebrief-demo-{int(time.time())}"
@@ -372,19 +299,6 @@ def cmd_agent_pack_doctor(client: SourceBriefClient, args: argparse.Namespace) -
     return agent_pack_doctor.cmd_agent_pack_doctor(client, args, remote_doctor=cmd_doctor)
 
 
-def cmd_agent_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args, project=False)
-    return client.request("GET", f"/workspaces/{args.workspace_id}/agents")
-
-
-def cmd_agent_profile(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args)
-    return client.request(
-        "GET",
-        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/agent-profile",
-    )
-
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sourcebrief", description="SourceBrief CLI")
@@ -421,14 +335,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     admin_commands.register_workspace_project_token_agent_commands(
         sub,
-        workspace_create_command=cmd_workspace_create,
-        project_create_command=cmd_project_create,
-        token_create_command=cmd_token_create,
-        token_create_runtime_command=cmd_token_create_runtime,
-        token_list_command=cmd_token_list,
-        token_revoke_command=cmd_token_revoke,
-        agent_list_command=cmd_agent_list,
-        agent_profile_command=cmd_agent_profile,
+        workspace_create_command=admin_commands.cmd_workspace_create,
+        project_create_command=admin_commands.cmd_project_create,
+        token_create_command=admin_commands.cmd_token_create,
+        token_create_runtime_command=admin_commands.cmd_token_create_runtime,
+        token_list_command=admin_commands.cmd_token_list,
+        token_revoke_command=admin_commands.cmd_token_revoke,
+        agent_list_command=admin_commands.cmd_agent_list,
+        agent_profile_command=admin_commands.cmd_agent_profile,
     )
 
     cli_resources.register_resource_commands(sub)

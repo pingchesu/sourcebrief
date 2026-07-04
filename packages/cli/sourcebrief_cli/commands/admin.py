@@ -4,7 +4,99 @@ import argparse
 from collections.abc import Callable
 from typing import Any
 
+from sourcebrief_cli import support as cli_support
+from sourcebrief_cli.client import SourceBriefClient, SourceBriefCliError
+from sourcebrief_cli.scope import require_scope
+
+CONTEXT_RUNTIME_SCOPES = ["project:read", "project:query", "resource:read", "review:read"]
+READ_CODE_RUNTIME_SCOPES = [*CONTEXT_RUNTIME_SCOPES, "code:read"]
+
 CommandHandler = Callable[[Any, argparse.Namespace], Any]
+
+
+def cmd_workspace_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    return client.request(
+        "POST",
+        "/workspaces",
+        body={"name": args.name, "slug": args.slug},
+        expected={201},
+    )
+
+
+def cmd_project_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    require_scope(args, project=False)
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects",
+        body={"name": args.name, "description": args.description},
+        expected={201},
+    )
+
+
+def cmd_token_create(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    require_scope(args, project=False)
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/api-tokens",
+        body={
+            "name": args.name,
+            "scopes": cli_support.split_csv_or_repeated(args.scope) or [],
+            "allowed_project_ids": cli_support.split_csv_or_repeated(args.project_id),
+            "allowed_resource_ids": cli_support.split_csv_or_repeated(args.resource_id),
+            "expires_at": args.expires_at,
+        },
+        expected={201},
+    )
+
+
+def cmd_token_create_runtime(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    require_scope(args, project=False)
+    allowed_project_ids = cli_support.split_csv_or_repeated(args.project_id)
+    allowed_resource_ids = cli_support.split_csv_or_repeated(args.resource_id)
+    if not args.workspace_wide and not (allowed_project_ids or allowed_resource_ids):
+        raise SourceBriefCliError(
+            "token create-runtime requires --project/--project-id/--resource-id or explicit --workspace-wide"
+        )
+    scopes = READ_CODE_RUNTIME_SCOPES if args.read_code else CONTEXT_RUNTIME_SCOPES
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/api-tokens",
+        body={
+            "name": args.name,
+            "scopes": scopes,
+            "allowed_project_ids": None if args.workspace_wide else allowed_project_ids,
+            "allowed_resource_ids": None if args.workspace_wide else allowed_resource_ids,
+            "expires_at": args.expires_at,
+        },
+        expected={201},
+    )
+
+
+def cmd_token_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    require_scope(args, project=False)
+    return client.request("GET", f"/workspaces/{args.workspace_id}/api-tokens")
+
+
+def cmd_token_revoke(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    require_scope(args, project=False)
+    return client.request("DELETE", f"/workspaces/{args.workspace_id}/api-tokens/{args.token_id}")
+
+
+
+
+def cmd_agent_list(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    require_scope(args, project=False)
+    return client.request("GET", f"/workspaces/{args.workspace_id}/agents")
+
+
+def cmd_agent_profile(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    require_scope(args)
+    return client.request(
+        "GET",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/agent-profile",
+    )
+
+
 
 
 def register_workspace_project_token_agent_commands(
