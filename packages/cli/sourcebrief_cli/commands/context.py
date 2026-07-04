@@ -4,7 +4,81 @@ import argparse
 from collections.abc import Callable
 from typing import Any
 
+from sourcebrief_cli import support as cli_support
+from sourcebrief_cli.client import SourceBriefClient
+
 CommandHandler = Callable[[Any, argparse.Namespace], Any]
+
+
+def cmd_search(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    cli_support.require_scope(args)
+    body = {
+        "query": args.query,
+        "top_k": args.top_k,
+        "resource_ids": cli_support.resource_ids(args.resource_id),
+    }
+    cli_support.apply_resource_refs(body, args)
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/search",
+        body=body,
+    )
+
+
+def cmd_agent_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    cli_support.require_scope(args)
+    body = {
+        "query": args.query,
+        "runtime": args.runtime,
+        "top_k": args.top_k,
+        "resource_ids": cli_support.resource_ids(args.resource_id),
+        "include_code_symbols": args.include_code_symbols,
+        "include_answer": getattr(args, "include_answer", True),
+        "max_chars": args.max_chars,
+    }
+    cli_support.apply_resource_refs(body, args)
+    return client.request(
+        "POST",
+        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/agent-context",
+        body=body,
+    )
+
+
+def cmd_mcp_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    cli_support.require_scope(args)
+    arguments = {
+        "query": args.query,
+        "runtime": args.runtime,
+        "top_k": args.top_k,
+        "resource_ids": cli_support.resource_ids(args.resource_id),
+    }
+    cli_support.apply_resource_refs(arguments, args)
+    return client.request(
+        "POST",
+        f"/mcp/{args.workspace_id}/{args.project_id}",
+        body={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "sourcebrief.get_agent_context",
+                "arguments": arguments,
+            },
+        },
+    )
+
+
+def cmd_ask(client: SourceBriefClient, args: argparse.Namespace) -> Any:
+    data = cmd_agent_context(client, args)
+    review_bundle = cli_support.capture_review_bundle(agent_context=data, args=args, query=args.query)
+    if args.json:
+        if review_bundle:
+            data = {**data, "review_bundle": review_bundle}
+        return data
+    answer = cli_support.human_answer_brief(data)
+    if review_bundle:
+        answer["review_bundle"] = review_bundle
+    return answer
 
 
 def register_context_commands(

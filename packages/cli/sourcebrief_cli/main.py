@@ -184,7 +184,7 @@ def cmd_doctor(client: SourceBriefClient, args: argparse.Namespace) -> Any:
             checks.append(_check_result("project", "failed", workspace_id=args.workspace_id, project_id=args.project_id, error=str(exc)))
         if args.query:
             try:
-                mcp = cmd_mcp_context(client, args)
+                mcp = context_commands.cmd_mcp_context(client, args)
                 error = _mcp_error_message(mcp)
                 if error:
                     checks.append(_check_result("mcp_context", "failed", query=args.query, error=error))
@@ -294,76 +294,6 @@ def cmd_token_revoke(client: SourceBriefClient, args: argparse.Namespace) -> Any
 
 
 
-def cmd_search(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args)
-    body = {"query": args.query, "top_k": args.top_k, "resource_ids": _resource_ids(args.resource_id)}
-    _apply_resource_refs(body, args)
-    return client.request(
-        "POST",
-        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/search",
-        body=body,
-    )
-
-
-def cmd_agent_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args)
-    body = {
-        "query": args.query,
-        "runtime": args.runtime,
-        "top_k": args.top_k,
-        "resource_ids": _resource_ids(args.resource_id),
-        "include_code_symbols": args.include_code_symbols,
-        "include_answer": getattr(args, "include_answer", True),
-        "max_chars": args.max_chars,
-    }
-    _apply_resource_refs(body, args)
-    return client.request(
-        "POST",
-        f"/workspaces/{args.workspace_id}/projects/{args.project_id}/agent-context",
-        body=body,
-    )
-
-
-def cmd_mcp_context(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    _require_scope(args)
-    arguments = {
-        "query": args.query,
-        "runtime": args.runtime,
-        "top_k": args.top_k,
-        "resource_ids": _resource_ids(args.resource_id),
-    }
-    _apply_resource_refs(arguments, args)
-    return client.request(
-        "POST",
-        f"/mcp/{args.workspace_id}/{args.project_id}",
-        body={
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": "sourcebrief.get_agent_context",
-                "arguments": arguments,
-            },
-        },
-    )
-
-
-
-
-
-def cmd_ask(client: SourceBriefClient, args: argparse.Namespace) -> Any:
-    data = cmd_agent_context(client, args)
-    review_bundle = _capture_review_bundle(agent_context=data, args=args, query=args.query)
-    if args.json:
-        if review_bundle:
-            data = {**data, "review_bundle": review_bundle}
-        return data
-    answer = _human_answer_brief(data)
-    if review_bundle:
-        answer["review_bundle"] = review_bundle
-    return answer
-
-
 def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> Any:
     health = client.request("GET", "/readyz")
     workspace_slug = args.slug or f"sourcebrief-demo-{int(time.time())}"
@@ -397,7 +327,7 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
         ),
     )
     resource = resource_result["resource"]
-    answer_packet = cmd_agent_context(
+    answer_packet = context_commands.cmd_agent_context(
         client,
         argparse.Namespace(
             workspace_id=workspace["id"],
@@ -413,7 +343,7 @@ def cmd_quickstart_demo(client: SourceBriefClient, args: argparse.Namespace) -> 
     )
     mcp_validation: dict[str, Any] | None = None
     if args.validate_mcp:
-        mcp_response = cmd_mcp_context(
+        mcp_response = context_commands.cmd_mcp_context(
             client,
             argparse.Namespace(
                 workspace_id=workspace["id"],
@@ -809,10 +739,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     context_commands.register_context_commands(
         sub,
-        search_command=cmd_search,
-        ask_command=cmd_ask,
-        agent_context_command=cmd_agent_context,
-        mcp_context_command=cmd_mcp_context,
+        search_command=context_commands.cmd_search,
+        ask_command=context_commands.cmd_ask,
+        agent_context_command=context_commands.cmd_agent_context,
+        mcp_context_command=context_commands.cmd_mcp_context,
     )
 
     review_commands.register_review_commands(
