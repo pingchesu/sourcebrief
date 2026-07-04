@@ -29,7 +29,162 @@ EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES = {
     ("GET", "/workspaces/{workspace_id}/projects/{project_id}/skill-exports/{export_id}/download.zip", "download_skill_export_package"),
 }
 
-EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES
+EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions", "create_context_pack_version"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-packs", "list_context_packs"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions", "list_context_pack_versions"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/current", "get_current_context_pack_version"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}", "get_context_pack_version_by_number"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}/publish", "publish_context_pack_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}/rollback", "rollback_context_pack_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packs/{pack_key}/versions/{version_number}/invalidate", "invalidate_context_pack_version"),
+}
+
+EXPECTED_REPO_AGENT_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents", "list_repo_agents"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/repo-agent", "create_repo_agent"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}", "get_repo_agent"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/refresh", "refresh_repo_agent"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/publish", "publish_repo_agent_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/rollback-draft", "create_repo_agent_rollback_draft"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/archive", "archive_repo_agent"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/invalidate", "invalidate_repo_agent_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/scrub", "scrub_repo_agent_version"),
+}
+
+
+EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map", "compile_resource_map_artifact"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts", "list_resource_context_artifacts"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}", "get_context_artifact"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}/approve", "approve_context_artifact"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-artifacts/{artifact_id}/reject", "reject_context_artifact"),
+}
+
+
+EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES = {
+    ("PATCH", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", "update_resource"),
+    ("DELETE", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", "delete_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/archive", "archive_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/restore", "restore_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/purge", "purge_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/review", "review_resource"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resource-review", "list_resource_review"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resource-usage", "resource_usage"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources", "list_resources"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/snapshots", "list_snapshots"),
+}
+
+
+EXPECTED_GRAPH_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges", "list_graph_merges"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}", "get_graph_merge"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges", "compile_graph_merge_endpoint"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/publish", "publish_graph_merge"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/invalidate", "invalidate_graph_merge_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/archive", "archive_graph_merge"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/data", "get_graph_merge_data"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/candidates/{candidate_key}/review", "review_graph_merge_candidate"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{version_number}/path", "get_graph_merge_path"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graphs", "list_graph_streams"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}", "get_graph_stream"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph/versions", "compile_resource_graph_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/versions/{version_number}/publish", "publish_graph_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/versions/{version_number}/invalidate", "invalidate_graph_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/archive", "archive_graph_stream"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/graph", "get_resource_graph"),
+}
+
+
+EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/search", "search_project"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/code-search", "code_search_project"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/generate_patch", "remote_generate_patch"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/open_pr", "remote_open_pr"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/search_code", "remote_search_code"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/grep_code", "remote_grep_code"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/read_file", "remote_read_file"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/remote-code/find_symbol", "remote_find_symbol"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/code/rpc/spec", "remote_code_rpc_spec"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/code/rpc", "remote_code_rpc"),
+}
+
+
+EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/agent-context", "agent_context"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries", "list_agent_card_summaries"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/run", "run_agent_card_summary_audit"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/agent-card-summaries/{summary_id}/acknowledge", "acknowledge_agent_card_summary"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{resource_id}/brief", "get_repo_agent_brief"),
+}
+
+EXPECTED_RETRIEVAL_EVAL_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals", "list_retrieval_eval_runs"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals/{run_id}", "get_retrieval_eval_run"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/retrieval-profiles", "list_retrieval_profiles"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/retrieval-evals", "run_retrieval_eval"),
+}
+
+EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/audit-events", "list_audit_events"),
+    ("GET", "/workspaces/{workspace_id}/index-runs/{index_run_id}", "get_index_run"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/index-runs", "list_resource_index_runs"),
+}
+
+EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement", "get_self_improvement_overview"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/history", "list_self_improvement_history"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/artifacts/{artifact_id}", "get_self_improvement_artifact"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/mvp-smoke", "run_self_improvement_mvp_smoke"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/self-improvement/sleep", "run_self_improvement_sleep"),
+}
+
+EXPECTED_AGENT_PROFILE_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/agents", "list_agents"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/agent-profile", "get_agent_profile"),
+    ("PATCH", "/workspaces/{workspace_id}/projects/{project_id}/agent-profile", "update_agent_profile"),
+}
+
+EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES = {
+    ("POST", "/auth/login", "login"),
+    ("GET", "/auth/me", "me"),
+    ("POST", "/auth/logout", "logout"),
+    ("POST", "/workspaces", "create_workspace"),
+    ("GET", "/workspaces", "list_workspaces"),
+    ("GET", "/workspaces/{workspace_id}", "get_workspace"),
+    ("POST", "/workspaces/{workspace_id}/api-tokens", "create_api_token"),
+    ("GET", "/workspaces/{workspace_id}/api-tokens", "list_api_tokens"),
+    ("DELETE", "/workspaces/{workspace_id}/api-tokens/{token_id}", "revoke_api_token"),
+    ("GET", "/workspaces/{workspace_id}/projects", "list_projects"),
+    ("GET", "/workspaces/{workspace_id}/members", "list_workspace_members"),
+    ("POST", "/workspaces/{workspace_id}/members", "create_workspace_member"),
+    ("PATCH", "/workspaces/{workspace_id}/members/{membership_id}", "update_workspace_member"),
+    ("POST", "/workspaces/{workspace_id}/projects", "create_project"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}", "get_project"),
+}
+
+EXPECTED_RESOURCE_CORE_ROUTE_SIGNATURES = {
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources", "create_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/upload-folder-bundle", "upload_folder_bundle"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}", "get_resource"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/manifest", "get_resource_manifest"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/manifest-diff", "get_resource_manifest_diff"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/snapshot-sections", "get_resource_snapshot_sections"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/section-impact", "get_resource_section_impact"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh", "refresh_resource"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes", "enqueue_scheduled_refreshes"),
+}
+
+EXPECTED_ARCHITECTURE_ROUTE_SIGNATURES = {
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/architecture", "get_project_architecture"),
+}
+
+EXPECTED_MCP_CONTEXT_ROUTE_SIGNATURES = {
+    ("POST", "/mcp/{workspace_id}/{project_id}", "mcp_endpoint"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/context-packets", "create_context_packet"),
+}
+
+EXPECTED_ROUTE_SIGNATURES = EXPECTED_RUNTIME_AGENT_ROUTE_SIGNATURES | EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES | EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES | EXPECTED_REPO_AGENT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES | EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES | EXPECTED_GRAPH_ROUTE_SIGNATURES | EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES | EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES | EXPECTED_RETRIEVAL_EVAL_ROUTE_SIGNATURES | EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES | EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES | EXPECTED_AGENT_PROFILE_ROUTE_SIGNATURES | EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES | EXPECTED_RESOURCE_CORE_ROUTE_SIGNATURES | EXPECTED_ARCHITECTURE_ROUTE_SIGNATURES | EXPECTED_MCP_CONTEXT_ROUTE_SIGNATURES
 
 
 def _route_signatures() -> set[tuple[str, str, str]]:
@@ -83,4 +238,109 @@ def test_skill_export_openapi_metadata_remains_untagged() -> None:
     for method, path, _name in EXPECTED_SKILL_EXPORT_ROUTE_SIGNATURES:
         openapi_path = path.replace("{file_path:path}", "{file_path}")
         operation = openapi["paths"][openapi_path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_context_pack_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_CONTEXT_PACK_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_repo_agent_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_REPO_AGENT_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_resource_artifact_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_RESOURCE_ARTIFACT_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_resource_lifecycle_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_RESOURCE_LIFECYCLE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_graph_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_GRAPH_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_remote_code_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_REMOTE_CODE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_agent_context_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_AGENT_CONTEXT_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_retrieval_eval_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_RETRIEVAL_EVAL_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_audit_index_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_AUDIT_INDEX_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_self_improvement_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_SELF_IMPROVEMENT_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_agent_profile_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_AGENT_PROFILE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_auth_workspace_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_AUTH_WORKSPACE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_resource_core_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_RESOURCE_CORE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_architecture_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_ARCHITECTURE_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
+        assert "tags" not in operation
+
+
+def test_mcp_context_openapi_metadata_remains_untagged() -> None:
+    openapi = app.openapi()
+    for method, path, _name in EXPECTED_MCP_CONTEXT_ROUTE_SIGNATURES:
+        operation = openapi["paths"][path][method.lower()]
         assert "tags" not in operation
