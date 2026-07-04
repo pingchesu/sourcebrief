@@ -10,13 +10,9 @@ from typing import Any, cast
 from uuid import UUID
 
 from fastapi import (
-    Depends,
     HTTPException,
-    Request,
-    Response,
 )
 from fastapi.encoders import jsonable_encoder
-from pydantic import ValidationError
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -26,7 +22,6 @@ from sourcebrief_api.app_factory import cors_origins, create_app, run_migrations
 from sourcebrief_api.auth import (
     Principal,
     hash_password,
-    require_principal,
     require_scope,
     token_allows_resource,
 )
@@ -109,11 +104,12 @@ from sourcebrief_api.schemas import (
 from sourcebrief_api.services import access as access_service
 from sourcebrief_api.services import agent_context_runtime, mcp_runtime_contract
 from sourcebrief_api.services import context_packets as context_packet_service
+from sourcebrief_api.services import mcp_endpoint as mcp_endpoint_service
 from sourcebrief_api.skill_exports import (
     SKILL_EXPORT_STATUS_APPROVED,
 )
 from sourcebrief_shared.config import get_settings
-from sourcebrief_shared.db import get_session, get_sessionmaker
+from sourcebrief_shared.db import get_sessionmaker
 from sourcebrief_shared.embeddings import current_embedding_config
 from sourcebrief_shared.models import (
     AgentProfile,
@@ -2846,149 +2842,41 @@ def _runtime_generate_skill_pack(
 
 
 
-async def _mcp_endpoint_action(
-    workspace_id: UUID,
-    project_id: UUID,
-    request: Request,
-    principal: Principal = Depends(require_principal),
-    session: Session = Depends(get_session),
-) -> dict | Response:
-    """Minimal central MCP-compatible JSON-RPC endpoint for project context.
-
-    This intentionally exposes one typed operation; production/external actions
-    remain outside repo agents and must use dedicated MCP tools.
-    """
-    _require_project_access(session, workspace_id, project_id, principal)
-    try:
-        body = await request.json()
-    except Exception:
-        return _json_rpc_error(None, -32700, "parse error")
-    if not isinstance(body, dict):
-        return _json_rpc_error(None, -32600, "invalid request")
-    rpc_id = body.get("id")
-    has_id = "id" in body
-    if body.get("jsonrpc") != "2.0" or not isinstance(body.get("method"), str):
-        return _json_rpc_error(rpc_id if has_id else None, -32600, "invalid request")
-    method = body["method"]
-    if not has_id:
-        # JSON-RPC notifications do not receive responses. MCP clients commonly
-        # send notifications/initialized after initialize.
-        return Response(status_code=204)
-    if method == "initialize":
-        return {
-            "jsonrpc": "2.0",
-            "id": rpc_id,
-            "result": {
-                "protocolVersion": "2024-11-05",
-                "serverInfo": {"name": "sourcebrief", "version": "0.1.0"},
-                "capabilities": {"tools": {}},
-            },
-        }
-    if method == "tools/list":
-        priority = {
-            "sourcebrief.ask": 0,
-            "sourcebrief.discover": 1,
-            "sourcebrief.lookup": 2,
-            "sourcebrief.get_agent_context": 3,
-            "sourcebrief.list_sources": 4,
-            "sourcebrief.get_architecture": 5,
-            "sourcebrief.get_context_pack": 6,
-            "sourcebrief.search": 7,
-            "sourcebrief.read_section": 8,
-            "sourcebrief.read_file": 9,
-            "sourcebrief.search_code": 10,
-            "sourcebrief.grep_code": 11,
-            "sourcebrief.find_symbol": 12,
-            "sourcebrief.get_resource_map": 13,
-            "sourcebrief.get_graph_inventory": 14,
-            "sourcebrief.graph_query": 15,
-            "sourcebrief.graph_path": 16,
-            "sourcebrief.generate_skill_pack": 20,
-            "sourcebrief.get_rpc_spec": 21,
-            "sourcebrief.get_runtime_help": 22,
-            "sourcebrief.generate_patch": 30,
-            "sourcebrief.open_pr": 31,
-        }
-        tools = sorted(
-            _mcp_tools(),
-            key=lambda tool: (priority.get(str(tool.get("name")), 50), str(tool.get("name"))),
-        )
-        return {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": tools}}
-    if method == "tools/call":
-        params = body.get("params", {})
-        if not isinstance(params, dict):
-            return _json_rpc_error(rpc_id, -32602, "invalid params")
-        tool_name = params.get("name")
-        arguments = params.get("arguments") or {}
-        if not isinstance(arguments, dict):
-            return _json_rpc_error(rpc_id, -32602, "invalid params")
-        # Accept legacy contextsmith.* calls for existing agent configs, but list only sourcebrief.* names.
-        if isinstance(tool_name, str) and tool_name.startswith("contextsmith."):
-            tool_name = "sourcebrief." + tool_name[len("contextsmith."):]
-        result: Any
-        try:
-            if tool_name == "sourcebrief.ask":
-                payload = AgentContextRequest(**_runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False))
-                result = agent_context(workspace_id, project_id, payload, principal, session)
-            elif tool_name == "sourcebrief.discover":
-                result = _runtime_discover(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.lookup":
-                result = _runtime_lookup(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.get_context_pack":
-                result = _runtime_get_context_pack(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.list_sources":
-                result = _runtime_list_sources(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.get_resource_map":
-                result = _runtime_get_resource_map(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.search":
-                result = _runtime_search(session, workspace_id, project_id, principal, _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False))
-            elif tool_name == "sourcebrief.read_section":
-                result = _runtime_read_section(session, workspace_id, project_id, principal, _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=True))
-            elif tool_name == "sourcebrief.get_architecture":
-                result = _runtime_graph_overview(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.get_graph_inventory":
-                result = _runtime_get_graph_inventory(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.graph_query":
-                result = _runtime_graph_query(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.graph_path":
-                result = _runtime_graph_path(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.get_agent_context":
-                payload = AgentContextRequest(**_runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False))
-                result = agent_context(workspace_id, project_id, payload, principal, session)
-            elif tool_name == "sourcebrief.search_code":
-                code_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False)
-                result = remote_search_code(workspace_id, project_id, RemoteSearchCodeRequest(**_runtime_remote_args(code_args, {"query", "resource_ids", "top_k", "cursor"})), principal, session)
-            elif tool_name == "sourcebrief.grep_code":
-                grep_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False)
-                result = remote_grep_code(workspace_id, project_id, RemoteGrepCodeRequest(**_runtime_remote_args(grep_args, {"pattern", "resource_ids", "path_glob", "max_matches", "cursor", "regex", "context_lines"})), principal, session)
-            elif tool_name == "sourcebrief.read_file":
-                read_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=True)
-                result = remote_read_file(workspace_id, project_id, RemoteReadFileRequest(**_runtime_remote_args(read_args, {"resource_id", "path", "start_line", "end_line"})), principal, session)
-            elif tool_name == "sourcebrief.find_symbol":
-                symbol_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, arguments, single=False)
-                result = remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**_runtime_remote_args(symbol_args, {"name", "kind", "resource_ids", "top_k"})), principal, session)
-            elif tool_name == "sourcebrief.generate_skill_pack":
-                result = _runtime_generate_skill_pack(session, workspace_id, project_id, principal, arguments)
-            elif tool_name == "sourcebrief.get_rpc_spec":
-                result = remote_code_rpc_spec(workspace_id, project_id, principal, session)
-            elif tool_name == "sourcebrief.get_runtime_help":
-                result = _runtime_help(arguments)
-            elif tool_name == "sourcebrief.generate_patch":
-                result = remote_generate_patch(workspace_id, project_id, GeneratePatchRequest(**arguments), principal, session)
-            elif tool_name == "sourcebrief.open_pr":
-                result = remote_open_pr(workspace_id, project_id, OpenPrRequest(**arguments), principal, session)
-            else:
-                return _json_rpc_error(rpc_id, -32601, "unknown tool")
-        except ValidationError as exc:
-            return _json_rpc_error(rpc_id, -32602, f"invalid params: {exc.errors()[0]['msg']}")
-        except HTTPException as exc:
-            return _mcp_tool_error(rpc_id, exc.status_code, exc.detail)
-        except (TypeError, ValueError) as exc:
-            return _mcp_tool_error(rpc_id, 422, {"code": "invalid_params", "message": str(exc)})
-        return _mcp_tool_result(rpc_id, result)
-    return _json_rpc_error(rpc_id, -32601, "method not found")
 
 
+
+
+_mcp_endpoint_deps = mcp_endpoint_service.McpEndpointDeps(
+    require_project_access=_require_project_access,
+    json_rpc_error=_json_rpc_error,
+    mcp_tool_result=_mcp_tool_result,
+    mcp_tool_error=_mcp_tool_error,
+    mcp_tools=_mcp_tools,
+    runtime_args_with_resource_ref=_runtime_args_with_resource_ref,
+    runtime_remote_args=_runtime_remote_args,
+    agent_context=agent_context,
+    runtime_discover=_runtime_discover,
+    runtime_lookup=_runtime_lookup,
+    runtime_get_context_pack=_runtime_get_context_pack,
+    runtime_list_sources=_runtime_list_sources,
+    runtime_get_resource_map=_runtime_get_resource_map,
+    runtime_search=_runtime_search,
+    runtime_read_section=_runtime_read_section,
+    runtime_graph_overview=_runtime_graph_overview,
+    runtime_get_graph_inventory=_runtime_get_graph_inventory,
+    runtime_graph_query=_runtime_graph_query,
+    runtime_graph_path=_runtime_graph_path,
+    runtime_generate_skill_pack=_runtime_generate_skill_pack,
+    remote_search_code=remote_search_code,
+    remote_grep_code=remote_grep_code,
+    remote_read_file=remote_read_file,
+    remote_find_symbol=remote_find_symbol,
+    remote_code_rpc_spec=remote_code_rpc_spec,
+    runtime_help=_runtime_help,
+    remote_generate_patch=remote_generate_patch,
+    remote_open_pr=remote_open_pr,
+)
+_mcp_endpoint_action = mcp_endpoint_service.build_mcp_endpoint_action(_mcp_endpoint_deps)
 
 _mcp_context_router_deps = mcp_context_router.McpContextRouterDeps(
     mcp_endpoint_action=_mcp_endpoint_action,
