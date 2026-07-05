@@ -8,7 +8,7 @@ After the API router extraction train and CLI refactor train, `apps/api/sourcebr
 
 Current measured shape:
 
-- `apps/api/sourcebrief_api/main.py`: 2,842 lines / 135,977 bytes / 86 top-level functions
+- `apps/api/sourcebrief_api/main.py`: 2,505 lines / 112,242 bytes / 85 top-level functions
 - `packages/cli/sourcebrief_cli/main.py`: 236 lines / 9,564 bytes / 4 top-level functions
 - Route contract coverage: `tests/unit/test_api_route_contract.py` snapshots 131 recursive route signatures and untagged OpenAPI metadata for the already-extracted routers
 - Entrypoint growth guardrail: `tests/unit/test_entrypoint_size_guardrails.py` now caps API and CLI entrypoint line/function counts
@@ -54,7 +54,8 @@ These clusters remain in `main.py` because they share access-control helpers, SQ
    - Status: MCP endpoint JSON-RPC dispatch was extracted to `sourcebrief_api.services.mcp_endpoint` behind explicit dependency injection.
    - Status: runtime skill-pack generation wrapper was extracted to `sourcebrief_api.services.runtime_skill_packs` behind explicit dependency injection.
    - Status: runtime content helpers for list sources, context pack retrieval, and resource maps were extracted to `sourcebrief_api.services.runtime_content` behind explicit dependency injection.
-   - Still in `main.py`: DB-backed runtime tool implementations such as `_runtime_search`, `_runtime_read_section`, `_runtime_graph_overview`, and `_runtime_lookup`, because they still orchestrate SQLAlchemy graph queries, section/file reads, and remote-code/router calls.
+   - Status: graph overview, inventory, query, path, and target resolution actions were extracted to `sourcebrief_api.services.runtime_graphs` behind explicit dependency injection.
+   - Still in `main.py`: DB-backed runtime implementations such as `_runtime_search`, `_runtime_read_section`, and `_runtime_lookup`, because they still orchestrate SQLAlchemy full-text/file reads and remote-code/router calls.
    - Risk: this is the most coupled cluster. Continue with route/OpenAPI parity plus targeted MCP tool-list/tool-call tests.
 
 4. Context-packet action
@@ -67,7 +68,7 @@ Continue only with cohesive API service-boundary PRs, not one-route-per-issue ch
 
 1. Extract access/resource helper service while preserving `sourcebrief_api.main` compatibility aliases. (Core access helpers complete; `_validate_source_config` remains with resource config policy.)
 2. Extract agent-context synthesis helpers and move direct unit imports to the service module while keeping aliases. (Core pure helpers complete; response builders remain.)
-3. Extract MCP/runtime tool implementation as a single runtime service with explicit dependency injection. (Contract/schema helpers, endpoint dispatch, runtime content helpers, and skill-pack generation complete; graph/search/read/lookup actions remain.)
+3. Extract MCP/runtime tool implementation as a single runtime service with explicit dependency injection. (Contract/schema helpers, endpoint dispatch, runtime content helpers, graph helpers, and skill-pack generation complete; search/read/lookup actions remain.)
 4. Extract context-packet action after agent-context/runtime service boundaries are stable. (Complete; compatibility alias remains.)
 5. Tighten `tests/unit/test_entrypoint_size_guardrails.py` API limits after each service extraction.
 
