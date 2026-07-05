@@ -12,7 +12,6 @@ from uuid import UUID
 from fastapi import (
     HTTPException,
 )
-from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -34,10 +33,6 @@ from sourcebrief_api.constants import (
 )
 from sourcebrief_api.context_packs import (
     PACK_STATUS_PUBLISHED,
-)
-from sourcebrief_api.remote_code import (
-    line_range,
-    validate_repo_path,
 )
 from sourcebrief_api.retrieval import (
     RetrievalCandidate,
@@ -97,6 +92,7 @@ from sourcebrief_api.services import (
     mcp_runtime_contract,
     runtime_content,
     runtime_graphs,
+    runtime_query,
     runtime_skill_packs,
 )
 from sourcebrief_api.services import context_packets as context_packet_service
@@ -109,7 +105,6 @@ from sourcebrief_shared.models import (
     ContextArtifact,
     ContextArtifactCitation,
     ContextPackArtifact,
-    ContextPackResourceCoverage,
     ContextPackVersion,
     Graph,
     GraphMerge,
@@ -122,9 +117,7 @@ from sourcebrief_shared.models import (
     RepoAgent,
     Resource,
     RetrievalHit,
-    Section,
     SnapshotFile,
-    SnapshotSection,
     User,
     Workspace,
     WorkspaceMembership,
@@ -1933,33 +1926,8 @@ def _runtime_citation_locator(citation: ContextArtifactCitation) -> dict[str, An
     }
 
 
-def _runtime_snapshot_section_locator(snapshot_section: SnapshotSection, section: Section, file_row: SnapshotFile | None = None) -> dict[str, Any]:
-    return {
-        "resource_id": str(snapshot_section.version_resource_id),
-        "source_snapshot_id": str(snapshot_section.source_snapshot_id),
-        "snapshot_section_id": str(snapshot_section.id),
-        "path": snapshot_section.normalized_path,
-        "title": section.title,
-        "start_line": 1,
-        "end_line": file_row.line_count if file_row else None,
-        "content_hash": file_row.content_hash if file_row else None,
-    }
 
 
-def _runtime_require_pack_covers_locator(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any], *, resource_id: UUID, source_snapshot_id: UUID) -> None:
-    if not args.get("context_pack_key"):
-        return
-    pack_args = {"pack_key": args.get("context_pack_key"), "version": args.get("context_pack_version")}
-    version = _runtime_resolve_pack(session, workspace_id, project_id, principal, pack_args)
-    covered = session.scalar(
-        select(ContextPackResourceCoverage.id).where(
-            ContextPackResourceCoverage.context_pack_version_id == version.id,
-            ContextPackResourceCoverage.resource_id == resource_id,
-            ContextPackResourceCoverage.source_snapshot_id == source_snapshot_id,
-        )
-    )
-    if covered is None:
-        raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found in context pack"})
 
 
 def _resource_ref_values(resource_ref: Any = None, resource_refs: Any = None) -> list[str]:
@@ -2218,121 +2186,6 @@ def _runtime_get_resource_map(
 ) -> dict[str, Any]:
     return runtime_content.get_resource_map(session, workspace_id, project_id, principal, args, _runtime_content_deps)
 
-def _runtime_search(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
-    require_scope(principal, "project:query")
-    require_scope(principal, "resource:read")
-    query = str(args.get("query") or "").strip()
-    if not query:
-        raise HTTPException(status_code=422, detail={"code": "invalid_query", "message": "query is required"})
-    top_k = _runtime_limit(args.get("top_k"), default=8, max_value=50)
-    requested_resource_ids = [UUID(str(value)) for value in args.get("resource_ids") or []]
-    pack_version = None
-    snapshot_ids: list[UUID] = []
-    if args.get("context_pack_key"):
-        pack_args = {"pack_key": args.get("context_pack_key"), "version": args.get("context_pack_version")}
-        pack_version = _runtime_resolve_pack(session, workspace_id, project_id, principal, pack_args)
-        coverage = list(session.scalars(select(ContextPackResourceCoverage).where(ContextPackResourceCoverage.context_pack_version_id == pack_version.id)))
-        if requested_resource_ids:
-            requested_set = set(requested_resource_ids)
-            coverage = [row for row in coverage if row.resource_id in requested_set]
-        requested_resource_ids = [row.resource_id for row in coverage]
-        snapshot_ids = [row.source_snapshot_id for row in coverage]
-        if not requested_resource_ids:
-            return {"query": query, "profile": args.get("profile") or "hybrid", "hits": [], "freshness": _runtime_freshness("current")}
-    effective_resource_ids = _effective_resource_ids(principal, requested_resource_ids or None)
-    if _is_empty_scope(effective_resource_ids):
-        return {"query": query, "profile": args.get("profile") or "hybrid", "hits": [], "freshness": _runtime_freshness("current")}
-    resource_clause = ""
-    snapshot_clause = ""
-    params: dict[str, Any] = {"ws": str(workspace_id), "proj": str(project_id), "q": query, "k": top_k}
-    if effective_resource_ids:
-        resource_clause = "AND c.resource_id = ANY(CAST(:rids AS uuid[]))"
-        params["rids"] = [str(rid) for rid in effective_resource_ids]
-    if snapshot_ids:
-        snapshot_clause = "AND c.source_snapshot_id = ANY(CAST(:sids AS uuid[]))"
-        params["sids"] = [str(sid) for sid in snapshot_ids]
-    rows = session.execute(text(f"""
-        SELECT c.resource_id, c.source_snapshot_id, c.path, c.title, c.ordinal, c.content_hash, c.content,
-               s.version, s.version_kind, s.metadata AS snap_meta,
-               ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', :q)) AS score
-        FROM chunks c
-        JOIN source_snapshots s ON s.id = c.source_snapshot_id
-        JOIN resources r ON r.id = c.resource_id
-        WHERE c.workspace_id = CAST(:ws AS uuid)
-          AND c.project_id = CAST(:proj AS uuid)
-          AND c.deleted_at IS NULL
-          AND r.deleted_at IS NULL
-          AND r.archived_at IS NULL
-          AND r.retrieval_enabled = true
-          {resource_clause}
-          {snapshot_clause}
-          AND to_tsvector('english', c.content) @@ plainto_tsquery('english', :q)
-        ORDER BY score DESC, c.resource_id, c.ordinal ASC
-        LIMIT :k
-        """), params).mappings().all()
-    hits: list[dict[str, Any]] = []
-    for row in rows:
-        resource = session.scalar(select(Resource).where(Resource.id == row["resource_id"]))
-        if resource is None or not token_allows_resource(principal, resource.id):
-            continue
-        section_row = session.execute(select(SnapshotSection, Section).join(Section, SnapshotSection.section_id == Section.id).where(SnapshotSection.source_snapshot_id == row["source_snapshot_id"], SnapshotSection.version_resource_id == row["resource_id"], SnapshotSection.normalized_path == row["path"]).order_by(SnapshotSection.ordinal.asc()).limit(1)).first()
-        snapshot_section_id = section_row[0].id if section_row else None
-        snap_meta = row["snap_meta"] if isinstance(row["snap_meta"], dict) else {}
-        locator = {"resource_id": str(row["resource_id"]), "source_snapshot_id": str(row["source_snapshot_id"]), "snapshot_section_id": str(snapshot_section_id) if snapshot_section_id else None, "context_pack_key": pack_version.pack_key if pack_version else None, "context_pack_version": pack_version.version if pack_version else None, "path": row["path"], "title": row["title"], "start_line": 1, "end_line": None, "content_hash": row["content_hash"]}
-        hits.append({**locator, "snippet": _make_snippet(row["content"]), "score": float(row["score"]), "version": row["version"], "version_kind": row["version_kind"], "commit": snap_meta.get("commit"), "freshness": _runtime_freshness("current", resources=[_runtime_resource_freshness(session, resource, row["source_snapshot_id"])])})
-    return {"query": query, "profile": args.get("profile") or "hybrid", "hits": hits, "freshness": _runtime_freshness("current")}
-
-
-def _runtime_read_section(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
-    require_scope(principal, "project:query")
-    require_scope(principal, "resource:read")
-    resource_id_arg = args.get("resource_id")
-    if not resource_id_arg:
-        raise HTTPException(status_code=422, detail={"code": "missing_resource_locator", "message": "provide resource_id or resource_ref with the section locator"})
-    resource_id = UUID(str(resource_id_arg))
-    resource = session.scalar(select(Resource).where(Resource.id == resource_id, Resource.workspace_id == workspace_id, Resource.project_id == project_id))
-    if resource is None:
-        raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
-    _runtime_resource_allowed_or_404(principal, resource.id)
-    citation = None
-    snapshot_section = None
-    section = None
-    if args.get("context_artifact_citation_id"):
-        citation = session.scalar(select(ContextArtifactCitation).where(ContextArtifactCitation.id == UUID(str(args["context_artifact_citation_id"])), ContextArtifactCitation.workspace_id == workspace_id, ContextArtifactCitation.project_id == project_id, ContextArtifactCitation.resource_id == resource.id))
-        if citation is None:
-            raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
-        snapshot_section = session.scalar(select(SnapshotSection).where(SnapshotSection.id == citation.snapshot_section_id))
-    elif args.get("snapshot_section_id") and args.get("source_snapshot_id"):
-        snapshot_section = session.scalar(select(SnapshotSection).where(SnapshotSection.id == UUID(str(args["snapshot_section_id"])), SnapshotSection.source_snapshot_id == UUID(str(args["source_snapshot_id"])), SnapshotSection.version_resource_id == resource.id, SnapshotSection.workspace_id == workspace_id, SnapshotSection.project_id == project_id))
-    elif args.get("source_snapshot_id") and args.get("path") and args.get("content_hash"):
-        path = validate_repo_path(str(args["path"]))
-        file_row = session.scalar(select(SnapshotFile).where(SnapshotFile.resource_id == resource.id, SnapshotFile.source_snapshot_id == UUID(str(args["source_snapshot_id"])), SnapshotFile.path == path, SnapshotFile.content_hash == str(args["content_hash"]), SnapshotFile.deleted_at.is_(None)))
-        if file_row is None:
-            raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
-        _runtime_require_pack_covers_locator(session, workspace_id, project_id, principal, args, resource_id=resource.id, source_snapshot_id=file_row.source_snapshot_id)
-        content, start, end, total, truncated = line_range(file_row.content, int(args.get("start_line") or 1), int(args.get("end_line") or min(file_row.line_count, 500)))
-        return {"locator": {"resource_id": str(resource.id), "source_snapshot_id": str(file_row.source_snapshot_id), "path": file_row.path, "start_line": start, "end_line": end, "content_hash": file_row.content_hash}, "resource": {"resource_id": str(resource.id), "name": resource.name, "type": resource.type}, "section": {"title": args.get("heading"), "path": file_row.path, "start_line": start, "end_line": end, "total_lines": total}, "content": content[:20000], "freshness": _runtime_freshness("current", resources=[_runtime_resource_freshness(session, resource, file_row.source_snapshot_id)]), "truncated": truncated or len(content) > 20000}
-    elif args.get("allow_current_fallback") and args.get("path") and resource.current_snapshot_id:
-        path = validate_repo_path(str(args["path"]))
-        file_row = session.scalar(select(SnapshotFile).where(SnapshotFile.resource_id == resource.id, SnapshotFile.source_snapshot_id == resource.current_snapshot_id, SnapshotFile.path == path, SnapshotFile.deleted_at.is_(None)))
-        if file_row is None:
-            raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
-        _runtime_require_pack_covers_locator(session, workspace_id, project_id, principal, args, resource_id=resource.id, source_snapshot_id=file_row.source_snapshot_id)
-        content, start, end, total, truncated = line_range(file_row.content, int(args.get("start_line") or 1), int(args.get("end_line") or min(file_row.line_count, 500)))
-        return {"locator": {"resource_id": str(resource.id), "source_snapshot_id": str(file_row.source_snapshot_id), "path": file_row.path, "start_line": start, "end_line": end, "content_hash": file_row.content_hash}, "resource": {"resource_id": str(resource.id), "name": resource.name, "type": resource.type}, "section": {"title": args.get("heading"), "path": file_row.path, "start_line": start, "end_line": end, "total_lines": total}, "content": content[:20000], "freshness": _runtime_freshness("current", resources=[_runtime_resource_freshness(session, resource, file_row.source_snapshot_id)]), "truncated": truncated or len(content) > 20000}
-    else:
-        raise HTTPException(status_code=422, detail={"code": "ambiguous_section", "message": "provide a pinned snapshot_section_id, context_artifact_citation_id, or exact source_snapshot/path/content_hash locator"})
-    if snapshot_section is None:
-        raise HTTPException(status_code=404, detail={"code": "section_not_found", "message": "section not found"})
-    section = session.scalar(select(Section).where(Section.id == snapshot_section.section_id))
-    file_row = session.scalar(select(SnapshotFile).where(SnapshotFile.resource_id == resource.id, SnapshotFile.source_snapshot_id == snapshot_section.source_snapshot_id, SnapshotFile.path == snapshot_section.normalized_path, SnapshotFile.deleted_at.is_(None)))
-    if file_row is None or file_row.is_binary:
-        raise HTTPException(status_code=404, detail={"code": "section_content_unavailable", "message": "retained section content is unavailable"})
-    _runtime_require_pack_covers_locator(session, workspace_id, project_id, principal, args, resource_id=resource.id, source_snapshot_id=snapshot_section.source_snapshot_id)
-    content, start, end, total, truncated = line_range(file_row.content, int(args.get("start_line") or citation.line_start if citation and citation.line_start else 1), int(args.get("end_line") or citation.line_end if citation and citation.line_end else min(file_row.line_count, 500)))
-    locator = _runtime_citation_locator(citation) if citation else _runtime_snapshot_section_locator(snapshot_section, section, file_row)  # type: ignore[arg-type]
-    locator.update({"start_line": start, "end_line": end})
-    return {"locator": locator, "resource": {"resource_id": str(resource.id), "name": resource.name, "type": resource.type}, "section": {"title": section.title if section else citation.title if citation else None, "path": file_row.path, "start_line": start, "end_line": end, "total_lines": total}, "content": content[:20000], "freshness": _runtime_freshness("current", resources=[_runtime_resource_freshness(session, resource, snapshot_section.source_snapshot_id)]), "truncated": truncated or len(content) > 20000}
 
 
 
@@ -2345,90 +2198,6 @@ def _runtime_read_section(session: Session, workspace_id: UUID, project_id: UUID
 
 
 
-def _runtime_lookup(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
-    query = str(args.get("query") or "").strip()
-    if not query:
-        raise HTTPException(status_code=422, detail={"code": "invalid_query", "message": "query is required"})
-    search_in = str(args.get("search_in") or args.get("kind") or "all")
-    base_args = _runtime_args_with_resource_ref(session, workspace_id, project_id, principal, args, single=False)
-    if search_in == "docs":
-        return {"mode": "docs", "docs": _runtime_search(session, workspace_id, project_id, principal, base_args)}
-    if search_in == "code":
-        code_args = _runtime_remote_args(base_args, {"query", "resource_ids", "top_k", "cursor"})
-        return {"mode": "code", "code": jsonable_encoder(remote_search_code(workspace_id, project_id, RemoteSearchCodeRequest(**code_args), principal, session))}
-    if search_in == "grep":
-        grep_args = _runtime_remote_args(base_args, {"pattern", "resource_ids", "path_glob", "max_matches", "cursor", "regex", "context_lines"})
-        grep_args.setdefault("pattern", query)
-        return {"mode": "grep", "grep": jsonable_encoder(remote_grep_code(workspace_id, project_id, RemoteGrepCodeRequest(**grep_args), principal, session))}
-    if search_in == "symbols":
-        symbol_args = _runtime_remote_args(base_args, {"name", "kind", "resource_ids", "top_k"})
-        symbol_args.setdefault("name", query)
-        return {"mode": "symbols", "symbols": jsonable_encoder(remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**symbol_args), principal, session))}
-    if search_in != "all":
-        raise HTTPException(status_code=422, detail={"code": "invalid_lookup_mode", "message": "search_in must be one of all, docs, code, grep, symbols"})
-    docs = _runtime_search(session, workspace_id, project_id, principal, base_args)
-    if not _runtime_has_scope(principal, "code:read"):
-        return {
-            "mode": "all",
-            "docs": docs,
-            "code": None,
-            "symbols": None,
-            "warnings": [
-                {
-                    "code": "code_read_not_authorized",
-                    "message": "Token lacks code:read; returning docs results only. Use search_in='docs' for docs-only lookup or mint a read-code runtime token for code/symbols.",
-                }
-            ],
-            "next_steps": [{"name": "sourcebrief.read_section", "reason": "Read a cited docs hit exactly before making claims."}],
-        }
-    code_args = _runtime_remote_args(base_args, {"query", "resource_ids", "top_k", "cursor"})
-    code_args.setdefault("top_k", min(int(base_args.get("top_k") or 5), 10))
-    symbols_args = _runtime_remote_args(base_args, {"name", "kind", "resource_ids", "top_k"})
-    symbols_args.setdefault("name", query)
-    symbols_args.setdefault("top_k", 10)
-    warnings: list[dict[str, Any]] = []
-    code: dict[str, Any] | None = None
-    try:
-        code = jsonable_encoder(remote_search_code(workspace_id, project_id, RemoteSearchCodeRequest(**code_args), principal, session))
-    except HTTPException as exc:
-        warning = _lookup_soft_warning(exc, facet="code")
-        if warning is None:
-            raise
-        warnings.append(warning)
-    symbols = jsonable_encoder(remote_find_symbol(workspace_id, project_id, RemoteFindSymbolRequest(**symbols_args), principal, session))
-    next_steps = [
-        {"name": "sourcebrief.read_section", "reason": "Read a cited docs hit exactly before making claims."},
-        {"name": "sourcebrief.read_file", "reason": "Read a code hit exactly by resource_ref/resource_id and path."},
-    ]
-    if warnings:
-        next_steps.insert(
-            1,
-            {
-                "name": "sourcebrief.grep_code",
-                "reason": "For large repos, retry code drilldown with a cited path_glob instead of broad search.",
-            },
-        )
-    response: dict[str, Any] = {
-        "mode": "all",
-        "docs": docs,
-        "code": code,
-        "symbols": symbols,
-        "next_steps": next_steps,
-    }
-    if warnings:
-        response["warnings"] = warnings
-    return response
-
-
-def _runtime_discover(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "sources": _runtime_list_sources(session, workspace_id, project_id, principal, args),
-        "architecture": _runtime_graph_overview(session, workspace_id, project_id, principal, {"max_resources": args.get("max_resources") or 20, "max_items": args.get("max_items") or 20}),
-        "next_steps": [
-            {"name": "sourcebrief.ask", "reason": "Ask a cited project question after choosing a source scope."},
-            {"name": "sourcebrief.lookup", "reason": "Search docs/code/symbols with an optional human resource_ref."},
-        ],
-    }
 
 
 
@@ -2441,6 +2210,96 @@ def _runtime_discover(session: Session, workspace_id: UUID, project_id: UUID, pr
 
 
 
+
+
+
+
+
+
+_runtime_query_deps = runtime_query.RuntimeQueryDeps(
+    runtime_limit=_runtime_limit,
+    runtime_resolve_pack=_runtime_resolve_pack,
+    effective_resource_ids=_effective_resource_ids,
+    is_empty_scope=_is_empty_scope,
+    runtime_freshness=_runtime_freshness,
+    runtime_resource_freshness=_runtime_resource_freshness,
+    make_snippet=_make_snippet,
+    runtime_resource_allowed_or_404=_runtime_resource_allowed_or_404,
+    runtime_citation_locator=_runtime_citation_locator,
+    runtime_args_with_resource_ref=_runtime_args_with_resource_ref,
+    runtime_remote_args=_runtime_remote_args,
+    runtime_has_scope=_runtime_has_scope,
+    lookup_soft_warning=_lookup_soft_warning,
+    runtime_list_sources=_runtime_list_sources,
+    runtime_graph_overview=_runtime_graph_overview,
+    remote_search_code=remote_search_code,
+    remote_grep_code=remote_grep_code,
+    remote_find_symbol=remote_find_symbol,
+)
+
+_runtime_snapshot_section_locator = runtime_query.snapshot_section_locator
+
+
+def _runtime_require_pack_covers_locator(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    args: dict[str, Any],
+    *,
+    resource_id: UUID,
+    source_snapshot_id: UUID,
+) -> None:
+    return runtime_query.require_pack_covers_locator(
+        session,
+        workspace_id,
+        project_id,
+        principal,
+        args,
+        _runtime_query_deps,
+        resource_id=resource_id,
+        source_snapshot_id=source_snapshot_id,
+    )
+
+
+def _runtime_search(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return runtime_query.search(session, workspace_id, project_id, principal, args, _runtime_query_deps)
+
+
+def _runtime_read_section(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return runtime_query.read_section(session, workspace_id, project_id, principal, args, _runtime_query_deps)
+
+
+def _runtime_lookup(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return runtime_query.lookup(session, workspace_id, project_id, principal, args, _runtime_query_deps)
+
+
+def _runtime_discover(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return runtime_query.discover(session, workspace_id, project_id, principal, args, _runtime_query_deps)
 
 _runtime_skill_pack_deps = runtime_skill_packs.RuntimeSkillPackDeps(
     resolve_pack_version=_resolve_pack_version,
