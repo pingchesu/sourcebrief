@@ -8,7 +8,7 @@ After the API router extraction train and CLI refactor train, `apps/api/sourcebr
 
 Current measured shape:
 
-- `apps/api/sourcebrief_api/main.py`: 1,405 lines / 47,042 bytes / 67 top-level functions
+- `apps/api/sourcebrief_api/main.py`: 1,319 lines / 44,428 bytes / 56 top-level functions
 - `packages/cli/sourcebrief_cli/main.py`: 236 lines / 9,564 bytes / 4 top-level functions
 - Route contract coverage: `tests/unit/test_api_route_contract.py` snapshots 131 recursive route signatures and untagged OpenAPI metadata for the already-extracted routers
 - Entrypoint growth guardrail: `tests/unit/test_entrypoint_size_guardrails.py` now caps API and CLI entrypoint line/function counts
@@ -31,7 +31,7 @@ The following API route families already live under focused router modules and a
 - context-pack and skill-export routes
 - repo-agent routes
 - graph and graph-merge routes
-- remote-code routes
+- remote-code routes (route handlers plus compatibility action aliases live outside `main.py`)
 - agent-context card-summary routes
 - retrieval-eval routes
 - runtime-agent/agent-pack routes
@@ -60,7 +60,10 @@ These clusters remain in `main.py` because they share access-control helpers, SQ
    - Status: pack-backed and default response builders were extracted to `sourcebrief_api.services.agent_context_builders` behind explicit dependency injection.
    - Still in `main.py`: thin agent-context compatibility wrappers and dependency objects for router/retrieval-eval wiring.
 
-6. MCP/runtime tool implementation
+6. Remote-code compatibility actions
+   - Status: remote-code route action compatibility wrappers were extracted to `sourcebrief_api.services.remote_code_actions`; `main.py` keeps direct aliases for old private imports and MCP dependency wiring.
+
+7. MCP/runtime tool implementation
    - Status: MCP contract helpers, tool schema list, JSON-RPC result/error helpers, scope/remote-arg helpers, and runtime help text were extracted to `sourcebrief_api.services.mcp_runtime_contract`; `main.py` keeps compatibility aliases.
    - Status: MCP endpoint JSON-RPC dispatch was extracted to `sourcebrief_api.services.mcp_endpoint` behind explicit dependency injection.
    - Status: runtime skill-pack generation wrapper was extracted to `sourcebrief_api.services.runtime_skill_packs` behind explicit dependency injection.
@@ -71,7 +74,7 @@ These clusters remain in `main.py` because they share access-control helpers, SQ
    - Still in `main.py`: thin runtime compatibility wrappers and dependency objects for MCP/router wiring.
    - Risk: this is the most coupled cluster. Continue with route/OpenAPI parity plus targeted MCP tool-list/tool-call tests.
 
-7. Context-packet action
+8. Context-packet action
    - Status: `_create_context_packet_action` was extracted to `sourcebrief_api.services.context_packets`; `main.py` keeps a compatibility alias for router injection.
    - Risk: future changes still need retrieval/query-run persistence tests because the service owns query-run, retrieval-hit, context-packet item, and audit-event writes.
 
