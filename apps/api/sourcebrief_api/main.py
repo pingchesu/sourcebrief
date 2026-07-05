@@ -17,7 +17,6 @@ from sourcebrief_api import agent_files, agent_packs, git_env, runtime_install
 from sourcebrief_api.app_factory import cors_origins, create_app, run_migrations_if_requested
 from sourcebrief_api.auth import (
     Principal,
-    hash_password,
     require_scope,
     token_allows_resource,
 )
@@ -80,6 +79,7 @@ from sourcebrief_api.services import (
     agent_context_builders,
     agent_context_runtime,
     agent_context_usage,
+    bootstrap_admin,
     mcp_runtime_contract,
     repo_agent_brief,
     resource_purge,
@@ -91,8 +91,6 @@ from sourcebrief_api.services import (
 from sourcebrief_api.services import context_packets as context_packet_service
 from sourcebrief_api.services import mcp_endpoint as mcp_endpoint_service
 from sourcebrief_api.services import source_config as source_config_service
-from sourcebrief_shared.config import get_settings
-from sourcebrief_shared.db import get_sessionmaker
 from sourcebrief_shared.embeddings import current_embedding_config
 from sourcebrief_shared.models import (
     AgentProfile,
@@ -104,12 +102,8 @@ from sourcebrief_shared.models import (
     GraphMergeVersion,
     GraphVersion,
     Project,
-    ProjectMembership,
     RepoAgent,
     Resource,
-    User,
-    Workspace,
-    WorkspaceMembership,
 )
 from sourcebrief_worker.ingestion import sanitize_remote_url
 
@@ -297,97 +291,17 @@ def _sanitize_metadata_text(value: str | None) -> str:
 
 
 
+
+
+
+_bootstrap_admin_deps = bootstrap_admin.default_bootstrap_admin_deps(
+    normalize_email=_normalize_email,
+    ensure_agent_profile=_ensure_agent_profile,
+)
+
+
 def _bootstrap_default_admin() -> None:
-    settings = get_settings()
-    if not settings.admin_email or not settings.admin_password:
-        return
-    if settings.admin_password in {"change-me-before-compose-up", "sourcebrief-admin"}:
-        raise RuntimeError("SOURCEBRIEF_ADMIN_PASSWORD must be changed from the sample/default value before startup")
-    SessionLocal = get_sessionmaker()
-    with SessionLocal() as session:
-        email = _normalize_email(settings.admin_email)
-        admin = session.scalar(select(User).where(User.email == email))
-        if admin is None:
-            admin = User(
-                email=email,
-                display_name=settings.admin_display_name,
-                password_hash=hash_password(settings.admin_password),
-                is_active=True,
-                is_platform_admin=True,
-            )
-            session.add(admin)
-            session.flush()
-        if not admin.display_name or admin.display_name == "ContextSmith Admin":
-            admin.display_name = settings.admin_display_name
-        admin.password_hash = hash_password(settings.admin_password)
-        admin.is_active = True
-        admin.is_platform_admin = True
-
-        workspace = session.scalar(select(Workspace).where(Workspace.slug == settings.bootstrap_workspace_slug))
-        if workspace is None and settings.bootstrap_workspace_slug == "sourcebrief":
-            legacy_workspace = session.scalar(select(Workspace).where(Workspace.slug == "contextsmith"))
-            if legacy_workspace is not None and legacy_workspace.name == "ContextSmith":
-                legacy_workspace.name = settings.bootstrap_workspace_name
-                legacy_workspace.slug = settings.bootstrap_workspace_slug
-                workspace = legacy_workspace
-        if workspace is None:
-            workspace = Workspace(name=settings.bootstrap_workspace_name, slug=settings.bootstrap_workspace_slug)
-            session.add(workspace)
-            session.flush()
-        elif workspace.name == "ContextSmith" and settings.bootstrap_workspace_name == "SourceBrief":
-            workspace.name = settings.bootstrap_workspace_name
-        membership = session.scalar(
-            select(WorkspaceMembership).where(
-                WorkspaceMembership.workspace_id == workspace.id,
-                WorkspaceMembership.user_id == admin.id,
-            )
-        )
-        if membership is None:
-            session.add(WorkspaceMembership(workspace_id=workspace.id, user_id=admin.id, role="owner"))
-        elif membership.role not in {"owner", "admin"}:
-            membership.role = "owner"
-
-        project = session.scalar(
-            select(Project).where(
-                Project.workspace_id == workspace.id,
-                Project.name == settings.bootstrap_project_name,
-                Project.deleted_at.is_(None),
-            )
-        )
-        if project is None:
-            project = Project(
-                workspace_id=workspace.id,
-                name=settings.bootstrap_project_name,
-                description="Bootstrap project for the initial SourceBrief console.",
-                created_by=admin.id,
-            )
-            session.add(project)
-            session.flush()
-        elif project.description == "Bootstrap project for the initial ContextSmith console.":
-            project.description = "Bootstrap project for the initial SourceBrief console."
-        project_membership = session.scalar(
-            select(ProjectMembership).where(
-                ProjectMembership.project_id == project.id,
-                ProjectMembership.user_id == admin.id,
-            )
-        )
-        if project_membership is None:
-            session.add(
-                ProjectMembership(
-                    workspace_id=workspace.id,
-                    project_id=project.id,
-                    user_id=admin.id,
-                    role="owner",
-                )
-            )
-        elif project_membership.role not in {"owner", "admin"}:
-            project_membership.role = "owner"
-        _ensure_agent_profile(session, workspace.id, project, admin.id)
-        try:
-            session.commit()
-        except IntegrityError:
-            session.rollback()
-
+    return bootstrap_admin.bootstrap_default_admin(_bootstrap_admin_deps)
 
 def _tool_policy_patch_generation_enabled(profile: AgentProfile | None) -> bool:
     policy = cast(dict[str, Any], profile.tool_policy if profile is not None else {})
