@@ -24,9 +24,7 @@ from sourcebrief_api.auth import (
     token_allows_resource,
 )
 from sourcebrief_api.constants import (
-    COMMON_AGENT_INSTRUCTION,
     FOLDER_BUNDLE_RESOURCE_TYPES,
-    RUNTIME_INSTRUCTIONS,
     UPLOAD_RESOURCE_TYPES,
     URL_RESOURCE_TYPES,
 )
@@ -63,7 +61,6 @@ from sourcebrief_api.schemas import (
     AgentContextRequest,
     AgentContextResponse,
     CodeSearchRequest,
-    CodeSymbolHit,
     GeneratePatchRequest,
     GitResourceEnvRead,
     GraphMergeReviewRequest,
@@ -1452,6 +1449,11 @@ _agent_context_builder_deps = agent_context_builders.AgentContextBuilderDeps(
     principal_has_scope=_principal_has_scope,
     synthesize_agent_answer=_synthesize_agent_answer,
     agent_context_suggested_tool_calls=_agent_context_suggested_tool_calls,
+    normalize_retrieval_profile=normalize_retrieval_profile,
+    retrieve_context_candidates=retrieve_context_candidates,
+    code_search_project=code_search_project,
+    record_agent_context_usage=_record_agent_context_usage,
+    agent_context_retrieval_metadata=_agent_context_retrieval_metadata,
 )
 
 
@@ -1474,6 +1476,10 @@ def _build_pack_agent_context_response(
         deps=_agent_context_builder_deps,
     )
 
+
+
+
+
 def _build_agent_context_response(
     session: Session,
     *,
@@ -1482,129 +1488,14 @@ def _build_agent_context_response(
     payload: AgentContextRequest,
     principal: Principal,
 ) -> AgentContextResponse:
-    retrieval_profile = normalize_retrieval_profile(payload.profile)
-    candidates = retrieve_context_candidates(
-        session,
-        workspace_id=workspace_id,
-        project_id=project_id,
-        query=payload.query,
-        top_k=payload.top_k,
-        resource_ids=payload.resource_ids,
-        profile=retrieval_profile.name,
-    )
-    citations: list[AgentContextCitation] = []
-    context_parts: list[str] = []
-    used_candidates: list[RetrievalCandidate] = []
-    used_chars = 0
-    for rank, candidate in enumerate(candidates, start=1):
-        header = (
-            f"[{rank}] resource={candidate.resource_id} snapshot={candidate.snapshot_id} "
-            f"path={candidate.path or '-'} ordinal={candidate.ordinal} score={candidate.score:.4f}\n"
-        )
-        remaining = payload.max_chars - used_chars - (2 if context_parts else 0)
-        if remaining <= len(header):
-            break
-        snippet = make_snippet(candidate.content, limit=min(1200, max(120, remaining - len(header))))
-        entry = header + snippet
-        if len(entry) > remaining:
-            entry = entry[:remaining]
-        if not entry.strip():
-            break
-        context_parts.append(entry)
-        used_candidates.append(candidate)
-        used_chars += len(entry) + (2 if len(context_parts) > 1 else 0)
-        citations.append(
-            AgentContextCitation(
-                resource_id=candidate.resource_id,
-                snapshot_id=candidate.snapshot_id,
-                chunk_id=candidate.chunk_id,
-                path=candidate.path,
-                title=candidate.title,
-                ordinal=candidate.ordinal,
-                content_hash=candidate.content_hash,
-                version=candidate.version,
-                version_kind=candidate.version_kind,
-                commit=candidate.snapshot_metadata.get("commit"),
-                score=candidate.score,
-                graph_score=candidate.graph_score,
-                score_components=candidate.ranking_diagnostics or {},
-            )
-        )
-    symbols: list[CodeSymbolHit] = []
-    can_read_code = _principal_has_scope(principal, "code:read")
-    code_symbol_warning: str | None = None
-    if payload.include_code_symbols and can_read_code:
-        symbol_response = code_search_project(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            payload=CodeSearchRequest(query=payload.query, resource_ids=payload.resource_ids, limit=min(payload.top_k, 20)),
-            principal=principal,
-            session=session,
-        )
-        symbols = symbol_response.symbols
-    elif payload.include_code_symbols:
-        code_symbol_warning = "code symbols omitted: missing required scope code:read"
-    profile = session.scalar(
-        select(AgentProfile).where(
-            AgentProfile.workspace_id == workspace_id,
-            AgentProfile.project_id == project_id,
-        )
-    )
-    actual_runtime = payload.runtime or (profile.default_runtime if profile else "api")
-    resource_coverage, coverage_warnings = _agent_context_resource_coverage(
-        session,
-        workspace_id=workspace_id,
-        project_id=project_id,
-        resource_ids=payload.resource_ids,
-        citations=citations,
-        principal=principal,
-    )
-    if code_symbol_warning:
-        coverage_warnings = [*coverage_warnings, code_symbol_warning]
-    instruction_parts = [COMMON_AGENT_INSTRUCTION, RUNTIME_INSTRUCTIONS[actual_runtime]]
-    if coverage_warnings:
-        instruction_parts.append("Coverage warning: " + " ".join(coverage_warnings))
-    if profile and profile.system_prompt:
-        instruction_parts.append(profile.system_prompt)
-    _record_agent_context_usage(
+    return agent_context_builders.build_agent_context_response(
         session,
         workspace_id=workspace_id,
         project_id=project_id,
         payload=payload,
         principal=principal,
-        candidates=used_candidates,
+        deps=_agent_context_builder_deps,
     )
-    return AgentContextResponse(
-        query=payload.query,
-        profile=retrieval_profile.name,
-        runtime=actual_runtime,
-        instruction=" ".join(instruction_parts),
-        context="\n\n".join(context_parts),
-        answer=(
-            _synthesize_agent_answer(
-                query=payload.query,
-                context_parts=context_parts,
-                citations=citations,
-                resource_coverage=resource_coverage,
-                coverage_warnings=coverage_warnings,
-            )
-            if payload.include_answer
-            else None
-        ),
-        citations=citations,
-        symbols=symbols,
-        suggested_tool_calls=_agent_context_suggested_tool_calls(citations, payload.query, include_code_tools=can_read_code),
-        token_budget_hint=max(1, payload.max_chars // 4),
-        resource_coverage=resource_coverage,
-        coverage_warnings=coverage_warnings,
-        retrieval_metadata={
-            **_agent_context_retrieval_metadata(used_candidates, payload.resource_ids),
-            "code_symbols_requested": payload.include_code_symbols,
-            "code_symbols_returned": len(symbols),
-            "code_symbols_omitted_reason": "missing_scope:code:read" if code_symbol_warning else None,
-        },
-    )
-
 
 _agent_card_summary_read = agent_context_router.agent_card_summary_read
 
