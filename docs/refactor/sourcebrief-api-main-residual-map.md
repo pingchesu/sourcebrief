@@ -8,7 +8,7 @@ After the API router extraction train and CLI refactor train, `apps/api/sourcebr
 
 Current measured shape:
 
-- `apps/api/sourcebrief_api/main.py`: 2,259 lines / 91,128 bytes / 84 top-level functions
+- `apps/api/sourcebrief_api/main.py`: 2,182 lines / 87,085 bytes / 84 top-level functions
 - `packages/cli/sourcebrief_cli/main.py`: 236 lines / 9,564 bytes / 4 top-level functions
 - Route contract coverage: `tests/unit/test_api_route_contract.py` snapshots 131 recursive route signatures and untagged OpenAPI metadata for the already-extracted routers
 - Entrypoint growth guardrail: `tests/unit/test_entrypoint_size_guardrails.py` now caps API and CLI entrypoint line/function counts
@@ -48,7 +48,8 @@ These clusters remain in `main.py` because they share access-control helpers, SQ
 2. Agent-context synthesis and coverage helpers
    - Status: answer synthesis, citation-use selection, retrieval metadata, caveat/budget helpers, and unsupported-claim detection were extracted to `sourcebrief_api.services.agent_context_runtime`; `main.py` keeps compatibility aliases.
    - Status: usage persistence and resource-coverage helpers were extracted to `sourcebrief_api.services.agent_context_usage` behind explicit dependency injection.
-   - Still in `main.py`: full response builders `_build_agent_context_response` and `_build_pack_agent_context_response`, because they still orchestrate SQLAlchemy retrieval, code-search, and Context Pack queries.
+   - Status: pack-backed response builder was extracted to `sourcebrief_api.services.agent_context_builders` behind explicit dependency injection.
+   - Still in `main.py`: default response builder `_build_agent_context_response`, because it still orchestrates SQLAlchemy retrieval and code-search.
 
 3. MCP/runtime tool implementation
    - Status: MCP contract helpers, tool schema list, JSON-RPC result/error helpers, scope/remote-arg helpers, and runtime help text were extracted to `sourcebrief_api.services.mcp_runtime_contract`; `main.py` keeps compatibility aliases.
