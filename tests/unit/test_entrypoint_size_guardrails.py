@@ -12,8 +12,8 @@ ENTRYPOINT_LIMITS = {
         "destination": "packages/cli/sourcebrief_cli/commands/ or focused CLI support modules",
     },
     "apps/api/sourcebrief_api/main.py": {
-        "max_lines": 1410,
-        "max_top_level_functions": 70,
+        "max_lines": 1320,
+        "max_top_level_functions": 60,
         "destination": "apps/api/sourcebrief_api/routers/, app_factory.py, or focused service/helper modules",
     },
 }

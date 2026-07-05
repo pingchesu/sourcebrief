@@ -49,24 +49,12 @@ from sourcebrief_api.schemas import (
     AgentContextCitation,
     AgentContextRequest,
     AgentContextResponse,
-    CodeSearchRequest,
-    GeneratePatchRequest,
     GitResourceEnvRead,
     GraphMergeReviewRequest,
-    OpenPrRequest,
-    RemoteFindSymbolRequest,
-    RemoteFindSymbolResponse,
-    RemoteGrepCodeRequest,
-    RemoteGrepCodeResponse,
-    RemoteReadFileRequest,
-    RemoteReadFileResponse,
-    RemoteSearchCodeRequest,
-    RemoteSearchCodeResponse,
     RepoAgentBriefRead,
     RuntimeInstallPlanCapability,
     RuntimeInstallPlanRequest,
     RuntimeInstallPlanResponse,
-    SearchRequest,
     SkillExportGenerateRequest,
     SkillExportRead,
     SkillExportReviewRequest,
@@ -78,6 +66,7 @@ from sourcebrief_api.services import (
     agent_context_usage,
     bootstrap_admin,
     mcp_runtime_contract,
+    remote_code_actions,
     repo_agent_brief,
     resource_purge,
     runtime_content,
@@ -724,115 +713,40 @@ _remote_code_router_deps = remote_code_router.RemoteCodeRouterDeps(
 )
 
 
-def remote_search_code(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: RemoteSearchCodeRequest,
-    principal: Principal,
-    session: Session,
-) -> RemoteSearchCodeResponse:
-    return remote_code_router.remote_search_code(workspace_id, project_id, payload, principal, session)
 
 
-def search_project(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: SearchRequest,
-    principal: Principal,
-    session: Session,
-) -> Any:
-    return remote_code_router.search_project(workspace_id, project_id, payload, principal, session)
 
 
-def code_search_project(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: CodeSearchRequest,
-    principal: Principal,
-    session: Session,
-) -> Any:
-    return remote_code_router.code_search_project(workspace_id, project_id, payload, principal, session)
 
 
-def remote_generate_patch(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: GeneratePatchRequest,
-    principal: Principal,
-    session: Session,
-) -> Any:
-    return remote_code_router.remote_generate_patch(workspace_id, project_id, payload, principal, session)
 
 
-def remote_open_pr(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: OpenPrRequest,
-    principal: Principal,
-    session: Session,
-) -> Any:
-    return remote_code_router.remote_open_pr(workspace_id, project_id, payload, principal, session)
 
 
-def remote_grep_code(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: RemoteGrepCodeRequest,
-    principal: Principal,
-    session: Session,
-) -> RemoteGrepCodeResponse:
-    return remote_code_router.remote_grep_code(workspace_id, project_id, payload, principal, session)
 
 
-def remote_read_file(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: RemoteReadFileRequest,
-    principal: Principal,
-    session: Session,
-) -> RemoteReadFileResponse:
-    return remote_code_router.remote_read_file(workspace_id, project_id, payload, principal, session)
 
 
-def remote_find_symbol(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: RemoteFindSymbolRequest,
-    principal: Principal,
-    session: Session,
-) -> RemoteFindSymbolResponse:
-    return remote_code_router.remote_find_symbol(workspace_id, project_id, payload, principal, session)
 
 
-def _execute_remote_code_rpc_call(
-    workspace_id: UUID,
-    project_id: UUID,
-    call_method: str,
-    params: dict[str, Any],
-    principal: Principal,
-    session: Session,
-) -> dict[str, Any]:
-    return remote_code_router._execute_remote_code_rpc_call(workspace_id, project_id, call_method, params, principal, session)
 
 
-def remote_code_rpc_spec(
-    workspace_id: UUID,
-    project_id: UUID,
-    principal: Principal,
-    session: Session,
-) -> Any:
-    return remote_code_router.remote_code_rpc_spec(workspace_id, project_id, principal, session)
 
 
-def remote_code_rpc(
-    workspace_id: UUID,
-    project_id: UUID,
-    payload: Any,
-    principal: Principal,
-    session: Session,
-) -> Any:
-    return remote_code_router.remote_code_rpc(workspace_id, project_id, payload, principal, session)
 
+
+
+remote_search_code = remote_code_actions.remote_search_code
+search_project = remote_code_actions.search_project
+code_search_project = remote_code_actions.code_search_project
+remote_generate_patch = remote_code_actions.remote_generate_patch
+remote_open_pr = remote_code_actions.remote_open_pr
+remote_grep_code = remote_code_actions.remote_grep_code
+remote_read_file = remote_code_actions.remote_read_file
+remote_find_symbol = remote_code_actions.remote_find_symbol
+_execute_remote_code_rpc_call = remote_code_actions.execute_remote_code_rpc_call
+remote_code_rpc_spec = remote_code_actions.remote_code_rpc_spec
+remote_code_rpc = remote_code_actions.remote_code_rpc
 
 app.include_router(remote_code_router.create_router(_remote_code_router_deps))
 

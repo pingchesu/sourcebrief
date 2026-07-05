@@ -11,6 +11,7 @@ def test_api_main_residual_map_tracks_remaining_service_boundaries() -> None:
     for required in [
         "Project/auth/resource access helpers",
         "Agent-context synthesis and coverage helpers",
+        "Remote-code compatibility actions",
         "MCP/runtime tool implementation",
         "Context-packet action",
         "route signature parity",
@@ -21,6 +22,6 @@ def test_api_main_residual_map_tracks_remaining_service_boundaries() -> None:
 
 def test_api_main_residual_map_records_current_guardrail_context() -> None:
     text = DOC.read_text(encoding="utf-8")
-    assert "1,405 lines" in text
-    assert "67 top-level functions" in text
+    assert "1,319 lines" in text
+    assert "56 top-level functions" in text
     assert "tests/unit/test_entrypoint_size_guardrails.py" in text
