@@ -8,7 +8,7 @@ After the API router extraction train and CLI refactor train, `apps/api/sourcebr
 
 Current measured shape:
 
-- `apps/api/sourcebrief_api/main.py`: 2,073 lines / 82,403 bytes / 84 top-level functions
+- `apps/api/sourcebrief_api/main.py`: 1,990 lines / 78,607 bytes / 84 top-level functions
 - `packages/cli/sourcebrief_cli/main.py`: 236 lines / 9,564 bytes / 4 top-level functions
 - Route contract coverage: `tests/unit/test_api_route_contract.py` snapshots 131 recursive route signatures and untagged OpenAPI metadata for the already-extracted routers
 - Entrypoint growth guardrail: `tests/unit/test_entrypoint_size_guardrails.py` now caps API and CLI entrypoint line/function counts
@@ -43,7 +43,7 @@ These clusters remain in `main.py` because they share access-control helpers, SQ
 
 1. Project/auth/resource access helpers
    - Status: core access helpers were extracted to `sourcebrief_api.services.access`; `main.py` keeps compatibility aliases for injected router dependencies and existing private imports.
-   - Still in `main.py`: `_validate_source_config`, because it depends on ingestion limits, git-env validation, and upload/folder policy wiring.
+   - Status: source configuration validation policy was extracted to `sourcebrief_api.services.source_config`; `main.py` keeps a compatibility wrapper for router dependency wiring.
 
 2. Agent-context synthesis and coverage helpers
    - Status: answer synthesis, citation-use selection, retrieval metadata, caveat/budget helpers, and unsupported-claim detection were extracted to `sourcebrief_api.services.agent_context_runtime`; `main.py` keeps compatibility aliases.
