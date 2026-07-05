@@ -8,7 +8,7 @@ After the API router extraction train and CLI refactor train, `apps/api/sourcebr
 
 Current measured shape:
 
-- `apps/api/sourcebrief_api/main.py`: 1,582 lines / 56,913 bytes / 82 top-level functions
+- `apps/api/sourcebrief_api/main.py`: 1,405 lines / 47,042 bytes / 67 top-level functions
 - `packages/cli/sourcebrief_cli/main.py`: 236 lines / 9,564 bytes / 4 top-level functions
 - Route contract coverage: `tests/unit/test_api_route_contract.py` snapshots 131 recursive route signatures and untagged OpenAPI metadata for the already-extracted routers
 - Entrypoint growth guardrail: `tests/unit/test_entrypoint_size_guardrails.py` now caps API and CLI entrypoint line/function counts
@@ -67,6 +67,7 @@ These clusters remain in `main.py` because they share access-control helpers, SQ
    - Status: runtime content helpers for list sources, context pack retrieval, and resource maps were extracted to `sourcebrief_api.services.runtime_content` behind explicit dependency injection.
    - Status: graph overview, inventory, query, path, and target resolution actions were extracted to `sourcebrief_api.services.runtime_graphs` behind explicit dependency injection.
    - Status: runtime search/read/lookup/discover actions were extracted to `sourcebrief_api.services.runtime_query` behind explicit dependency injection.
+   - Status: runtime/MCP support helpers for cursor/limit parsing, resource-reference resolution, freshness payloads, MCP tool errors, and pack resolution were extracted to `sourcebrief_api.services.runtime_support`; `main.py` keeps compatibility aliases/wrappers for MCP/router wiring.
    - Still in `main.py`: thin runtime compatibility wrappers and dependency objects for MCP/router wiring.
    - Risk: this is the most coupled cluster. Continue with route/OpenAPI parity plus targeted MCP tool-list/tool-call tests.
 
