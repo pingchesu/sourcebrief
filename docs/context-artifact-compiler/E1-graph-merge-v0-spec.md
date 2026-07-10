@@ -75,8 +75,11 @@ Constraints:
 
 Current pointer invariant:
 
-- Application transaction must only set `current_version_id` to a `graph_merge_versions` row for the same merge with status `published`.
-- Tests must reject cross-merge current assignment and current pointer to draft/invalidated.
+- `current_version_id` must always reference a version row for the same merge.
+- In the normal usable state it points to the current `published` version.
+- When a current input resource graph advances, the same transaction may mark the pointed-to version `invalidated` and retain the pointer. This is an explicit stale lifecycle state, not a usable published graph: `invalidated_at` and `status_reason` are required, at least one recorded input must differ from the resource's current graph version, inventory must report it as stale, and default graph query/path calls must fail closed.
+- Publishing a reviewed replacement version moves `current_version_id` to that new `published` version; the invalidated version remains historical evidence.
+- Tests must reject cross-merge current assignment, pointers to drafts, and invalidated-current states without input drift. Tests must also prove resource-scoped callers cannot infer an invalidated merge unless they are authorized for every input resource.
 
 ### 4.3 `graph_merge_versions`
 

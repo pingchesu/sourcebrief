@@ -77,7 +77,9 @@ A resource can be:
 - soft-deleted
 - hard-deleted
 
-Each refresh creates index-run state and source snapshots. Current retrieval uses current snapshots only, so old snapshots remain auditable without polluting active answers.
+Each refresh creates index-run state and source snapshots. Current retrieval uses current snapshots only, so old snapshots remain auditable without polluting active answers. For Git resources, the current snapshot and current published resource-graph version are one atomic consistency boundary: they advance together, and graph compile/validation/publish failure leaves the previous complete pair current.
+
+Scheduled Git refreshes reuse an existing snapshot only when both the fetched commit and effective extraction-policy fingerprint are unchanged. Manual refreshes continue to reindex the selected commit so source-config changes can take effect.
 
 ## Indexing path
 
@@ -90,19 +92,15 @@ Redis/RQ job queued
         ↓
 worker fetches source
         ↓
-source snapshot written
+source snapshot, chunks, embeddings, symbols, and graph rows staged
         ↓
-chunks written
+for Git: resource graph version compiled + validated + published
         ↓
-embeddings written
+for Git: dependent current merge versions invalidated when their input graph advanced
         ↓
-code symbols written when applicable
+for Git: resource.current_snapshot_id and graph.current_version_id advance atomically
         ↓
-resource/file/symbol graph written
-        ↓
-resource.current_snapshot_id updated
-        ↓
-index_run marked succeeded or failed
+index_run marked succeeded; any failure rolls back the staged snapshot/graph pair
 ```
 
 Document resources currently support inline markdown content. Git resources support commit-aware indexing and code symbol extraction.
