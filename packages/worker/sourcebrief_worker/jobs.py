@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -51,6 +51,12 @@ def run_index(index_run_id: str) -> None:
         if run.meta.get("fail"):
             raise RuntimeError("intentional placeholder failure")
 
+        resource = session.scalar(
+            select(Resource)
+            .where(Resource.id == run.resource_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if resource is None:
             raise RuntimeError(f"resource not found: {run.resource_id}")
         if (
@@ -149,6 +155,12 @@ def run_index(index_run_id: str) -> None:
                     },
                 }
                 for merge, merge_version in dependent_merges:
+                    merge_version.status = "invalidated"
+                    merge_version.invalidated_at = datetime.now(UTC)
+                    merge_version.status_reason = (
+                        f"Automatically invalidated because resource graph {publish_result.graph.graph_key} "
+                        f"advanced to version {publish_result.version.version}"
+                    )
                     session.add(
                         AuditEvent(
                             workspace_id=resource.workspace_id,
@@ -230,6 +242,8 @@ def run_index(index_run_id: str) -> None:
             if resource is not None:
                 resource.status = "failed"
                 resource.last_refresh_finished_at = failed.finished_at
+                if failed.trigger == "scheduled":
+                    resource.next_refresh_at = failed.finished_at + timedelta(minutes=15)
             session.commit()
         raise
     finally:

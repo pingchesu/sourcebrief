@@ -1387,8 +1387,10 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 
     repo_a = make_repo("merge-a", "a")
     repo_b = make_repo("merge-b", "b")
+    repo_hidden = make_repo("aaa-hidden", "hidden")
     resource_a = create_git_resource("Merge A", repo_a)
     resource_b = create_git_resource("Merge B", repo_b)
+    hidden_resource = create_git_resource("AAA Hidden", repo_hidden)
     graph_a_v1 = publish_resource_graph(resource_a, "merge-a-graph", "Merge A Graph")
     graph_b_v1 = publish_resource_graph(resource_b, "merge-b-graph", "Merge B Graph")
 
@@ -1432,6 +1434,24 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert scoped.status_code == 201, scoped.text
     hidden_merge = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}", headers=auth_headers(scoped.json()["token"]))
     assert hidden_merge.status_code == 404
+    scoped_inventory = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        headers=auth_headers(scoped.json()["token"]),
+        json={
+            "jsonrpc": "2.0",
+            "id": "scoped-inventory",
+            "method": "tools/call",
+            "params": {
+                "name": "sourcebrief.get_graph_inventory",
+                "arguments": {"kind": "resource", "limit": 1},
+            },
+        },
+    )
+    assert scoped_inventory.status_code == 200, scoped_inventory.text
+    scoped_inventory_payload = scoped_inventory.json()["result"]["structuredContent"]
+    assert [row["resource_id"] for row in scoped_inventory_payload["resource_graphs"]] == [resource_a]
+    assert all(row["resource_id"] != hidden_resource for row in scoped_inventory_payload["resource_graphs"])
+    assert scoped_inventory_payload["next_cursor"] is None
 
     blocked_publish = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}/versions/{latest['version']}/publish",
@@ -1565,7 +1585,30 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
         headers=auth_headers(token),
     )
     assert run_state.status_code == 200, run_state.text
-    assert merge_key in run_state.json()["meta"]["graph_sync"]["stale_merge_keys"]
+    assert "meta" not in run_state.json()
+    scoped_run_state = client.get(
+        f"/workspaces/{workspace_id}/index-runs/{refresh_a2.json()['id']}",
+        headers=auth_headers(scoped.json()["token"]),
+    )
+    assert scoped_run_state.status_code == 200, scoped_run_state.text
+    assert "meta" not in scoped_run_state.json()
+    stale_merge_state = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}",
+        headers=auth_headers(token),
+    )
+    assert stale_merge_state.status_code == 200, stale_merge_state.text
+    assert stale_merge_state.json()["current"]["status"] == "invalidated"
+    assert "Automatically invalidated" in stale_merge_state.json()["current"]["status_reason"]
+    audits = client.get(
+        f"/workspaces/{workspace_id}/audit-events",
+        headers=auth_headers(token),
+    )
+    assert audits.status_code == 200, audits.text
+    assert any(
+        event["action"] == "graph_merge.stale"
+        and event["target_id"] == stale_merge_state.json()["current"]["id"]
+        for event in audits.json()
+    )
 
     stale_runtime = client.post(
         f"/mcp/{workspace_id}/{project_id}",
@@ -1577,6 +1620,7 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     stale_payload = stale_runtime.json()["result"]["structuredContent"]
     assert stale_payload["status_code"] == 409
     assert stale_payload["detail"]["code"] == "stale_merge_graph"
+    assert stale_payload["detail"]["version_status"] == "invalidated"
 
     hidden_stale_runtime = client.post(
         f"/mcp/{workspace_id}/{project_id}",
@@ -1598,6 +1642,8 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     inventory_payload = stale_inventory.json()["result"]["structuredContent"]
     stale_entry = next(row for row in inventory_payload["merge_graphs"] if row["merge_key"] == merge_key)
     assert stale_entry["freshness"] == "stale"
+    assert stale_entry["status"] == "invalidated"
+    assert "Automatically invalidated" in stale_entry["status_reason"]
     assert stale_entry["stale_inputs"]
 
     graph_a_v2_draft = client.post(

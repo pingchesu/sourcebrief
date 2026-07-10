@@ -910,9 +910,9 @@ resource refresh requested
   -> permission check
   -> enqueue index_run
   -> fetch source
-  -> for scheduled Git refresh: compare fetched commit with the current snapshot commit
+  -> for scheduled Git refresh: compare fetched commit and extraction-policy fingerprint with the current snapshot
      -> unchanged: reuse current snapshot, verify/repair the graph invariant, and emit no-op evidence
-     -> changed: continue in one transaction
+     -> commit or policy changed: continue in one transaction
   -> for manual Git refresh: reindex the selected commit so source-config changes can take effect
   -> create source_snapshot
   -> parse source into documents/files
@@ -923,10 +923,10 @@ resource refresh requested
   -> extract graph nodes/edges
   -> for Git: compile and validate a resource graph version for this exact snapshot
   -> for Git: publish the graph version (validation warnings fail closed)
-  -> record dependent published merge graphs as stale
+  -> explicitly invalidate dependent current merge-graph versions and record reconciliation evidence
   -> create generated summaries/review items
   -> atomically update `resources.current_snapshot_id`, graph current version, freshness,
-     next_refresh_at, status, and index-run graph-sync evidence
+     next_refresh_at, status, and internal index-run graph-sync evidence
   -> emit metrics/audit events
 ```
 
@@ -936,7 +936,9 @@ For every active Git resource with a current published resource graph, the servi
 graph.current_version.source_snapshot_id == resource.current_snapshot_id
 ```
 
-A changed Git commit must not become current unless the matching resource graph validates and publishes in the same transaction. A published merge graph whose recorded inputs no longer match current resource graphs remains available for review/history, but runtime inventory marks it stale and default graph query/path calls fail closed until it is recompiled and reviewed.
+A changed Git commit must not become current unless the matching resource graph validates and publishes in the same transaction. Advancing a resource graph invalidates each dependent current merge-graph version; the canonical merge API exposes that invalidated status, runtime inventory marks it stale, and default graph query/path calls fail closed until operators compile, review, and publish a replacement merge version. Scheduled failures set `next_refresh_at` to a bounded near-term retry (currently 15 minutes) instead of waiting for the next daily interval.
+
+Rollout is worker-first and requires a mixed-version drain: stop/drain old workers, deploy workers that enforce snapshot↔graph atomicity, verify no old worker process can claim queued refreshes, then deploy/enable the fail-closed API/runtime. Deploying the runtime before draining old workers is unsupported because an old worker can advance a snapshot without its graph and cause temporary `stale_resource_graph` responses. Production resources remain `manual` until that drain plus a legacy drift/backfill check succeeds.
 
 ### 13.2 Snapshot, Incremental Reuse, and Garbage Collection
 

@@ -663,7 +663,6 @@ class IndexRunRead(BaseModel):
     embeddings_created: int
     graph_nodes_created: int
     graph_edges_created: int
-    meta: dict = Field(default_factory=dict)
     error_message: str | None = None
     log_ref: str | None = None
     started_at: datetime | None = None

@@ -6,6 +6,7 @@ import subprocess
 import time
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
@@ -13,12 +14,13 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 from redis import Redis
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from sourcebrief_api.main import app
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
-from sourcebrief_shared.models import Graph, GraphVersion, IndexRun, Resource
+from sourcebrief_shared.models import Graph, GraphEdge, GraphNode, GraphVersion, IndexRun, Resource
+from sourcebrief_worker import jobs as worker_jobs
 from sourcebrief_worker.jobs import run_index
 from sourcebrief_worker.maintenance import enqueue_due_refreshes
 
@@ -443,14 +445,52 @@ def test_scheduled_git_refresh_publishes_matching_graph_and_noops_unchanged_comm
         )
         assert len(published_versions) == 1
 
+    with get_sessionmaker()() as session:
+        graph = session.scalar(select(Graph).where(Graph.resource_id == UUID(resource_id)))
+        assert graph is not None
+        version_count_before = len(
+            list(
+                session.scalars(
+                    select(GraphVersion).where(GraphVersion.graph_id == graph.id)
+                )
+            )
+        )
+
     (repo_dir / "app.py").write_text("def value():\n    return 2\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
     subprocess.run(["git", "commit", "-m", "second"], cwd=repo_dir, check=True, capture_output=True)
-    updated_run_id = enqueue_due()
-    run_index(updated_run_id)
+    with get_sessionmaker()() as session:
+        resource_row = session.get(Resource, UUID(resource_id))
+        assert resource_row is not None
+        duplicate_runs = [
+            IndexRun(
+                workspace_id=resource_row.workspace_id,
+                project_id=resource_row.project_id,
+                resource_id=resource_row.id,
+                trigger="scheduled",
+                status="queued",
+                meta={"duplicate_probe": True},
+            )
+            for _ in range(2)
+        ]
+        session.add_all(duplicate_runs)
+        session.commit()
+        duplicate_run_ids = [str(run.id) for run in duplicate_runs]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(executor.map(run_index, duplicate_run_ids))
     updated_snapshot_id, updated_graph_version_id = current_pair()
     assert updated_snapshot_id != initial_snapshot_id
     assert updated_graph_version_id != repaired_graph_version_id
+    with get_sessionmaker()() as session:
+        graph = session.scalar(select(Graph).where(Graph.resource_id == UUID(resource_id)))
+        assert graph is not None
+        versions = list(
+            session.scalars(select(GraphVersion).where(GraphVersion.graph_id == graph.id))
+        )
+        assert len(versions) == version_count_before + 1
+        duplicate_results = [session.get(IndexRun, UUID(run_id)) for run_id in duplicate_run_ids]
+        assert all(run is not None and run.status == "succeeded" for run in duplicate_results)
+        assert sum(bool(run and run.meta.get("unchanged")) for run in duplicate_results) == 1
 
     noop_run_id = enqueue_due()
     run_index(noop_run_id)
@@ -460,31 +500,99 @@ def test_scheduled_git_refresh_publishes_matching_graph_and_noops_unchanged_comm
         headers=headers,
     )
     assert noop_run.status_code == 200, noop_run.text
-    assert noop_run.json()["meta"]["unchanged"] is True
+    assert "meta" not in noop_run.json()
+    with get_sessionmaker()() as session:
+        noop_run_row = session.get(IndexRun, UUID(noop_run_id))
+        assert noop_run_row is not None
+        assert noop_run_row.meta["unchanged"] is True
+
+        resource_row = session.get(Resource, UUID(resource_id))
+        assert resource_row is not None
+        changed_config = dict(resource_row.source_config or {})
+        changed_config["max_chunks"] = 64
+        resource_row.source_config = changed_config
+        session.commit()
+
+    policy_run_id = enqueue_due()
+    run_index(policy_run_id)
+    policy_snapshot_id, policy_graph_version_id = current_pair()
+    assert policy_snapshot_id != updated_snapshot_id
+    assert policy_graph_version_id != updated_graph_version_id
 
     manual_run = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh",
         headers=headers,
     )
     assert manual_run.status_code == 202, manual_run.text
+    duplicate_manual_run = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh",
+        headers=headers,
+    )
+    assert duplicate_manual_run.status_code == 202, duplicate_manual_run.text
+    assert duplicate_manual_run.json()["id"] == manual_run.json()["id"]
     run_index(manual_run.json()["id"])
     manual_snapshot_id, manual_graph_version_id = current_pair()
-    assert manual_snapshot_id != updated_snapshot_id
-    assert manual_graph_version_id != updated_graph_version_id
+    assert manual_snapshot_id != policy_snapshot_id
+    assert manual_graph_version_id != policy_graph_version_id
 
-    (repo_dir / "app.py").write_text("def value():\n    return 3\n", encoding="utf-8")
-    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
-    subprocess.run(["git", "commit", "-m", "third"], cwd=repo_dir, check=True, capture_output=True)
+    class InlineQueue:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def enqueue(self, _job_name, run_id, **_kwargs) -> None:
+            run_index(run_id)
+
+    with monkeypatch.context() as inline_worker:
+        inline_worker.setattr(
+            "sourcebrief_api.routers.resource_core.Queue", InlineQueue
+        )
+        inline_run = client.post(
+            f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh",
+            headers=headers,
+        )
+    assert inline_run.status_code == 202, inline_run.text
+    assert inline_run.json()["status"] == "succeeded"
+    inline_snapshot_id, inline_graph_version_id = current_pair()
+    assert inline_snapshot_id != manual_snapshot_id
+    assert inline_graph_version_id != manual_graph_version_id
+
+    (repo_dir / "README.md").unlink()
+    (repo_dir / "app.py").unlink()
+    (repo_dir / "artifact.bin").write_bytes(b"\x00\x01\x02")
+    subprocess.run(["git", "add", "-A"], cwd=repo_dir, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "empty graph"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+    )
     failed_run_id = enqueue_due()
+    real_ingest = worker_jobs.ingest_resource
 
-    def fail_publish(*_args, **_kwargs):
-        raise RuntimeError("graph publish failure injection")
+    def ingest_without_graph_rows(session, resource, run):
+        snapshot = real_ingest(session, resource, run)
+        session.execute(
+            delete(GraphEdge).where(GraphEdge.source_snapshot_id == snapshot.id)
+        )
+        session.execute(
+            delete(GraphNode).where(GraphNode.source_snapshot_id == snapshot.id)
+        )
+        session.flush()
+        return snapshot
 
-    with monkeypatch.context() as graph_failure:
-        graph_failure.setattr("sourcebrief_worker.jobs.publish_graph_version_record", fail_publish)
-        with pytest.raises(RuntimeError, match="graph publish failure injection"):
+    with monkeypatch.context() as empty_graph:
+        empty_graph.setattr(worker_jobs, "ingest_resource", ingest_without_graph_rows)
+        with pytest.raises(ValueError, match="empty_graph"):
             run_index(failed_run_id)
-    assert current_pair() == (manual_snapshot_id, manual_graph_version_id)
+    assert current_pair() == (inline_snapshot_id, inline_graph_version_id)
+    with get_sessionmaker()() as session:
+        failed_run = session.get(IndexRun, UUID(failed_run_id))
+        failed_resource = session.get(Resource, UUID(resource_id))
+        assert failed_run is not None and failed_run.status == "failed"
+        assert "empty_graph" in (failed_run.error_message or "")
+        assert failed_resource is not None and failed_resource.next_refresh_at is not None
+        retry_delay = failed_resource.next_refresh_at - datetime.now(UTC)
+        assert timedelta(minutes=14) < retry_delay <= timedelta(minutes=15)
 
 
 

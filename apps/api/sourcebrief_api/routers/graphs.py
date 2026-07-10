@@ -968,13 +968,14 @@ def create_router(deps: GraphRouterDeps) -> APIRouter:
         principal: Principal = Depends(require_principal),
         session: Session = Depends(get_session),
     ) -> GraphStreamRead:
-        graph = resolve_graph(session, workspace_id, project_id, graph_key, for_update=True)
+        graph = resolve_graph(session, workspace_id, project_id, graph_key)
         require_graph_review_write(session, graph, principal, deps)
         assert_graph_active(graph)
         version = session.scalar(
-            select(GraphVersion)
-            .where(GraphVersion.graph_id == graph.id, GraphVersion.version == version_number)
-            .with_for_update()
+            select(GraphVersion).where(
+                GraphVersion.graph_id == graph.id,
+                GraphVersion.version == version_number,
+            )
         )
         if version is None:
             raise HTTPException(status_code=404, detail="graph version not found")

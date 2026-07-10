@@ -244,6 +244,17 @@ def publish_graph_version_record(
 ) -> GraphPublishResult:
     """Publish a graph version without committing the caller's transaction."""
 
+    locked_resource = session.scalar(
+        select(Resource)
+        .where(
+            Resource.id == version.resource_id,
+            Resource.workspace_id == version.workspace_id,
+            Resource.project_id == version.project_id,
+        )
+        .with_for_update()
+    )
+    if locked_resource is None:
+        raise ValueError("graph resource no longer exists")
     locked_graph = session.scalar(select(Graph).where(Graph.id == graph.id).with_for_update())
     if locked_graph is None or locked_graph.status != GRAPH_STATUS_ACTIVE:
         raise ValueError("only active graphs can publish versions")
@@ -264,17 +275,6 @@ def publish_graph_version_record(
         codes = ", ".join(str(item.get("code") or "warning") for item in warnings)
         raise ValueError(f"graph version has validation warnings: {codes}")
 
-    locked_resource = session.scalar(
-        select(Resource)
-        .where(
-            Resource.id == locked_version.resource_id,
-            Resource.workspace_id == locked_version.workspace_id,
-            Resource.project_id == locked_version.project_id,
-        )
-        .with_for_update()
-    )
-    if locked_resource is None:
-        raise ValueError("graph resource no longer exists")
     if locked_resource.deleted_at is not None or locked_resource.status in {"deleted", "archived"}:
         raise ValueError("cannot publish graph versions for deleted or archived resources")
     if locked_resource.current_snapshot_id != locked_version.source_snapshot_id:
