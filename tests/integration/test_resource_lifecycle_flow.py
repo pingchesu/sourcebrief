@@ -20,6 +20,7 @@ from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
 from sourcebrief_shared.models import Graph, GraphVersion, IndexRun, Resource
 from sourcebrief_worker.jobs import run_index
+from sourcebrief_worker.maintenance import enqueue_due_refreshes
 
 pytestmark = pytest.mark.integration
 
@@ -366,18 +367,27 @@ def test_scheduled_git_refresh_publishes_matching_graph_and_noops_unchanged_comm
     assert created.status_code == 201, created.text
     resource_id = created.json()["id"]
 
+    class RecordingQueue:
+        def __init__(self) -> None:
+            self.calls: list[tuple[tuple, dict]] = []
+
+        def enqueue(self, *args, **kwargs) -> None:
+            self.calls.append((args, kwargs))
+
     def enqueue_due() -> str:
         with get_sessionmaker()() as session:
             resource = session.get(Resource, UUID(resource_id))
             assert resource is not None
             resource.next_refresh_at = datetime.now(UTC) - timedelta(seconds=1)
             session.commit()
-        scheduled = client.post(
-            f"/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes",
-            headers=headers,
+        queue = RecordingQueue()
+        scheduled = enqueue_due_refreshes(
+            project_id=UUID(project_id),
+            resource_ids=[UUID(resource_id)],
+            queue=queue,
         )
-        assert scheduled.status_code == 202, scheduled.text
-        assert scheduled.json()["enqueued"] == 1
+        assert scheduled["enqueued"] == 1
+        assert len(queue.calls) == 1
         with get_sessionmaker()() as session:
             run = session.scalar(
                 select(IndexRun)
