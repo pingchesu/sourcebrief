@@ -442,6 +442,16 @@ def test_scheduled_git_refresh_publishes_matching_graph_and_noops_unchanged_comm
     assert noop_run.status_code == 200, noop_run.text
     assert noop_run.json()["meta"]["unchanged"] is True
 
+    manual_run = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh",
+        headers=headers,
+    )
+    assert manual_run.status_code == 202, manual_run.text
+    run_index(manual_run.json()["id"])
+    manual_snapshot_id, manual_graph_version_id = current_pair()
+    assert manual_snapshot_id != updated_snapshot_id
+    assert manual_graph_version_id != updated_graph_version_id
+
     (repo_dir / "app.py").write_text("def value():\n    return 3\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
     subprocess.run(["git", "commit", "-m", "third"], cwd=repo_dir, check=True, capture_output=True)
@@ -454,7 +464,7 @@ def test_scheduled_git_refresh_publishes_matching_graph_and_noops_unchanged_comm
         graph_failure.setattr("sourcebrief_worker.jobs.publish_graph_version_record", fail_publish)
         with pytest.raises(RuntimeError, match="graph publish failure injection"):
             run_index(failed_run_id)
-    assert current_pair() == (updated_snapshot_id, updated_graph_version_id)
+    assert current_pair() == (manual_snapshot_id, manual_graph_version_id)
 
 
 
