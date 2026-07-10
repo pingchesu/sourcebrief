@@ -4,11 +4,11 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from sourcebrief_shared.models import (
@@ -34,6 +34,13 @@ class GraphCompileResult:
     graph: Graph
     version: GraphVersion
     unchanged: bool
+
+
+@dataclass(frozen=True)
+class GraphPublishResult:
+    graph: Graph
+    version: GraphVersion
+    previous_version: GraphVersion | None
 
 
 def _sha256_json(value: Any) -> str:
@@ -152,17 +159,7 @@ def compile_graph_version(session: Session, resource: Resource, *, actor_id: UUI
             created_by=actor_id,
         )
         session.add(graph)
-        try:
-            session.flush()
-        except IntegrityError:
-            session.rollback()
-            graph = session.scalar(
-                select(Graph)
-                .where(Graph.workspace_id == resource.workspace_id, Graph.project_id == resource.project_id, Graph.resource_id == resource.id)
-                .with_for_update()
-            )
-            if graph is None:
-                raise
+        session.flush()
     elif graph.status == GRAPH_STATUS_ARCHIVED:
         raise ValueError("archived graphs cannot compile new versions")
 
@@ -234,3 +231,62 @@ def compile_graph_version(session: Session, resource: Resource, *, actor_id: UUI
     session.add(version)
     session.flush()
     return GraphCompileResult(graph=graph, version=version, unchanged=False)
+
+
+def publish_graph_version_record(
+    session: Session,
+    graph: Graph,
+    version: GraphVersion,
+    *,
+    actor_id: UUID | None,
+    comment: str,
+    allow_validation_warnings: bool = True,
+) -> GraphPublishResult:
+    """Publish a graph version without committing the caller's transaction."""
+
+    locked_graph = session.scalar(select(Graph).where(Graph.id == graph.id).with_for_update())
+    if locked_graph is None or locked_graph.status != GRAPH_STATUS_ACTIVE:
+        raise ValueError("only active graphs can publish versions")
+    locked_version = session.scalar(
+        select(GraphVersion)
+        .where(GraphVersion.id == version.id, GraphVersion.graph_id == locked_graph.id)
+        .with_for_update()
+    )
+    if locked_version is None:
+        raise ValueError("graph version not found")
+    if locked_version.status != GRAPH_VERSION_DRAFT:
+        raise ValueError("only draft graph versions can be published")
+    validation = dict(locked_version.validation_json or {})
+    if not validation.get("ok"):
+        raise ValueError("graph version validation must pass before publish")
+    warnings = list(validation.get("warnings") or [])
+    if warnings and not allow_validation_warnings:
+        codes = ", ".join(str(item.get("code") or "warning") for item in warnings)
+        raise ValueError(f"graph version has validation warnings: {codes}")
+
+    locked_resource = session.scalar(
+        select(Resource)
+        .where(
+            Resource.id == locked_version.resource_id,
+            Resource.workspace_id == locked_version.workspace_id,
+            Resource.project_id == locked_version.project_id,
+        )
+        .with_for_update()
+    )
+    if locked_resource is None:
+        raise ValueError("graph resource no longer exists")
+    if locked_resource.deleted_at is not None or locked_resource.status in {"deleted", "archived"}:
+        raise ValueError("cannot publish graph versions for deleted or archived resources")
+    if locked_resource.current_snapshot_id != locked_version.source_snapshot_id:
+        raise ValueError("graph draft is stale; recompile against the current resource snapshot")
+
+    previous = session.get(GraphVersion, locked_graph.current_version_id) if locked_graph.current_version_id else None
+    if previous and previous.status == GRAPH_VERSION_PUBLISHED:
+        previous.status = GRAPH_VERSION_SUPERSEDED
+    locked_version.status = GRAPH_VERSION_PUBLISHED
+    locked_version.published_by = actor_id
+    locked_version.published_at = datetime.now(UTC)
+    locked_version.status_reason = comment
+    locked_graph.current_version_id = locked_version.id
+    session.flush()
+    return GraphPublishResult(graph=locked_graph, version=locked_version, previous_version=previous)

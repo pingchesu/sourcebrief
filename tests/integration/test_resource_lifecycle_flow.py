@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
 import time
 import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -16,7 +18,7 @@ from sqlalchemy import select, text
 from sourcebrief_api.main import app
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
-from sourcebrief_shared.models import IndexRun, Resource
+from sourcebrief_shared.models import Graph, GraphVersion, IndexRun, Resource
 from sourcebrief_worker.jobs import run_index
 
 pytestmark = pytest.mark.integration
@@ -328,6 +330,132 @@ def test_scheduled_refresh_enqueues_due_resources_and_advances_next_refresh() ->
     )
     assert not_due.status_code == 202, not_due.text
     assert not_due.json()["enqueued"] == 0
+
+
+def test_scheduled_git_refresh_publishes_matching_graph_and_noops_unchanged_commit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    require_real_services()
+    monkeypatch.setenv("SOURCEBRIEF_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("SOURCEBRIEF_ALLOW_LOCAL_GIT", "true")
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "scheduled-git-graph")
+
+    repo_dir = tmp_path / "scheduled-git"
+    repo_dir.mkdir()
+    (repo_dir / "README.md").write_text("# Scheduled Git\n", encoding="utf-8")
+    (repo_dir / "app.py").write_text("def value():\n    return 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "scheduled@example.com"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "Scheduled"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+
+    created = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources",
+        headers=headers,
+        json={
+            "type": "git",
+            "name": "Scheduled Git",
+            "uri": str(repo_dir),
+            "source_config": {"url": str(repo_dir), "branch": "main"},
+            "update_frequency": "daily",
+        },
+    )
+    assert created.status_code == 201, created.text
+    resource_id = created.json()["id"]
+
+    def enqueue_due() -> str:
+        with get_sessionmaker()() as session:
+            resource = session.get(Resource, UUID(resource_id))
+            assert resource is not None
+            resource.next_refresh_at = datetime.now(UTC) - timedelta(seconds=1)
+            session.commit()
+        scheduled = client.post(
+            f"/workspaces/{workspace_id}/projects/{project_id}/scheduled-refreshes",
+            headers=headers,
+        )
+        assert scheduled.status_code == 202, scheduled.text
+        assert scheduled.json()["enqueued"] == 1
+        with get_sessionmaker()() as session:
+            run = session.scalar(
+                select(IndexRun)
+                .where(IndexRun.resource_id == UUID(resource_id), IndexRun.status == "queued")
+                .order_by(IndexRun.created_at.desc())
+                .limit(1)
+            )
+            assert run is not None
+            return str(run.id)
+
+    def current_pair() -> tuple[str, str]:
+        resource = client.get(
+            f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}",
+            headers=headers,
+        )
+        assert resource.status_code == 200, resource.text
+        graph = client.get(
+            f"/workspaces/{workspace_id}/projects/{project_id}/graphs/scheduled-git-graph",
+            headers=headers,
+        )
+        assert graph.status_code == 200, graph.text
+        current_id = graph.json()["current_version_id"]
+        current_version = next(row for row in graph.json()["versions"] if row["id"] == current_id)
+        assert current_version["status"] == "published"
+        assert current_version["source_snapshot_id"] == resource.json()["current_snapshot_id"]
+        return resource.json()["current_snapshot_id"], current_version["id"]
+
+    initial_run_id = enqueue_due()
+    run_index(initial_run_id)
+    initial_snapshot_id, initial_graph_version_id = current_pair()
+
+    with get_sessionmaker()() as session:
+        graph = session.scalar(select(Graph).where(Graph.resource_id == UUID(resource_id)))
+        assert graph is not None and graph.current_version_id is not None
+        current_version = session.get(GraphVersion, graph.current_version_id)
+        assert current_version is not None
+        current_version.status = "invalidated"
+        graph.current_version_id = None
+        session.commit()
+    repair_run_id = enqueue_due()
+    run_index(repair_run_id)
+    repaired_snapshot_id, repaired_graph_version_id = current_pair()
+    assert repaired_snapshot_id == initial_snapshot_id
+    assert repaired_graph_version_id != initial_graph_version_id
+
+    (repo_dir / "app.py").write_text("def value():\n    return 2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "second"], cwd=repo_dir, check=True, capture_output=True)
+    updated_run_id = enqueue_due()
+    run_index(updated_run_id)
+    updated_snapshot_id, updated_graph_version_id = current_pair()
+    assert updated_snapshot_id != initial_snapshot_id
+    assert updated_graph_version_id != repaired_graph_version_id
+
+    noop_run_id = enqueue_due()
+    run_index(noop_run_id)
+    assert current_pair() == (updated_snapshot_id, updated_graph_version_id)
+    noop_run = client.get(
+        f"/workspaces/{workspace_id}/index-runs/{noop_run_id}",
+        headers=headers,
+    )
+    assert noop_run.status_code == 200, noop_run.text
+    assert noop_run.json()["meta"]["unchanged"] is True
+
+    (repo_dir / "app.py").write_text("def value():\n    return 3\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "third"], cwd=repo_dir, check=True, capture_output=True)
+    failed_run_id = enqueue_due()
+
+    def fail_publish(*_args, **_kwargs):
+        raise RuntimeError("graph publish failure injection")
+
+    with monkeypatch.context() as graph_failure:
+        graph_failure.setattr("sourcebrief_worker.jobs.publish_graph_version_record", fail_publish)
+        with pytest.raises(RuntimeError, match="graph publish failure injection"):
+            run_index(failed_run_id)
+    assert current_pair() == (updated_snapshot_id, updated_graph_version_id)
+
 
 
 def test_scheduled_refresh_and_lifecycle_respect_resource_scoped_tokens() -> None:

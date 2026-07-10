@@ -910,6 +910,10 @@ resource refresh requested
   -> permission check
   -> enqueue index_run
   -> fetch source
+  -> for scheduled Git refresh: compare fetched commit with the current snapshot commit
+     -> unchanged: reuse current snapshot, verify/repair the graph invariant, and emit no-op evidence
+     -> changed: continue in one transaction
+  -> for manual Git refresh: reindex the selected commit so source-config changes can take effect
   -> create source_snapshot
   -> parse source into documents/files
   -> chunk documents
@@ -917,10 +921,22 @@ resource refresh requested
   -> generate lexical index rows
   -> generate embeddings
   -> extract graph nodes/edges
+  -> for Git: compile and validate a resource graph version for this exact snapshot
+  -> for Git: publish the graph version (validation warnings fail closed)
+  -> record dependent published merge graphs as stale
   -> create generated summaries/review items
-  -> update `resources.current_snapshot_id`, freshness, next_refresh_at, and status
-  -> emit metrics
+  -> atomically update `resources.current_snapshot_id`, graph current version, freshness,
+     next_refresh_at, status, and index-run graph-sync evidence
+  -> emit metrics/audit events
 ```
+
+For every active Git resource with a current published resource graph, the service invariant is:
+
+```text
+graph.current_version.source_snapshot_id == resource.current_snapshot_id
+```
+
+A changed Git commit must not become current unless the matching resource graph validates and publishes in the same transaction. A published merge graph whose recorded inputs no longer match current resource graphs remains available for review/history, but runtime inventory marks it stale and default graph query/path calls fail closed until it is recompiled and reviewed.
 
 ### 13.2 Snapshot, Incremental Reuse, and Garbage Collection
 

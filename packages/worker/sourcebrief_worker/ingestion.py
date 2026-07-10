@@ -1125,6 +1125,29 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
 
     if rtype in GIT_TYPES:
         docs, version, version_kind, meta = _collect_git(resource)
+        current_snapshot = (
+            session.get(SourceSnapshot, resource.current_snapshot_id)
+            if resource.current_snapshot_id
+            else None
+        )
+        current_commit = (
+            str((current_snapshot.meta or {}).get("commit") or current_snapshot.version)
+            if current_snapshot is not None
+            else None
+        )
+        fetched_commit = str(meta.get("commit") or version)
+        if run.trigger == "scheduled" and current_snapshot is not None and current_snapshot.status == "succeeded" and current_commit == fetched_commit:
+            run.snapshot_id = current_snapshot.id
+            run.meta = {
+                **dict(run.meta or {}),
+                "unchanged": True,
+                "source_commit": fetched_commit,
+                "reused_snapshot_id": str(current_snapshot.id),
+            }
+            session.delete(snapshot)
+            session.flush()
+            resource.status = "active"
+            return current_snapshot
     elif rtype in URL_TYPES:
         docs, version, version_kind, meta = fetch_url_document(resource)
     elif rtype in UPLOAD_TYPES:
