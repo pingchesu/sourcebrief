@@ -1545,19 +1545,6 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     )
     assert too_deep.status_code == 422
 
-    (repo_a / "src" / "common.py").write_text("def main():\n    return 'a2'\n", encoding="utf-8")
-    subprocess.run(["git", "add", "."], cwd=repo_a, check=True)
-    subprocess.run(["git", "commit", "-m", "second"], cwd=repo_a, check=True, capture_output=True)
-    refresh_a2 = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_a}/refresh", headers=auth_headers(token))
-    assert refresh_a2.status_code == 202, refresh_a2.text
-    run_index(refresh_a2.json()["id"])
-    graph_a_v2_draft = client.post(
-        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_a}/graph/versions",
-        headers=auth_headers(token),
-        json={"graph_key": "merge-a-graph", "title": "Merge A Graph"},
-    )
-    assert graph_a_v2_draft.status_code == 200, graph_a_v2_draft.text
-
     stale_draft = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges",
         headers=auth_headers(token),
@@ -1566,6 +1553,49 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert stale_draft.status_code == 200, stale_draft.text
     stale_merge_key = stale_draft.json()["merge_key"]
     stale_version = stale_draft.json()["versions"][0]["version"]
+
+    (repo_a / "src" / "common.py").write_text("def main():\n    return 'a2'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_a, check=True)
+    subprocess.run(["git", "commit", "-m", "second"], cwd=repo_a, check=True, capture_output=True)
+    refresh_a2 = client.post(f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_a}/refresh", headers=auth_headers(token))
+    assert refresh_a2.status_code == 202, refresh_a2.text
+    run_index(refresh_a2.json()["id"])
+    run_state = client.get(
+        f"/workspaces/{workspace_id}/index-runs/{refresh_a2.json()['id']}",
+        headers=auth_headers(token),
+    )
+    assert run_state.status_code == 200, run_state.text
+    assert merge_key in run_state.json()["meta"]["graph_sync"]["stale_merge_keys"]
+
+    stale_runtime = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        headers=auth_headers(token),
+        json={"jsonrpc": "2.0", "id": "stale-merge", "method": "tools/call", "params": {"name": "sourcebrief.graph_path", "arguments": {"graph_key": merge_key, "graph_kind": "merge", "from_node_key": first_node, "to_node_key": first_node}}},
+    )
+    assert stale_runtime.status_code == 200, stale_runtime.text
+    assert stale_runtime.json()["result"]["isError"] is True
+    stale_payload = stale_runtime.json()["result"]["structuredContent"]
+    assert stale_payload["status_code"] == 409
+    assert stale_payload["detail"]["code"] == "stale_merge_graph"
+
+    stale_inventory = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        headers=auth_headers(token),
+        json={"jsonrpc": "2.0", "id": "stale-inventory", "method": "tools/call", "params": {"name": "sourcebrief.get_graph_inventory", "arguments": {"kind": "merge"}}},
+    )
+    assert stale_inventory.status_code == 200, stale_inventory.text
+    inventory_payload = stale_inventory.json()["result"]["structuredContent"]
+    stale_entry = next(row for row in inventory_payload["merge_graphs"] if row["merge_key"] == merge_key)
+    assert stale_entry["freshness"] == "stale"
+    assert stale_entry["stale_inputs"]
+
+    graph_a_v2_draft = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_a}/graph/versions",
+        headers=auth_headers(token),
+        json={"graph_key": "merge-a-graph", "title": "Merge A Graph"},
+    )
+    assert graph_a_v2_draft.status_code == 200, graph_a_v2_draft.text
+
     graph_a_v2 = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/graphs/merge-a-graph/versions/{graph_a_v2_draft.json()['version']['version']}/publish",
         headers=auth_headers(token),

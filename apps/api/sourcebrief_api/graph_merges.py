@@ -462,6 +462,47 @@ def compile_graph_merge(
     return GraphMergeCompileResult(merge=merge, version=merge_version, unchanged=False)
 
 
+def stale_merge_inputs(session: Session, version: GraphMergeVersion) -> list[dict[str, str | None]]:
+    """Return current-pointer mismatches that make a published merge unsafe to serve."""
+
+    stale: list[dict[str, str | None]] = []
+    inputs = list(
+        session.scalars(
+            select(GraphMergeInput)
+            .where(GraphMergeInput.graph_merge_version_id == version.id)
+            .order_by(GraphMergeInput.ordinal.asc())
+        )
+    )
+    for row in inputs:
+        graph = session.get(Graph, row.input_graph_id)
+        graph_version = session.get(GraphVersion, row.input_graph_version_id)
+        resource = session.get(Resource, row.input_resource_id)
+        reason = None
+        if graph is None or graph_version is None or resource is None:
+            reason = "missing_input"
+        elif resource.deleted_at is not None or resource.status in {"deleted", "archived"}:
+            reason = "resource_unavailable"
+        elif graph.current_version_id != row.input_graph_version_id:
+            reason = "graph_version_advanced"
+        elif resource.current_snapshot_id != row.input_source_snapshot_id:
+            reason = "resource_snapshot_advanced"
+        elif graph_version.status != GRAPH_MERGE_VERSION_PUBLISHED:
+            reason = "graph_version_not_published"
+        if reason:
+            stale.append(
+                {
+                    "reason": reason,
+                    "resource_id": str(row.input_resource_id),
+                    "graph_id": str(row.input_graph_id),
+                    "input_graph_version_id": str(row.input_graph_version_id),
+                    "current_graph_version_id": str(graph.current_version_id) if graph and graph.current_version_id else None,
+                    "input_source_snapshot_id": str(row.input_source_snapshot_id),
+                    "current_source_snapshot_id": str(resource.current_snapshot_id) if resource and resource.current_snapshot_id else None,
+                }
+            )
+    return stale
+
+
 def find_path(session: Session, version: GraphMergeVersion, from_node_key: str, to_node_key: str, max_depth: int) -> dict[str, Any]:
     if max_depth > max_path_depth():
         raise ValueError("path_depth_limit_exceeded")
