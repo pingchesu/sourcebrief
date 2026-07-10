@@ -1427,7 +1427,7 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     scoped = client.post(
         f"/workspaces/{workspace_id}/api-tokens",
         headers=auth_headers(token),
-        json={"name": "merge scoped reader", "scopes": ["resource:read"], "allowed_project_ids": [project_id], "allowed_resource_ids": [resource_a]},
+        json={"name": "merge scoped reader", "scopes": ["project:query", "resource:read"], "allowed_project_ids": [project_id], "allowed_resource_ids": [resource_a]},
     )
     assert scoped.status_code == 201, scoped.text
     hidden_merge = client.get(f"/workspaces/{workspace_id}/projects/{project_id}/graph-merges/{merge_key}", headers=auth_headers(scoped.json()["token"]))
@@ -1577,6 +1577,17 @@ def test_graph_merge_e1_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     stale_payload = stale_runtime.json()["result"]["structuredContent"]
     assert stale_payload["status_code"] == 409
     assert stale_payload["detail"]["code"] == "stale_merge_graph"
+
+    hidden_stale_runtime = client.post(
+        f"/mcp/{workspace_id}/{project_id}",
+        headers=auth_headers(scoped.json()["token"]),
+        json={"jsonrpc": "2.0", "id": "hidden-stale-merge", "method": "tools/call", "params": {"name": "sourcebrief.graph_path", "arguments": {"graph_key": merge_key, "graph_kind": "merge", "from_node_key": first_node, "to_node_key": first_node}}},
+    )
+    assert hidden_stale_runtime.status_code == 200, hidden_stale_runtime.text
+    assert hidden_stale_runtime.json()["result"]["isError"] is True
+    hidden_stale_payload = hidden_stale_runtime.json()["result"]["structuredContent"]
+    assert hidden_stale_payload["status_code"] == 404
+    assert hidden_stale_payload["detail"]["code"] == "graph_not_found"
 
     stale_inventory = client.post(
         f"/mcp/{workspace_id}/{project_id}",
