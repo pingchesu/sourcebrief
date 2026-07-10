@@ -280,9 +280,25 @@ def publish_graph_version_record(
     if locked_resource.current_snapshot_id != locked_version.source_snapshot_id:
         raise ValueError("graph draft is stale; recompile against the current resource snapshot")
 
-    previous = session.get(GraphVersion, locked_graph.current_version_id) if locked_graph.current_version_id else None
-    if previous and previous.status == GRAPH_VERSION_PUBLISHED:
-        previous.status = GRAPH_VERSION_SUPERSEDED
+    published_versions = list(
+        session.scalars(
+            select(GraphVersion)
+            .where(
+                GraphVersion.graph_id == locked_graph.id,
+                GraphVersion.status == GRAPH_VERSION_PUBLISHED,
+                GraphVersion.id != locked_version.id,
+            )
+            .order_by(GraphVersion.version.desc())
+            .with_for_update()
+        )
+    )
+    previous = (
+        session.get(GraphVersion, locked_graph.current_version_id)
+        if locked_graph.current_version_id
+        else (published_versions[0] if published_versions else None)
+    )
+    for published_version in published_versions:
+        published_version.status = GRAPH_VERSION_SUPERSEDED
     locked_version.status = GRAPH_VERSION_PUBLISHED
     locked_version.published_by = actor_id
     locked_version.published_at = datetime.now(UTC)

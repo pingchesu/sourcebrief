@@ -412,9 +412,7 @@ def test_scheduled_git_refresh_publishes_matching_graph_and_noops_unchanged_comm
     with get_sessionmaker()() as session:
         graph = session.scalar(select(Graph).where(Graph.resource_id == UUID(resource_id)))
         assert graph is not None and graph.current_version_id is not None
-        current_version = session.get(GraphVersion, graph.current_version_id)
-        assert current_version is not None
-        current_version.status = "invalidated"
+        old_graph_version_id = graph.current_version_id
         graph.current_version_id = None
         session.commit()
     repair_run_id = enqueue_due()
@@ -422,6 +420,18 @@ def test_scheduled_git_refresh_publishes_matching_graph_and_noops_unchanged_comm
     repaired_snapshot_id, repaired_graph_version_id = current_pair()
     assert repaired_snapshot_id == initial_snapshot_id
     assert repaired_graph_version_id != initial_graph_version_id
+    with get_sessionmaker()() as session:
+        old_graph_version = session.get(GraphVersion, old_graph_version_id)
+        assert old_graph_version is not None and old_graph_version.status == "superseded"
+        published_versions = list(
+            session.scalars(
+                select(GraphVersion).where(
+                    GraphVersion.graph_id == old_graph_version.graph_id,
+                    GraphVersion.status == "published",
+                )
+            )
+        )
+        assert len(published_versions) == 1
 
     (repo_dir / "app.py").write_text("def value():\n    return 2\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
