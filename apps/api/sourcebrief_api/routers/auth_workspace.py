@@ -123,8 +123,9 @@ def current_user_response(session: Session, principal: Principal) -> CurrentUser
     memberships = list(
         session.scalars(
             select(WorkspaceMembership)
-            .where(WorkspaceMembership.user_id == principal.user.id)
-            .order_by(WorkspaceMembership.created_at.asc())
+            .join(Workspace, Workspace.id == WorkspaceMembership.workspace_id)
+            .where(WorkspaceMembership.user_id == principal.user.id, Workspace.deleted_at.is_(None))
+            .order_by(Workspace.created_at.asc(), WorkspaceMembership.created_at.asc())
         )
     )
     workspace_ids = [membership.workspace_id for membership in memberships]
@@ -250,8 +251,9 @@ def create_router(deps: AuthWorkspaceRouterDeps) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid email or password")
         membership = session.scalar(
             select(WorkspaceMembership)
-            .where(WorkspaceMembership.user_id == user.id)
-            .order_by(WorkspaceMembership.created_at.asc())
+            .join(Workspace, Workspace.id == WorkspaceMembership.workspace_id)
+            .where(WorkspaceMembership.user_id == user.id, Workspace.deleted_at.is_(None))
+            .order_by(Workspace.created_at.asc(), WorkspaceMembership.created_at.asc())
         )
         if membership is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="user has no workspace access")

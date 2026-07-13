@@ -45,11 +45,13 @@ EXPECTED_REPO_AGENT_ROUTE_SIGNATURES = {
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/repo-agent", "create_repo_agent"),
     ("GET", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}", "get_repo_agent"),
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/refresh", "refresh_repo_agent"),
+    ("GET", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/bundle", "get_repo_agent_version_bundle"),
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/publish", "publish_repo_agent_version"),
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/rollback-draft", "create_repo_agent_rollback_draft"),
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/archive", "archive_repo_agent"),
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/invalidate", "invalidate_repo_agent_version"),
     ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/scrub", "scrub_repo_agent_version"),
+    ("POST", "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/delete", "delete_repo_agent"),
 }
 
 
@@ -220,7 +222,7 @@ def test_runtime_agent_route_contract_is_stable() -> None:
 
 
 def test_recursive_route_signature_count_is_stable() -> None:
-    assert len(_route_signatures()) == 131
+    assert len(_route_signatures()) == 133
 
 
 def test_runtime_agent_openapi_metadata_remains_untagged() -> None:

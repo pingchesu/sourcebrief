@@ -24,11 +24,13 @@ from sourcebrief_api.repo_agents import (
     REPO_AGENT_VERSION_INVALIDATED,
     REPO_AGENT_VERSION_PUBLISHED,
     REPO_AGENT_VERSION_SUPERSEDED,
+    build_repo_agent_bundle,
     compile_repo_agent_version,
     normalize_agent_key,
 )
 from sourcebrief_api.schemas import (
     RepoAgentActionRequest,
+    RepoAgentBundleRead,
     RepoAgentCreateRequest,
     RepoAgentRead,
     RepoAgentRefreshResponse,
@@ -42,7 +44,9 @@ from sourcebrief_shared.models import (
     RepoAgent,
     RepoAgentVersion,
     Resource,
+    ResourceManifest,
     SkillExport,
+    SourceSnapshot,
 )
 
 ProjectMemberAuthorizer = Callable[..., object]
@@ -193,6 +197,48 @@ def assert_repo_agent_active(agent: RepoAgent) -> None:
         )
 
 
+def validate_live_source_dependencies(
+    session: Session, version: RepoAgentVersion, *, operation: str
+) -> None:
+    snapshot = session.get(SourceSnapshot, version.source_snapshot_id) if version.source_snapshot_id else None
+    manifest = session.get(ResourceManifest, version.resource_manifest_id) if version.resource_manifest_id else None
+    valid = bool(
+        version.resource_id
+        and snapshot
+        and manifest
+        and snapshot.status in {"indexed", "succeeded"}
+        and snapshot.workspace_id == version.workspace_id
+        and snapshot.project_id == version.project_id
+        and snapshot.resource_id == version.resource_id
+        and manifest.workspace_id == version.workspace_id
+        and manifest.project_id == version.project_id
+        and manifest.resource_id == version.resource_id
+        and manifest.source_snapshot_id == snapshot.id
+    )
+    if not valid:
+        raise HTTPException(
+            status_code=422,
+            detail=f"repo agent version no longer has a retained indexed source snapshot/manifest for {operation}; refresh the draft",
+        )
+
+
+def validate_skill_export_dependency(
+    session: Session, version: RepoAgentVersion, *, operation: str
+) -> None:
+    if not version.skill_export_id:
+        return
+    skill_export = session.get(SkillExport, version.skill_export_id)
+    if (
+        skill_export is None
+        or skill_export.status != SKILL_EXPORT_STATUS_APPROVED
+        or not skill_export.files_json
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"repo agent version references a generated skill export that is no longer approved/retained; refresh before {operation}",
+        )
+
+
 def validate_repo_agent_version_dependencies_for_publish(
     session: Session, version: RepoAgentVersion
 ) -> None:
@@ -201,6 +247,10 @@ def validate_repo_agent_version_dependencies_for_publish(
         if version.context_pack_version_id
         else None
     )
+    if pack is None and version.context_pack_version_id is None:
+        validate_live_source_dependencies(session, version, operation="publish")
+        validate_skill_export_dependency(session, version, operation="publish")
+        return
     allowed_pack_statuses = {PACK_STATUS_PUBLISHED}
     if version.rollback_from_version_id:
         allowed_pack_statuses = {
@@ -213,17 +263,7 @@ def validate_repo_agent_version_dependencies_for_publish(
             status_code=422,
             detail="repo agent draft references a Context Pack that is no longer publishable; refresh or create a rollback draft again",
         )
-    if version.skill_export_id:
-        skill_export = session.get(SkillExport, version.skill_export_id)
-        if (
-            skill_export is None
-            or skill_export.status != SKILL_EXPORT_STATUS_APPROVED
-            or not skill_export.files_json
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail="repo agent draft references a generated skill export that is no longer approved/retained; refresh the draft",
-            )
+    validate_skill_export_dependency(session, version, operation="publish")
 
 
 def validate_repo_agent_version_dependencies_for_rollback_target(
@@ -234,6 +274,10 @@ def validate_repo_agent_version_dependencies_for_rollback_target(
         if version.context_pack_version_id
         else None
     )
+    if pack is None and version.context_pack_version_id is None:
+        validate_live_source_dependencies(session, version, operation="rollback")
+        validate_skill_export_dependency(session, version, operation="rollback")
+        return
     if pack is None or pack.status not in {
         PACK_STATUS_PUBLISHED,
         PACK_STATUS_SUPERSEDED,
@@ -243,17 +287,7 @@ def validate_repo_agent_version_dependencies_for_rollback_target(
             status_code=422,
             detail="rollback target references a Context Pack that is no longer retained",
         )
-    if version.skill_export_id:
-        skill_export = session.get(SkillExport, version.skill_export_id)
-        if (
-            skill_export is None
-            or skill_export.status != SKILL_EXPORT_STATUS_APPROVED
-            or not skill_export.files_json
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail="rollback target references a generated skill export that is no longer approved/retained",
-            )
+    validate_skill_export_dependency(session, version, operation="rollback")
 
 
 def create_router(deps: RepoAgentRouterDeps) -> APIRouter:
@@ -411,6 +445,32 @@ def create_router(deps: RepoAgentRouterDeps) -> APIRouter:
             unchanged=result.unchanged,
             version=repo_agent_version_read(result.version),
         )
+
+    @router.get(
+        "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/bundle",
+        response_model=RepoAgentBundleRead,
+    )
+    def get_repo_agent_version_bundle(
+        workspace_id: UUID,
+        project_id: UUID,
+        agent_key: str,
+        version_number: int,
+        principal: Principal = Depends(require_principal),
+        session: Session = Depends(get_session),
+    ) -> RepoAgentBundleRead:
+        agent = resolve_repo_agent(session, workspace_id, project_id, agent_key)
+        resource = require_repo_agent_read(session, agent, principal, deps)
+        version = session.scalar(
+            select(RepoAgentVersion).where(
+                RepoAgentVersion.repo_agent_id == agent.id,
+                RepoAgentVersion.version == version_number,
+            )
+        )
+        if version is None:
+            raise HTTPException(status_code=404, detail="repo agent version not found")
+        if version.scrubbed_at is not None:
+            raise HTTPException(status_code=410, detail="repo agent version was scrubbed")
+        return RepoAgentBundleRead.model_validate(build_repo_agent_bundle(session, agent, version, resource))
 
     @router.post(
         "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version_number}/publish",
@@ -698,5 +758,55 @@ def create_router(deps: RepoAgentRouterDeps) -> APIRouter:
         )
         session.commit()
         return repo_agent_read(session, agent)
+
+    @router.post(
+        "/workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/delete",
+        response_model=dict,
+    )
+    def delete_repo_agent(
+        workspace_id: UUID,
+        project_id: UUID,
+        agent_key: str,
+        payload: RepoAgentActionRequest,
+        principal: Principal = Depends(require_principal),
+        session: Session = Depends(get_session),
+    ) -> dict:
+        agent = resolve_repo_agent(session, workspace_id, project_id, agent_key, for_update=True)
+        require_repo_agent_review_write(session, agent, principal, deps)
+        versions = list(
+            session.scalars(
+                select(RepoAgentVersion)
+                .where(RepoAgentVersion.repo_agent_id == agent.id)
+                .with_for_update()
+            )
+        )
+        retained = [version for version in versions if version.status in {REPO_AGENT_VERSION_PUBLISHED, REPO_AGENT_VERSION_SUPERSEDED}]
+        if retained:
+            raise HTTPException(
+                status_code=422,
+                detail="published/superseded repo agent versions are retained; archive/invalidate/scrub instead of deleting",
+            )
+        session.add(
+            AuditEvent(
+                workspace_id=workspace_id,
+                actor_user_id=principal.user.id,
+                actor_token_id=principal.token_id,
+                action="repo_agent.delete",
+                target_type="repo_agent",
+                target_id=agent.id,
+                meta={"agent_key": agent.agent_key, "version_count": len(versions), "comment": payload.comment},
+            )
+        )
+        session.flush()
+        agent.current_version_id = None
+        for version in versions:
+            version.rollback_from_version_id = None
+        session.flush()
+        for version in versions:
+            session.delete(version)
+        session.flush()
+        session.delete(agent)
+        session.commit()
+        return {"deleted": True, "agent_key": agent_key, "version_count": len(versions)}
 
     return router

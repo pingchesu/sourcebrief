@@ -37,7 +37,7 @@ from sourcebrief_shared.db import get_session
 from sourcebrief_shared.models import AuditEvent, ContextPackVersion, SkillExport
 
 PackVersionResolver = Callable[..., ContextPackVersion]
-PackReadAuthorizer = Callable[[Session, UUID, UUID, Principal, ContextPackVersion], ContextPackVersion]
+PackReadAuthorizer = Callable[[Session, UUID, UUID, Principal, ContextPackVersion], None]
 ReviewWriteAuthorizer = Callable[[Session, UUID, UUID, Principal], None]
 PackResourcesAllowed = Callable[[Session, ContextPackVersion, Principal], bool]
 

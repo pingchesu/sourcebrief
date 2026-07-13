@@ -15,6 +15,26 @@ function driftSeverityTone(severity?: string | null): Tone {
   return 'neutral';
 }
 
+function findingText(finding: Record<string, unknown>): string {
+  return String(finding.message ?? finding.code ?? 'Review finding');
+}
+
+function findingAction(finding: Record<string, unknown>): string {
+  const code = String(finding.code ?? '');
+  if (code === 'missing_snapshot' || code === 'no_index_run' || code === 'empty_index') return 'Action: go to Sources → Inspect → Update repo & reindex, then run drift scan again.';
+  if (code === 'latest_index_failed') return 'Action: inspect the latest index error in Sources and re-run after fixing clone/index settings.';
+  if (code === 'review_status') return 'Action: run/read a retrieval eval for this source; approve if citations point to the right files, otherwise mark needs_update/stale/ignored with a note.';
+  if (code === 'no_recent_eval') return 'Action: run Retrieval evidence using this source as the seed. Passing eval evidence retires this warning.';
+  if (code === 'missing_embeddings') return 'Action: semantic search may degrade; reindex after confirming embedding provider health.';
+  if (code === 'missing_symbols') return 'Action: code-symbol search may be thin; inspect whether this repo actually has parseable code.';
+  return 'Action: inspect the evidence and either fix/reindex or record a review decision with a note.';
+}
+
+function driftSummary(summary: AgentCardSummaryList['summaries'][number]): string {
+  const first = summary.findings[0];
+  return first ? `${findingText(first)} ${findingAction(first)}` : summary.summary;
+}
+
 // Attention-first ordering shared with /sources: failed → stale → not indexed → unreviewed → rest.
 function attentionRank(resource: Resource, review?: ReviewItem): number {
   if (isIndexFailed(review?.last_index_status)) return 0;
@@ -94,7 +114,7 @@ export default function QualityPage() {
   const [driftError, setDriftError] = useState<string | null>(null);
 
   async function loadDrift() {
-    if (!signedIn) return;
+    if (!signedIn || !settings.workspaceId || !settings.projectId) return;
     try {
       setDrift(await client<AgentCardSummaryList>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/agent-card-summaries?latest_only=true`));
     } catch (err) { setDriftError(String(err)); }
@@ -128,7 +148,7 @@ export default function QualityPage() {
   const lastEvalRun = history?.runs[0] ?? null;
 
   async function loadHistory() {
-    if (!signedIn) return;
+    if (!signedIn || !settings.workspaceId || !settings.projectId) return;
     setHistoryBusy(true);
     try {
       setHistory(await client<RetrievalEvalRunList>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/retrieval-evals?limit=20`));
@@ -137,7 +157,7 @@ export default function QualityPage() {
   }
 
   async function loadProfiles() {
-    if (!signedIn) return;
+    if (!signedIn || !settings.workspaceId || !settings.projectId) return;
     try {
       const response = await client<RetrievalProfilesResponse>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/retrieval-profiles`);
       setProfileCatalog(response);
@@ -247,7 +267,7 @@ export default function QualityPage() {
         key: `drift-${summary.resource_id}`,
         tone: driftSeverityTone(summary.severity) === 'risk' ? 'risk' : 'warn',
         title: resource?.name ?? 'Unknown source',
-        detail: `Drift audit: ${summary.summary}`,
+        detail: `Drift audit: ${driftSummary(summary)}`,
         meta: `${summary.severity} · ${summary.findings.length} finding(s)`,
         resourceId: resource?.id,
       });
@@ -362,10 +382,19 @@ export default function QualityPage() {
           </table></div>}
       </SectionCard>
 
-      <SectionCard title="Review decision" description="Record whether the selected source is current, useful, and safe to keep enabled for agent retrieval.">
+      <SectionCard title="Review decision" description="This is a human sign-off: does the selected source have fresh indexed evidence, useful citations, and the right retrieval behavior for agents?">
         {!selectedResource
           ? <EmptyState text="Select a source from the queue to record a review decision." />
           : <form className="grid" onSubmit={saveReview}>
+            <div className="notice">
+              <strong>How to review this source</strong>
+              <ol className="muted" style={{ margin: '8px 0 0 18px' }}>
+                <li>Read Readiness/Freshness/Index below. If index is failed or missing, do not approve — reindex from Sources first.</li>
+                <li>Open Retrieval evidence and run a seed eval for this source. Check whether citations/symbols point to files you would expect.</li>
+                <li>Set <strong>approved</strong> only when the evidence is usable. Use <strong>needs_update</strong> for wrong/missing docs, <strong>stale</strong> for outdated content, or <strong>ignored</strong> for repos that should not feed agents.</li>
+                <li>Write the reason in Review note so the next maintainer knows what was checked.</li>
+              </ol>
+            </div>
             <div>
               <div className="label">Source</div>
               <strong>{selectedResource.name}</strong>
@@ -444,7 +473,7 @@ export default function QualityPage() {
             ? <EmptyState text="No drift summaries loaded. Run a drift scan to evaluate source health." />
             : drift.summaries.length === 0
               ? <EmptyState text="No agent card summaries for this project yet." />
-              : <div className="table-wrap"><table><thead><tr><th>Source</th><th>Status</th><th>Severity</th><th>Findings</th><th>Summary</th><th>Updated</th></tr></thead><tbody>{drift.summaries.map((summary) => { const resource = resources.find((r) => r.id === summary.resource_id); return <tr key={summary.id}><td><strong>{resource?.name ?? 'Unknown source'}</strong></td><td><StatusChip value={summary.status} /></td><td><StatusChip value={summary.severity} /></td><td>{summary.findings.length}</td><td className="muted">{summary.summary}</td><td className="code">{fmt(summary.created_at)}</td></tr>; })}</tbody></table></div>}
+              : <div className="table-wrap"><table><thead><tr><th>Source</th><th>Status</th><th>Severity</th><th>Findings</th><th>What to do</th><th>Updated</th></tr></thead><tbody>{drift.summaries.map((summary) => { const resource = resources.find((r) => r.id === summary.resource_id); return <tr key={summary.id}><td><strong>{resource?.name ?? 'Unknown source'}</strong></td><td><StatusChip value={summary.status} /></td><td><StatusChip value={summary.severity} /></td><td>{summary.findings.length ? <ul className="muted" style={{ margin: 0, paddingLeft: 16 }}>{summary.findings.slice(0, 3).map((finding, index) => <li key={index}>{findingText(finding)}</li>)}</ul> : <span className="muted">none</span>}</td><td className="muted">{summary.findings[0] ? findingAction(summary.findings[0]) : 'No action needed.'}</td><td className="code">{fmt(summary.created_at)}</td></tr>; })}</tbody></table></div>}
         </div> : null}
       </div>
     </section>

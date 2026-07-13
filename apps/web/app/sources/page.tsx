@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { PageHeader, Card, SectionCard, Metric, Chip, StatusChip, EmptyState, Field, LifecyclePipeline, ReadinessBadge } from '../../components/ui';
 import { AgentContextPreview } from '../../components/AgentContextPreview';
@@ -9,7 +10,7 @@ import { freshnessLabel, isActive, isIndexFailed, isVisible, lifecycleStages, re
 import type { AgentContextResponse, ContextArtifact, ContextPackSummary, ContextPackVersion, FolderBundleUploadResponse, GitResourceEnv, IndexRun, ManifestDiff, Resource, ResourceManifest, SectionImpact, SkillExport, SnapshotSections, ReviewItem } from '../../lib/types';
 
 type ResourceType = 'git' | 'url' | 'markdown' | 'upload' | 'folder_bundle';
-type GitDraft = { branch: string; auth_token_env: string; clone_timeout: string; max_file_bytes: string; max_repo_files: string; max_repo_bytes: string; update_frequency: string };
+
 
 const SAMPLE_MARKDOWN = `# SourceBrief sample runbook
 
@@ -33,19 +34,7 @@ function defaultName(type: ResourceType) {
   return type === 'git' ? 'New repo source' : type === 'url' ? 'New URL source' : type === 'markdown' ? 'New markdown source' : type === 'folder_bundle' ? 'New folder bundle' : 'New upload source';
 }
 
-function toGitDraft(env: GitResourceEnv | null): GitDraft {
-  return {
-    branch: env?.branch ?? '',
-    auth_token_env: env?.auth_token_env ?? '',
-    clone_timeout: env?.clone_timeout?.toString() ?? '',
-    max_file_bytes: env?.max_file_bytes?.toString() ?? '',
-    max_repo_files: env?.max_repo_files?.toString() ?? '',
-    max_repo_bytes: env?.max_repo_bytes?.toString() ?? '',
-    update_frequency: env?.update_frequency ?? 'daily',
-  };
-}
 
-function optionalNumber(value: string) { return value.trim() ? Number(value.trim()) : null; }
 function sizeDelta(base: number | null, head: number | null) {
   if (base == null && head == null) return '—';
   if (base == null && head != null) return `+${head.toLocaleString()}`;
@@ -146,11 +135,8 @@ export default function SourcesPage() {
 
   // Git environment state.
   const [gitEnv, setGitEnv] = useState<GitResourceEnv | null>(null);
-  const [gitDraft, setGitDraft] = useState<GitDraft>(toGitDraft(null));
   const [gitEnvLoading, setGitEnvLoading] = useState(false);
-  const [gitEnvBusy, setGitEnvBusy] = useState(false);
   const [gitEnvError, setGitEnvError] = useState<string | null>(null);
-  const [gitEnvSaved, setGitEnvSaved] = useState(false);
 
   const selectedReview = selectedResource ? reviewByResource.get(selectedResource.id) : undefined;
   const lastIndexStatus = indexRuns[0]?.status ?? selectedReview?.last_index_status ?? null;
@@ -158,15 +144,15 @@ export default function SourcesPage() {
   const isFolderBundle = selectedResource?.type === 'folder_bundle';
 
   // Reset detail-scoped state when selection changes.
-  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setGitEnvSaved(false); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); setSnapshotSections(null); setSnapshotSectionsError(null); setSnapshotSectionsLimit(8); setSectionImpact(null); setSectionImpactError(null); setContextArtifacts([]); setSelectedArtifact(null); setArtifactError(null); setArtifactBusy(false); setArtifactSourceLimit(8); setArtifactCitationLimit(8); setAckArtifactWarnings(false); setRejectArtifactReason(''); setSelectedPack(null); setPackError(null); setPackComment(''); setPackArtifactIds([]); setSkillExports([]); setSelectedSkillExport(null); setSkillExportError(null); setSkillExportComment(''); setSelectedSkillExportFilePath(null); }, [selectedResourceId]);
+  useEffect(() => { setPreview(null); setPreviewError(null); setActionError(null); setManifest(null); setManifestError(null); setManifestDiff(null); setManifestDiffError(null); setManifestDiffLimit(25); setSnapshotSections(null); setSnapshotSectionsError(null); setSnapshotSectionsLimit(8); setSectionImpact(null); setSectionImpactError(null); setContextArtifacts([]); setSelectedArtifact(null); setArtifactError(null); setArtifactBusy(false); setArtifactSourceLimit(8); setArtifactCitationLimit(8); setAckArtifactWarnings(false); setRejectArtifactReason(''); setSelectedPack(null); setPackError(null); setPackComment(''); setPackArtifactIds([]); setSkillExports([]); setSelectedSkillExport(null); setSkillExportError(null); setSkillExportComment(''); setSelectedSkillExportFilePath(null); }, [selectedResourceId]);
 
   // Load git env for the selected git source.
   useEffect(() => {
-    if (!selectedResource || selectedResource.type !== 'git') { setGitEnv(null); setGitDraft(toGitDraft(null)); return; }
+    if (!selectedResource || selectedResource.type !== 'git') { setGitEnv(null); return; }
     let cancelled = false;
     setGitEnvLoading(true); setGitEnvError(null);
     client<GitResourceEnv[]>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/git-env`)
-      .then((list) => { if (cancelled) return; const found = list.find((env) => env.resource_id === selectedResource.id) ?? null; setGitEnv(found); setGitDraft(toGitDraft(found)); })
+      .then((list) => { if (cancelled) return; setGitEnv(list.find((env) => env.resource_id === selectedResource.id) ?? null); })
       .catch((err) => { if (!cancelled) setGitEnvError(String(err)); })
       .finally(() => { if (!cancelled) setGitEnvLoading(false); });
     return () => { cancelled = true; };
@@ -237,6 +223,12 @@ export default function SourcesPage() {
   }, [selectedArtifact?.id]);
 
   async function refreshContextPacks() {
+    if (!settings.sessionToken.trim() || !settings.workspaceId || !settings.projectId) {
+      setContextPacks([]);
+      setSelectedPack(null);
+      setPackError(null);
+      return;
+    }
     try {
       const packs = await client<ContextPackSummary[]>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/context-packs`);
       setContextPacks(packs);
@@ -563,30 +555,6 @@ export default function SourcesPage() {
     finally { setSkillExportBusy(false); }
   }
 
-  async function saveGitEnv(event: FormEvent) {
-    event.preventDefault();
-    if (!selectedResource) return;
-    setGitEnvBusy(true); setGitEnvError(null); setGitEnvSaved(false);
-    try {
-      const updated = await client<GitResourceEnv>(`/workspaces/${settings.workspaceId}/projects/${settings.projectId}/resources/${selectedResource.id}/git-env`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          branch: gitDraft.branch.trim() || null,
-          auth_token_env: gitDraft.auth_token_env.trim() || null,
-          clone_timeout: optionalNumber(gitDraft.clone_timeout),
-          max_file_bytes: optionalNumber(gitDraft.max_file_bytes),
-          max_repo_files: optionalNumber(gitDraft.max_repo_files),
-          max_repo_bytes: optionalNumber(gitDraft.max_repo_bytes),
-          update_frequency: gitDraft.update_frequency,
-        }),
-      });
-      setGitEnv(updated);
-      setGitDraft(toGitDraft(updated));
-      setGitEnvSaved(true);
-      await reload();
-    } catch (err) { setGitEnvError(String(err)); }
-    finally { setGitEnvBusy(false); }
-  }
 
   const stages = selectedResource ? lifecycleStages(selectedResource, selectedReview, lastIndexStatus) : [];
   const freshness = selectedResource ? freshnessLabel(selectedReview) : null;
@@ -754,28 +722,9 @@ export default function SourcesPage() {
               <div><div className="label">Retrieval</div><Chip tone={selectedResource.queryable ? 'ready' : selectedResource.retrieval_enabled ? 'warn' : 'warn'}>{selectedResource.queryable ? 'queryable' : selectedResource.retrieval_enabled ? 'not queryable' : 'off'}</Chip></div>
             </div>
             {selectedResource.coverage_warnings?.length ? <div className="notice error"><strong>Coverage warning</strong>{selectedResource.coverage_warnings.map((warning, index) => <div key={index} className="muted">{warning}</div>)}{selectedReview?.last_index_error_message ? <div className="muted">Last index error: {selectedReview.last_index_error_message}</div> : null}</div> : null}
-            {selectedResource.coverage_status === 'partial' ? <div className="notice error"><strong>Partial corpus — answer with caveat</strong><div className="muted">{Object.entries(selectedResource.index_diagnostics?.configured_budgets ?? {}).map(([key, value]) => `${key}=${value}`).join(', ') || 'limited import profile'}</div>{selectedResource.index_diagnostics?.suggested_retry ? <div className="muted">Retry guidance: {selectedResource.index_diagnostics.suggested_retry}</div> : null}</div> : null}
+            {selectedResource.coverage_status === 'partial' ? <div className="notice error"><strong>Partial corpus — answer with caveat</strong><div className="muted">This index hit an actual ingestion limit; broad install/security/architecture/comparison claims may be incomplete.</div><div className="muted">{Object.entries(selectedResource.index_diagnostics?.configured_budgets ?? {}).map(([key, value]) => `${key}=${value}`).join(', ') || 'limited import profile'}</div>{selectedResource.index_diagnostics?.suggested_retry ? <div className="muted">Retry guidance: {selectedResource.index_diagnostics.suggested_retry}</div> : null}</div> : null}
             <div><div className="label">Source location</div><div className="muted">{selectedResource.uri}</div></div>
-            {isGit ? <form className="notice grid" aria-label="Git environment form" onSubmit={saveGitEnv}>
-              <div><strong>Git environment</strong><div className="muted">Configure private-repo access with a server-side environment variable reference. SourceBrief stores the env var name, not the token value.</div></div>
-              {gitEnvLoading ? <div className="muted">Loading Git environment…</div> : null}
-              {gitEnvError ? <div className="notice error">{gitEnvError}</div> : null}
-              {gitEnvSaved ? <div className="notice">Git environment saved.</div> : null}
-              <div className="grid two">
-                <Field label="Git branch"><input className="input" value={gitDraft.branch} onChange={(event) => setGitDraft((draft) => ({ ...draft, branch: event.target.value }))} placeholder="main" /></Field>
-                <Field label="Git auth token env var"><input className="input" value={gitDraft.auth_token_env} onChange={(event) => setGitDraft((draft) => ({ ...draft, auth_token_env: event.target.value }))} placeholder="GITHUB_TOKEN_FOR_SOURCEBRIEF" /><div className="muted">Use an environment variable present on the worker/API host. Do not paste a raw token.</div></Field>
-              </div>
-              <div className="grid three">
-                <Field label="Clone timeout seconds"><input className="input" inputMode="numeric" value={gitDraft.clone_timeout} onChange={(event) => setGitDraft((draft) => ({ ...draft, clone_timeout: event.target.value }))} placeholder="120" /></Field>
-                <Field label="Max file bytes"><input className="input" inputMode="numeric" value={gitDraft.max_file_bytes} onChange={(event) => setGitDraft((draft) => ({ ...draft, max_file_bytes: event.target.value }))} placeholder="200000" /></Field>
-                <Field label="Max repo files"><input className="input" inputMode="numeric" value={gitDraft.max_repo_files} onChange={(event) => setGitDraft((draft) => ({ ...draft, max_repo_files: event.target.value }))} placeholder="500" /></Field>
-              </div>
-              <div className="grid two">
-                <Field label="Max repo bytes"><input className="input" inputMode="numeric" value={gitDraft.max_repo_bytes} onChange={(event) => setGitDraft((draft) => ({ ...draft, max_repo_bytes: event.target.value }))} placeholder="50000000" /></Field>
-                <Field label="Git update frequency"><select className="input" value={gitDraft.update_frequency} onChange={(event) => setGitDraft((draft) => ({ ...draft, update_frequency: event.target.value }))}><option value="manual">manual</option><option value="hourly">hourly</option><option value="daily">daily</option><option value="weekly">weekly</option></select></Field>
-              </div>
-              <button className="btn secondary" disabled={gitEnvBusy} type="submit">{gitEnvBusy ? 'Saving…' : 'Save Git environment'}</button>
-            </form> : null}
+            {isGit ? <div className="notice"><strong>Git indexing settings moved to Settings</strong><div className="muted">Edit branch, Git auth env var, clone timeout, and max chunks/symbols from Settings so project-wide indexing knobs are not buried inside source review.</div>{gitEnvLoading ? <div className="muted">Loading Git settings…</div> : null}{gitEnvError ? <div className="notice error">{gitEnvError}</div> : null}{gitEnv ? <div className="muted">Current: branch={gitEnv.branch || 'default'}, token env={gitEnv.auth_token_env || 'none'}, max_chunks={gitEnv.max_chunks ?? 'default'}, max_symbols={gitEnv.max_symbols ?? 'default'}</div> : null}<div className="toolbar" style={{ marginTop: 8 }}><Link className="btn secondary" href="/config">Open Git settings</Link></div></div> : null}
             {selectedResource.type === 'folder_bundle' ? <div className="notice">
               <strong>Folder manifest</strong>
               {manifest ? <div className="grid three" style={{ marginTop: 8 }}>

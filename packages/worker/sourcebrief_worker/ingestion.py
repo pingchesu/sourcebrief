@@ -65,17 +65,17 @@ from sourcebrief_worker.section_store import build_snapshot_sections
 # --- configuration ---------------------------------------------------------
 
 DEFAULT_MAX_FILE_BYTES = 1_000_000
-HARD_MAX_FILE_BYTES = 5_000_000
+HARD_MAX_FILE_BYTES = 100_000_000
 DEFAULT_MAX_REPO_FILES = 1_000
-HARD_MAX_REPO_FILES = 5_000
+HARD_MAX_REPO_FILES = 50_000
 DEFAULT_MAX_REPO_BYTES = 20_000_000
-HARD_MAX_REPO_BYTES = 100_000_000
+HARD_MAX_REPO_BYTES = 2_000_000_000
 DEFAULT_MAX_DOCUMENT_BYTES = 5_000_000
-HARD_MAX_DOCUMENT_BYTES = 20_000_000
+HARD_MAX_DOCUMENT_BYTES = 100_000_000
 DEFAULT_MAX_CHUNKS = 5_000
-HARD_MAX_CHUNKS = 20_000
+HARD_MAX_CHUNKS = 200_000
 DEFAULT_MAX_SYMBOLS = 5_000
-HARD_MAX_SYMBOLS = 20_000
+HARD_MAX_SYMBOLS = 200_000
 DEFAULT_MAX_CHARS = 2_000
 DEFAULT_OVERLAP = 200
 DEFAULT_CLONE_TIMEOUT = 120
@@ -694,10 +694,12 @@ def _git_env(source_config: dict | None = None, target_url: str | None = None) -
         if token and target_url and urlparse(target_url).scheme == "https":
             parsed = urlparse(target_url)
             base = f"{parsed.scheme}://{parsed.netloc}/"
+            auth_header = base64.b64encode(f"x-access-token:{token}".encode()).decode("ascii")
             env["GIT_CONFIG_COUNT"] = "1"
             env["GIT_CONFIG_KEY_0"] = f"http.{base}.extraHeader"
-            env["GIT_CONFIG_VALUE_0"] = f"Authorization: Bearer {token}"
+            env["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {auth_header}"
     return env
+
 
 
 def clone_repo(
