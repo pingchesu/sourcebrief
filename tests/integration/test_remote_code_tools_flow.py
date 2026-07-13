@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import text
 
-from sourcebrief_api.routers import remote_code as remote_code_router
 from sourcebrief_api.main import app
+from sourcebrief_api.routers import remote_code as remote_code_router
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
 from sourcebrief_shared.models import IndexRun, Resource, SourceSnapshot
