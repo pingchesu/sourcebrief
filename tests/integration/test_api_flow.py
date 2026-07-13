@@ -86,6 +86,27 @@ def test_provider_health_returns_503_on_failed_provider(monkeypatch) -> None:
     assert response.json()["embedding"]["status"] == "failed"
 
 
+def test_manual_refresh_reuses_active_run_instead_of_enqueueing_duplicate() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id, resource_id = create_flow(client, "refresh-dedupe")
+
+    first = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh",
+        headers=headers,
+    )
+    assert first.status_code == 202, first.text
+    second = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/refresh",
+        headers=headers,
+    )
+    assert second.status_code == 202, second.text
+    assert second.json()["id"] == first.json()["id"]
+
+    completed = wait_for_run(client, workspace_id, first.json()["id"], headers)
+    assert completed["status"] == "succeeded"
+
+
 def test_workspace_project_resource_refresh_flow() -> None:
     require_real_services()
     health = TestClient(app).get("/provider-health")

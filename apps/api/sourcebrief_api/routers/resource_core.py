@@ -68,6 +68,7 @@ class ResourceCoreRouterDeps:
 
 
 router = APIRouter()
+ACTIVE_INDEX_RUN_STATUSES = ("enqueueing", "queued", "running")
 _deps: ResourceCoreRouterDeps
 
 
@@ -779,6 +780,31 @@ def refresh_resource(
     require_scope(principal, "resource:refresh")
     _deps.require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:refresh"})
     resource = _deps.resolve_resource(session, workspace_id, project_id, resource_id, principal)
+    # Serialize manual refresh creation per resource so repeated clicks/API retries do not
+    # enqueue duplicate work. If a refresh is already enqueueing/queued/running, return that
+    # run idempotently instead of mutating the queue again.
+    session.execute(
+        select(Resource.id)
+        .where(
+            Resource.id == resource.id,
+            Resource.workspace_id == workspace_id,
+            Resource.project_id == project_id,
+        )
+        .with_for_update()
+    ).scalar_one()
+    active_run = session.scalar(
+        select(IndexRun)
+        .where(
+            IndexRun.workspace_id == workspace_id,
+            IndexRun.project_id == project_id,
+            IndexRun.resource_id == resource_id,
+            IndexRun.status.in_(ACTIVE_INDEX_RUN_STATUSES),
+        )
+        .order_by(IndexRun.created_at.desc())
+        .limit(1)
+    )
+    if active_run is not None:
+        return active_run
     if resource.type.lower() in FOLDER_BUNDLE_RESOURCE_TYPES:
         raise HTTPException(status_code=422, detail="folder bundle resources are updated by uploading a new zip, not by refresh")
     run = IndexRun(

@@ -9,10 +9,9 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import text
 
-import sourcebrief_api.main as api_main
 import sourcebrief_api.retrieval as retrieval_module
-from sourcebrief_api.services import context_packets as context_packets_service
 from sourcebrief_api.main import app
+from sourcebrief_api.services import context_packets as context_packets_service
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
 from sourcebrief_shared.models import IndexRun

@@ -65,17 +65,21 @@ from sourcebrief_worker.section_store import build_snapshot_sections
 # --- configuration ---------------------------------------------------------
 
 DEFAULT_MAX_FILE_BYTES = 1_000_000
-HARD_MAX_FILE_BYTES = 100_000_000
+# Hard caps are still operator-tunable per resource, but they must stay inside
+# a bounded per-import envelope. The previous caps allowed a single source to
+# request multi-GB imports and hundreds of thousands of chunks/symbols, which
+# made one bad resource capable of exhausting workers and retrieval indexes.
+HARD_MAX_FILE_BYTES = 10_000_000
 DEFAULT_MAX_REPO_FILES = 1_000
-HARD_MAX_REPO_FILES = 50_000
+HARD_MAX_REPO_FILES = 5_000
 DEFAULT_MAX_REPO_BYTES = 20_000_000
-HARD_MAX_REPO_BYTES = 2_000_000_000
+HARD_MAX_REPO_BYTES = 200_000_000
 DEFAULT_MAX_DOCUMENT_BYTES = 5_000_000
-HARD_MAX_DOCUMENT_BYTES = 100_000_000
+HARD_MAX_DOCUMENT_BYTES = 10_000_000
 DEFAULT_MAX_CHUNKS = 5_000
-HARD_MAX_CHUNKS = 200_000
+HARD_MAX_CHUNKS = 20_000
 DEFAULT_MAX_SYMBOLS = 5_000
-HARD_MAX_SYMBOLS = 200_000
+HARD_MAX_SYMBOLS = 20_000
 DEFAULT_MAX_CHARS = 2_000
 DEFAULT_OVERLAP = 200
 DEFAULT_CLONE_TIMEOUT = 120

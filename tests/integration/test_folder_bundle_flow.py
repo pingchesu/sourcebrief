@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import func, select, text
 
-from sourcebrief_api.routers import resource_core as resource_core_router
 from sourcebrief_api.main import _bootstrap_default_admin, app
+from sourcebrief_api.routers import resource_core as resource_core_router
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
 from sourcebrief_shared.models import (

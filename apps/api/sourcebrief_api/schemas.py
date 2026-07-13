@@ -461,11 +461,11 @@ class GitResourceEnvUpdate(BaseModel):
     branch: str | None = None
     auth_token_env: str | None = None
     clone_timeout: int | None = Field(default=None, ge=1, le=600)
-    max_file_bytes: int | None = Field(default=None, ge=1, le=100_000_000)
-    max_repo_files: int | None = Field(default=None, ge=1, le=50_000)
-    max_repo_bytes: int | None = Field(default=None, ge=1, le=2_000_000_000)
-    max_chunks: int | None = Field(default=None, ge=1, le=200_000)
-    max_symbols: int | None = Field(default=None, ge=1, le=200_000)
+    max_file_bytes: int | None = Field(default=None, ge=1, le=10_000_000)
+    max_repo_files: int | None = Field(default=None, ge=1, le=5_000)
+    max_repo_bytes: int | None = Field(default=None, ge=1, le=200_000_000)
+    max_chunks: int | None = Field(default=None, ge=1, le=20_000)
+    max_symbols: int | None = Field(default=None, ge=1, le=20_000)
     update_frequency: str | None = None
 
 
