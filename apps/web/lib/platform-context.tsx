@@ -73,7 +73,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
 
   const applySession = useCallback((next: PlatformSettings) => {
     setSettingsState(next);
-    saveSettings(next);
+    try { saveSettings(next); }
+    catch { /* Browser storage can be unavailable/blocked in some private sessions; keep in-memory state usable. */ }
   }, []);
 
   const clearPlatformData = useCallback(() => {
@@ -104,9 +105,13 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     if (!baseSettings.sessionToken.trim()) return null;
     const identity = await apiFetch<CurrentUserResponse>(baseSettings, '/auth/me');
     setCurrentUser(identity.user);
-    const workspaceId = baseSettings.workspaceId || identity.default_workspace_id || identity.workspaces[0]?.id || '';
+    const requestedWorkspace = identity.workspaces.find((item) => item.id === baseSettings.workspaceId);
+    const defaultWorkspace = identity.workspaces.find((item) => item.id === identity.default_workspace_id) ?? identity.workspaces[0] ?? null;
+    const workspaceId = requestedWorkspace?.id ?? defaultWorkspace?.id ?? '';
     const projectOptions = workspaceId ? identity.projects_by_workspace[workspaceId] ?? [] : [];
-    const projectId = baseSettings.projectId || identity.default_project_id || projectOptions[0]?.id || '';
+    const requestedProject = projectOptions.find((item) => item.id === baseSettings.projectId);
+    const defaultProject = projectOptions.find((item) => item.id === identity.default_project_id) ?? projectOptions[0] ?? null;
+    const projectId = requestedProject?.id ?? defaultProject?.id ?? '';
     const next = { ...baseSettings, workspaceId, projectId };
     applySession(next);
     setWorkspaces(identity.workspaces);

@@ -245,7 +245,7 @@ def create_router(deps: RuntimeAgentRouterDeps) -> APIRouter:
         fields = payload.model_dump(exclude_unset=True)
         source_config = dict(resource.source_config or {})
         source_config.setdefault("url", resource.uri)
-        for key in ("branch", "auth_token_env", "clone_timeout", "max_file_bytes", "max_repo_files", "max_repo_bytes"):
+        for key in ("branch", "auth_token_env", "clone_timeout", "max_file_bytes", "max_repo_files", "max_repo_bytes", "max_chunks", "max_symbols"):
             if key in fields:
                 value = fields[key]
                 if value is None or value == "":

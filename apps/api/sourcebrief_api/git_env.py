@@ -31,6 +31,8 @@ def git_env_read(
         max_file_bytes=source_config.get("max_file_bytes"),
         max_repo_files=source_config.get("max_repo_files"),
         max_repo_bytes=source_config.get("max_repo_bytes"),
+        max_chunks=source_config.get("max_chunks"),
+        max_symbols=source_config.get("max_symbols"),
         update_frequency=resource.update_frequency,
         next_refresh_at=resource.next_refresh_at,
     )

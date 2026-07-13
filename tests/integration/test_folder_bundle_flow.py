@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import func, select, text
 
-from sourcebrief_api import main as api_main
+from sourcebrief_api.routers import resource_core as resource_core_router
 from sourcebrief_api.main import _bootstrap_default_admin, app
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
@@ -274,7 +274,7 @@ def test_enqueue_failure_marks_failed_and_deletes_staged_zip(
         def enqueue(self, *args, **kwargs) -> None:
             raise RuntimeError("redis unavailable")
 
-    monkeypatch.setattr(api_main, "Queue", FailingQueue)
+    monkeypatch.setattr(resource_core_router, "Queue", FailingQueue)
     response = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/resources/upload-folder-bundle",
         headers=auth_headers(token),

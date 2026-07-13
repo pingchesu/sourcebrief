@@ -1,8 +1,7 @@
 # D — Repo Agent V0 Draft / Update / Publish Workflow Implementation Spec
 
-Status: Draft v0.2 after adversarial review  
-Branch: `feat/context-artifact-compiler-d-repo-agent-v0`  
-Depends on: B0 deterministic Resource Map artifacts, B1 Context Pack versions, C generated Skill Export
+Status: Implemented v0.3
+Depends on: an indexed Git snapshot and manifest; B1 Context Pack versions and C generated Skill Export are optional enrichment layers
 
 ## 1. Goal
 
@@ -10,7 +9,7 @@ Turn an indexed Git resource into a managed **Repo Agent V0** view without intro
 
 Repo Agent V0 is a product/runtime view over one canonical Git `resource_id` plus:
 
-- an explicit `pack_key` stream and pinned Context Pack version from that stream;
+- an explicit `pack_key` stream and optional pinned Context Pack version from that stream;
 - optional approved generated Skill Export for local runtime install;
 - refresh/update policy;
 - draft version generated from source updates;
@@ -18,7 +17,7 @@ Repo Agent V0 is a product/runtime view over one canonical Git `resource_id` plu
 - rollback history;
 - install/runtime instructions.
 
-This milestone must make repo-agent lifecycle visible and operable from UI/API while preserving the architecture decision that **Repo Agent is not a skill**. A Repo Agent can be useful with only a Context Pack and API/MCP runtime instructions. A generated skill is an optional adapter/export.
+This milestone must make repo-agent lifecycle visible and operable from UI/API while preserving the architecture decision that **Repo Agent is not a skill**. A Repo Agent can use its live indexed source snapshot directly; a Context Pack enriches the runtime contract, and a generated skill is an optional adapter/export.
 
 ## 2. Non-goals
 
@@ -34,7 +33,7 @@ A user can:
 
 1. Select a Git source.
 2. Create a Repo Agent V0 profile from it.
-3. See current published agent version: source, pack version, optional skill export version/hash, freshness, install/runtime instructions.
+3. See current published agent version: source snapshot, optional pack/export versions, freshness, install/runtime instructions, and a reviewable generated bundle.
 4. Trigger refresh/reconcile.
 5. See refresh status and draft generation result.
 6. When the Git resource updates and a new Resource Map / Context Pack is available, see Repo Agent drafts with:
@@ -90,7 +89,7 @@ Fields:
 - `status text not null` — `draft`, `published`, `superseded`, `invalidated`, `failed`.
 - `source_snapshot_id uuid null` — null only after scrub or for failed compile before a snapshot exists.
 - `resource_manifest_id uuid null` — null only after scrub or for failed compile before a manifest exists.
-- `context_pack_version_id uuid null` — null for `failed` rows with `missing_context_pack` and after scrub.
+- `context_pack_version_id uuid null` — null for valid live-indexed-source versions, failed rows, and after scrub.
 - `skill_export_id uuid null`
 - `version_hash text not null`
 - `summary_json jsonb not null`
@@ -139,8 +138,8 @@ Volatile fields like created time, reviewer, status, and title are excluded.
 
 1. Validate resource type is `git` and visible in same workspace/project.
 2. Resolve latest succeeded source snapshot and resource manifest.
-3. Resolve current published Context Pack for `repo_agent.pack_key` whose coverage includes the resource. If absent, create `failed` draft with validation error `missing_context_pack`; `context_pack_version_id` and pack hash are null placeholders in hash input.
-4. Resolve latest approved Skill Export for that Context Pack version if one exists. If absent, continue as pack-only with `skill_export_id=null`; validation warning `missing_skill_export` but `ok=true`.
+3. Resolve current published Context Pack for `repo_agent.pack_key` whose coverage includes the resource. If absent, continue from the live indexed snapshot with `context_pack_version_id=null`, install mode `live_indexed_source`, and warning `missing_context_pack`; the draft remains valid.
+4. Resolve the latest approved Skill Export for that Context Pack version if one exists. If absent, continue with `skill_export_id=null`; validation warning `missing_skill_export` but `ok=true`.
 5. Build deterministic summary:
    - resource name / URI / branch / commit if available;
    - manifest file counts / changed files from latest diff if available;
@@ -155,13 +154,15 @@ Volatile fields like created time, reviewer, status, and title are excluded.
    - skill export package hash changed or missing/added;
    - file change summary if latest manifest diff exists.
 7. Build install instructions:
-   - pack-only runtime instructions always available;
+   - live-source runtime instructions are available from a current indexed snapshot;
+   - published-context-pack runtime instructions are used when a matching published pack exists;
    - generated skill install available only when approved Skill Export exists;
    - no bearer token in UI;
    - no production mutation permission;
    - skill download via authenticated UI action.
-8. Persist `draft` or `failed` version unless an identical non-invalidated draft already exists.
-9. For rollback, create a **new draft** copying target version references with `rollback_from_version_id`; publish flow then creates a new published version. V0 does not repoint current to a superseded row.
+8. Generate the review bundle (`README.md`, `runtime-instructions.md`, `evidence-preview.md`, `manifest.json`) from the pinned version references without copying the full corpus.
+9. Persist `draft` or `failed` version unless an identical non-invalidated draft already exists.
+10. For rollback, create a **new draft** copying target version references with `rollback_from_version_id`; publish flow then creates a new published version. V0 does not repoint current to a superseded row.
 
 ## 7. Refresh/reconcile semantics
 
@@ -169,7 +170,7 @@ V0 `refresh` endpoint is synchronous for repo-agent version compile, not a full 
 
 - It does **not** clone or index Git by itself.
 - It checks latest completed index state already present in SourceBrief.
-- It compiles a new repo-agent draft from the latest published Context Pack and optional approved Skill Export.
+- It compiles a new repo-agent draft from the latest indexed snapshot, optionally enriched by the current published Context Pack and approved Skill Export.
 - It returns `{status: "draft"|"failed"|"unchanged", version, job_like_summary}`.
 - If latest resource snapshot is stale relative to source update policy, UI shows “Source needs reindex first” and links to the Source update action.
 - Idempotency: concurrent refresh uses `SELECT ... FOR UPDATE` on `repo_agents` and dedupes by `version_hash`.
@@ -193,7 +194,7 @@ Under transaction:
 
 1. Lock `repo_agents` row `FOR UPDATE`.
 2. Resolve target version `FOR UPDATE`; verify same repo-agent/workspace/project/resource and `status=draft`.
-3. Verify validation ok, Context Pack is `published`, optional Skill Export is `approved` if present.
+3. Verify validation ok. If a Context Pack is referenced it must be `published`; a live-indexed-source draft instead requires its pinned snapshot and manifest. Optional Skill Export must be `approved` if present.
 4. Verify target is the newest non-invalidated draft for the agent. Older drafts require refresh/regenerate; UI disables publish.
 5. Resolve current version `FOR UPDATE`; if present and `published`, set to `superseded` with reason.
 6. Set target to `published`, `published_by`, `published_at`, comment.
@@ -221,6 +222,12 @@ This keeps the current repo-agent version row status always `published`. It does
 - Superseded versions can be invalidated with reason.
 - Scrub operation clears `summary_json`, `diff_json`, `install_json`, `validation_json` to minimal tombstone, nulls `repo_agent_versions.resource_id`, `source_snapshot_id`, `resource_manifest_id`, `context_pack_version_id`, and `skill_export_id`, sets `scrubbed_at`; audit retains version id/status only. If all versions are scrubbed and the agent is archived, scrub may also null `repo_agents.resource_id` so resource hard purge can proceed while leaving an agent-key tombstone.
 
+### 8.5 Delete an unpublished agent
+
+- A repo agent with no `published` or `superseded` version may be deleted with a required review comment.
+- Draft/failed versions are deleted in the same transaction and an audit event is written before the agent row is removed.
+- Any retained published history makes delete fail closed; operators must use archive/invalidate/scrub instead.
+
 ## 9. API
 
 All endpoints require normal authenticated API access; no unsigned webhook endpoint.
@@ -229,11 +236,13 @@ All endpoints require normal authenticated API access; no unsigned webhook endpo
 - `POST /workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/repo-agent` with body `{agent_key?, title?, pack_key}`; default `pack_key='default'` but UI must show the selected pack stream.
 - `GET /workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}`
 - `POST /workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/refresh`
+- `GET /workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version}/bundle`
 - `POST /workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version}/publish`
 - `POST /workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version}/rollback-draft`
 - `POST /workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version}/invalidate` with required reason; invalidates draft/failed/superseded versions, and current published only if the repo-agent is archived.
 - `POST /workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/archive` with required comment; sets `repo_agents.status='archived'`; if current version is invalidated during archive flow, clears `current_version_id`.
 - `POST /workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/versions/{version}/scrub` with required reason; allowed only when repo-agent is archived and version is `invalidated` or `failed`; clears retained JSON/source refs. If all versions for the archived agent are scrubbed, also nulls `repo_agents.resource_id` to unblock resource hard purge while preserving agent-key tombstone.
+- `POST /workspaces/{workspace_id}/projects/{project_id}/repo-agents/{agent_key}/delete` with required comment; allowed only when no published/superseded history exists.
 
 API response includes human labels and hides internal IDs from primary UI affordances. Raw IDs may exist in JSON for clients but UI must not ask users to paste them.
 
@@ -257,10 +266,11 @@ Add `/repo-agents` as a real page rather than placeholder.
 - draft/update panel ordered newest first;
 - stale draft warning and publish disabled for older drafts;
 - version history;
-- install/runtime instructions: pack-only and optional skill install;
+- generated review bundle with README, runtime instructions, evidence samples, manifest, and JSON download;
+- install/runtime instructions: live indexed source, published Context Pack, and optional skill install modes;
 - referenced Context Pack + optional Skill Export with links/actions;
 - validation findings;
-- publish/rollback-draft/invalidate with required comments.
+- publish/rollback-draft/invalidate/delete with required comments and retained-history guardrails.
 
 ### Source integration
 

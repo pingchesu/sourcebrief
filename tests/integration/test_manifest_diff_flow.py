@@ -914,6 +914,124 @@ def test_repo_agent_v0_draft_publish_archive_scrub_lifecycle(monkeypatch: pytest
     )
     assert index_run.status_code == 202, index_run.text
     run_index(index_run.json()["id"])
+
+    live_agent = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/repo-agent",
+        headers=auth_headers(token),
+        json={"agent_key": "live-source-fixture", "pack_key": "default", "title": "Live Source Fixture"},
+    )
+    assert live_agent.status_code == 200, live_agent.text
+    live_refresh = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/refresh",
+        headers=auth_headers(token),
+    )
+    assert live_refresh.status_code == 200, live_refresh.text
+    live_version = live_refresh.json()["version"]
+    assert live_version["status"] == "draft"
+    assert live_version["validation_json"]["ok"] is True
+    assert {warning["code"] for warning in live_version["validation_json"]["warnings"]} >= {"missing_context_pack"}
+    assert live_version["install_json"]["mode"] == "live_indexed_source"
+    live_bundle = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/versions/{live_version['version']}/bundle",
+        headers=auth_headers(token),
+    )
+    assert live_bundle.status_code == 200, live_bundle.text
+    bundle_body = live_bundle.json()
+    bundle_text = "\n".join(item["content"] for item in bundle_body["files"])
+    assert workspace_id not in bundle_text
+    assert project_id not in bundle_text
+    assert resource_id not in bundle_text
+    assert live_version["source_snapshot_id"] not in bundle_text
+    assert {item["path"] for item in bundle_body["files"]} == {
+        "README.md",
+        "runtime-instructions.md",
+        "evidence-preview.md",
+        "manifest.json",
+    }
+    assert "README.md" in next(item["content"] for item in bundle_body["files"] if item["path"] == "evidence-preview.md")
+    bundle_again = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/versions/{live_version['version']}/bundle",
+        headers=auth_headers(token),
+    )
+    assert bundle_again.status_code == 200, bundle_again.text
+    assert bundle_again.json()["package_hash"] == bundle_body["package_hash"]
+    live_publish = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/versions/{live_version['version']}/publish",
+        headers=auth_headers(token),
+        json={"comment": "Publish live indexed source contract."},
+    )
+    assert live_publish.status_code == 200, live_publish.text
+    assert live_publish.json()["current"]["install_json"]["mode"] == "live_indexed_source"
+    live_rollback = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/versions/{live_version['version']}/rollback-draft",
+        headers=auth_headers(token),
+        json={"comment": "Verify rollback of a live-indexed-source version."},
+    )
+    assert live_rollback.status_code == 200, live_rollback.text
+    live_rollback_version = live_rollback.json()["version"]
+    assert live_rollback_version["status"] == "draft"
+    assert live_rollback_version["context_pack_version_id"] is None
+    retained_delete = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/delete",
+        headers=auth_headers(token),
+        json={"comment": "Published history must be retained."},
+    )
+    assert retained_delete.status_code == 422
+    live_archive = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/archive",
+        headers=auth_headers(token),
+        json={"comment": "Archive live source fixture."},
+    )
+    assert live_archive.status_code == 200, live_archive.text
+    live_invalidate = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/versions/{live_version['version']}/invalidate",
+        headers=auth_headers(token),
+        json={"comment": "Invalidate live source fixture."},
+    )
+    assert live_invalidate.status_code == 200, live_invalidate.text
+    live_rollback_invalidate = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/versions/{live_rollback_version['version']}/invalidate",
+        headers=auth_headers(token),
+        json={"comment": "Invalidate live-source rollback draft."},
+    )
+    assert live_rollback_invalidate.status_code == 200, live_rollback_invalidate.text
+    live_scrub = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/versions/{live_version['version']}/scrub",
+        headers=auth_headers(token),
+        json={"comment": "Scrub live source fixture before purge."},
+    )
+    assert live_scrub.status_code == 200, live_scrub.text
+    live_rollback_scrub = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/live-source-fixture/versions/{live_rollback_version['version']}/scrub",
+        headers=auth_headers(token),
+        json={"comment": "Scrub live-source rollback draft before purge."},
+    )
+    assert live_rollback_scrub.status_code == 200, live_rollback_scrub.text
+
+    deletable_agent = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/repo-agent",
+        headers=auth_headers(token),
+        json={"agent_key": "deletable-fixture", "pack_key": "default", "title": "Deletable Fixture"},
+    )
+    assert deletable_agent.status_code == 200, deletable_agent.text
+    deletable_refresh = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/deletable-fixture/refresh",
+        headers=auth_headers(token),
+    )
+    assert deletable_refresh.status_code == 200, deletable_refresh.text
+    deleted_agent = client.post(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/deletable-fixture/delete",
+        headers=auth_headers(token),
+        json={"comment": "Delete unretained draft fixture."},
+    )
+    assert deleted_agent.status_code == 200, deleted_agent.text
+    assert deleted_agent.json()["deleted"] is True
+    deleted_get = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/deletable-fixture",
+        headers=auth_headers(token),
+    )
+    assert deleted_get.status_code == 404
+
     artifact = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/resources/{resource_id}/context-artifacts/resource-map",
         headers=auth_headers(token),
@@ -984,6 +1102,11 @@ def test_repo_agent_v0_draft_publish_archive_scrub_lifecycle(monkeypatch: pytest
         headers=auth_headers(allowed_token.json()["token"]),
     )
     assert allowed_get.status_code == 200, allowed_get.text
+    allowed_bundle = client.get(
+        f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{refresh.json()['version']['version']}/bundle",
+        headers=auth_headers(allowed_token.json()["token"]),
+    )
+    assert allowed_bundle.status_code == 200, allowed_bundle.text
     denied_publish = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{refresh.json()['version']['version']}/publish",
         headers=auth_headers(allowed_token.json()["token"]),
@@ -1030,7 +1153,7 @@ def test_repo_agent_v0_draft_publish_archive_scrub_lifecycle(monkeypatch: pytest
     assert published.status_code == 200, published.text
     current = published.json()["current"]
     assert current["status"] == "published"
-    assert current["install_json"]["mode"] == "pack_only"
+    assert current["install_json"]["mode"] == "published_context_pack"
 
     rollback = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/repo-agents/repo-agent-fixture/versions/{current['version']}/rollback-draft",

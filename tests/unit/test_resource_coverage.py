@@ -42,22 +42,22 @@ def test_resource_read_marks_enabled_no_snapshot_as_not_queryable():
     assert "retrieval is enabled" in " ".join(resource.coverage_warnings)
 
 
-def test_resource_read_marks_explicit_limited_budget_as_partial():
+def test_resource_read_keeps_configured_file_budget_full_until_snapshot_truncates():
     resource = ResourceRead.model_validate(_resource(source_config={"max_repo_files": 500}), from_attributes=True)
 
     assert resource.queryable is True
-    assert resource.coverage_status == "partial"
+    assert resource.coverage_status == "full"
     assert resource.index_diagnostics["configured_budgets"] == {"max_repo_files": 500}
-    assert "evidence may be partial" in " ".join(resource.coverage_warnings)
+    assert resource.coverage_warnings == []
 
 
-def test_resource_read_marks_explicit_index_budget_as_partial():
+def test_resource_read_keeps_configured_index_budget_full_until_snapshot_truncates():
     resource = ResourceRead.model_validate(_resource(source_config={"max_chunks": 5000}), from_attributes=True)
 
     assert resource.queryable is True
-    assert resource.coverage_status == "partial"
+    assert resource.coverage_status == "full"
     assert resource.index_diagnostics["configured_budgets"] == {"max_chunks": 5000}
-    assert "evidence may be partial" in " ".join(resource.coverage_warnings)
+    assert resource.coverage_warnings == []
 
 
 def test_snapshot_index_budget_truncation_marks_queryable_partial_with_retry():

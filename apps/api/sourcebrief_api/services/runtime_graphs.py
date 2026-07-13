@@ -29,7 +29,7 @@ from sourcebrief_shared.models import (
 
 RuntimeLimit = Callable[..., int]
 RuntimeCursor = Callable[..., int]
-RequireProjectAccess = Callable[[Session, UUID, UUID, Principal], None]
+RequireProjectAccess = Callable[[Session, UUID, UUID, Principal], object]
 ResourceFreshness = Callable[[Session, Resource, UUID | None], dict[str, Any]]
 RuntimeFreshness = Callable[..., dict[str, Any]]
 ResourceRowsAllowed = Callable[[Principal, list[UUID]], bool]

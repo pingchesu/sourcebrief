@@ -94,7 +94,7 @@ test('git connect supports public and private env-var flows before refresh', asy
     if (path === `/workspaces/${workspaceId}/projects/${projectId}/resource-review`) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ resources: [] }) });
     if (path === `/workspaces/${workspaceId}/projects/${projectId}/resource-usage`) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ resources: [] }) });
     if (path === `/workspaces/${workspaceId}/members` || path === `/workspaces/${workspaceId}/audit-events`) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-    if (path === `/workspaces/${workspaceId}/projects/${projectId}/git-env`) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(createdResources.filter((item) => item.type === 'git').map((item) => ({ resource_id: item.id, name: item.name, uri: item.uri, branch: (item.source_config as Record<string, unknown>).branch ?? null, auth_token_env: (item.source_config as Record<string, unknown>).auth_token_env ?? null, clone_timeout: null, max_file_bytes: null, max_repo_files: null, max_repo_bytes: null, update_frequency: item.update_frequency, next_refresh_at: null }))) });
+    if (path === `/workspaces/${workspaceId}/projects/${projectId}/git-env`) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(createdResources.filter((item) => item.type === 'git').map((item) => ({ resource_id: item.id, name: item.name, uri: item.uri, branch: (item.source_config as Record<string, unknown>).branch ?? null, auth_token_env: (item.source_config as Record<string, unknown>).auth_token_env ?? null, clone_timeout: null, max_file_bytes: null, max_repo_files: null, max_repo_bytes: null, max_chunks: null, max_symbols: null, update_frequency: item.update_frequency, next_refresh_at: null }))) });
     if (path === `/workspaces/${workspaceId}/projects/${projectId}/resources` && request.method() === 'POST') {
       const body = request.postDataJSON();
       const resource = { id: `resource-${createdResources.length + 1}`, workspace_id: workspaceId, project_id: projectId, type: body.type, name: body.name, uri: body.uri, status: 'active', retrieval_enabled: true, update_frequency: body.update_frequency, current_snapshot_id: null, review_status: 'unreviewed', review_note: null, source_config: body.source_config, queryable: false, coverage_status: 'not_indexed', coverage_warnings: [], index_diagnostics: {}, source_family_label: null, version_label: null, last_refresh_finished_at: null };
@@ -131,7 +131,8 @@ test('git connect supports public and private env-var flows before refresh', asy
   await privateRefreshRequest;
   expect(events.slice(-2)).toEqual(['resource', 'refresh']);
   await expect(page.getByText('Source connected.')).toBeVisible();
-  await expect(page.getByRole('form', { name: 'Git environment form' }).getByLabel('Git auth token env var')).toHaveValue('GITHUB_TOKEN_FOR_SOURCEBRIEF');
+  await expect(page.getByText('Git indexing settings moved to Settings')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open Git settings' })).toHaveAttribute('href', '/config');
 
   const publicStamp = Date.now();
   await form.getByRole('textbox', { name: 'Name', exact: true }).fill(`Public Git ${publicStamp}`);
@@ -168,7 +169,7 @@ test('settings routes source creation to the canonical Sources page', async ({ p
   await login(page);
   await page.goto('/config');
 
-  await expect(page.getByRole('heading', { name: 'Source lifecycle moved to Sources' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Source lifecycle' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open Sources' })).toHaveAttribute('href', '/sources');
   await expect(page.getByRole('button', { name: 'Add source' })).toHaveCount(0);
   await expect(page.getByText(/named connections/i)).toHaveCount(0);

@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -11,6 +12,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from sourcebrief_shared.models import (
+    Chunk,
+    CodeSymbol,
     ContextPackResourceCoverage,
     ContextPackVersion,
     RepoAgent,
@@ -153,9 +156,9 @@ def build_version_payload(
     if snapshot is None or manifest is None:
         validation_errors.append({"code": "missing_index", "message": "Source needs a completed index before Repo Agent refresh."})
     if pack is None:
-        validation_errors.append({"code": "missing_context_pack", "message": f"No published Context Pack '{agent.pack_key}' covers this Git resource."})
+        validation_warnings.append({"code": "missing_context_pack", "message": f"No published Context Pack '{agent.pack_key}' covers this Git resource; this draft will use the live indexed source snapshot directly."})
     if skill_export is None:
-        validation_warnings.append({"code": "missing_skill_export", "message": "No approved generated skill export; pack-only runtime instructions will be used."})
+        validation_warnings.append({"code": "missing_skill_export", "message": "No approved generated skill export; SourceBrief live-source runtime instructions will be used."})
 
     hash_payload = {
         "schema_version": REPO_AGENT_SCHEMA_VERSION,
@@ -190,16 +193,196 @@ def build_version_payload(
         "skill_export_changed": bool(current and skill_export and str(current.skill_export_id) != str(skill_export.id)),
     }
     validation = {"ok": not validation_errors, "errors": validation_errors, "warnings": validation_warnings}
+    mode = "generated_skill_available" if skill_export is not None else ("published_context_pack" if pack is not None else "live_indexed_source")
+    instructions = [
+        "Use SourceBrief runtime context for this repo-agent.",
+        "Do not perform production mutations unless explicitly authorized outside this Repo Agent V0 profile.",
+    ]
+    if pack is not None:
+        instructions.insert(1, f"Read from context_pack_key={agent.pack_key} and the published repo-agent version before answering.")
+    elif resource is not None and snapshot is not None:
+        instructions.insert(1, f"Read directly from resource_ref={resource.name!r} at indexed snapshot version {snapshot.version!r}; no Context Pack is required for this draft.")
+    else:
+        instructions.insert(1, "Read from the latest indexed SourceBrief resource snapshot before answering.")
     install = {
-        "mode": "pack_only" if skill_export is None else "generated_skill_available",
-        "instructions": [
-            "Use SourceBrief runtime context for this repo-agent.",
-            f"Read from context_pack_key={agent.pack_key} and the published repo-agent version before answering.",
-            "Do not perform production mutations unless explicitly authorized outside this Repo Agent V0 profile.",
-        ],
+        "mode": mode,
+        "instructions": instructions,
         "skill_export_id": str(skill_export.id) if skill_export else None,
     }
     return version_hash, summary, diff, validation, install, REPO_AGENT_VERSION_DRAFT if validation["ok"] else REPO_AGENT_VERSION_FAILED
+
+
+def build_repo_agent_bundle(
+    session: Session,
+    agent: RepoAgent,
+    version: RepoAgentVersion,
+    resource: Resource | None,
+) -> dict[str, Any]:
+    summary = dict(version.summary_json or {})
+    install = dict(version.install_json or {})
+    validation = dict(version.validation_json or {})
+    source_snapshot_id = version.source_snapshot_id
+    chunk_rows = []
+    symbol_rows = []
+    if resource is not None and source_snapshot_id is not None:
+        chunk_rows = list(
+            session.scalars(
+                select(Chunk)
+                .where(
+                    Chunk.workspace_id == agent.workspace_id,
+                    Chunk.project_id == agent.project_id,
+                    Chunk.resource_id == resource.id,
+                    Chunk.source_snapshot_id == source_snapshot_id,
+                    Chunk.deleted_at.is_(None),
+                )
+                .order_by(Chunk.path.asc().nulls_last(), Chunk.ordinal.asc())
+                .limit(16)
+            )
+        )
+        symbol_rows = list(
+            session.scalars(
+                select(CodeSymbol)
+                .where(
+                    CodeSymbol.workspace_id == agent.workspace_id,
+                    CodeSymbol.project_id == agent.project_id,
+                    CodeSymbol.resource_id == resource.id,
+                    CodeSymbol.source_snapshot_id == source_snapshot_id,
+                    CodeSymbol.deleted_at.is_(None),
+                )
+                .order_by(
+                    CodeSymbol.path.asc(),
+                    CodeSymbol.line_start.asc(),
+                )
+                .limit(24)
+            )
+        )
+    manifest_raw = summary.get("manifest")
+    snapshot_raw = summary.get("source_snapshot")
+    source_raw = summary.get("resource")
+    manifest: dict[str, Any] = manifest_raw if isinstance(manifest_raw, dict) else {}
+    snapshot: dict[str, Any] = snapshot_raw if isinstance(snapshot_raw, dict) else {}
+    source: dict[str, Any] = source_raw if isinstance(source_raw, dict) else {}
+    warnings = validation.get("warnings") if isinstance(validation.get("warnings"), list) else []
+    errors = validation.get("errors") if isinstance(validation.get("errors"), list) else []
+
+    def public_metadata(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: public_metadata(item)
+                for key, item in value.items()
+                if key != "id" and not key.endswith("_id")
+            }
+        if isinstance(value, list):
+            return [public_metadata(item) for item in value]
+        return value
+
+    public_summary = public_metadata(summary)
+    public_install = public_metadata(install)
+    evidence_lines = []
+    for chunk in chunk_rows:
+        title = chunk.title or chunk.path or "untitled"
+        snippet = " ".join(chunk.content.split())[:900]
+        evidence_lines.append(f"## {title}\n\n- path: `{chunk.path or ''}`\n- ordinal: {chunk.ordinal}\n- hash: `{chunk.content_hash}`\n\n> {snippet}")
+    symbol_lines = [
+        f"- `{symbol.name}` ({symbol.kind}, {symbol.language}) — `{symbol.path}:{symbol.line_start}-{symbol.line_end}`"
+        for symbol in symbol_rows
+    ]
+    runtime_instructions = "\n".join(str(item) for item in install.get("instructions", []) if item) or "Use SourceBrief runtime context scoped to this repo agent."
+    readme = f"""# {agent.title}
+
+This is the actual generated SourceBrief Repo Agent bundle for `{agent.agent_key}` v{version.version}.
+
+## What was generated
+
+- Runtime mode: `{install.get('mode', 'unknown')}`
+- Status: `{version.status}`
+- Validation: `{'ok' if validation.get('ok') else 'not ok'}`
+- Source: `{source.get('name') or (resource.name if resource else 'unknown')}`
+- URI: `{source.get('uri') or (resource.uri if resource else '')}`
+- Snapshot version: `{snapshot.get('version') or 'pinned indexed snapshot'}`
+- Indexed at: `{snapshot.get('indexed_at') or 'unknown'}`
+- Manifest files: `{manifest.get('files', 'unknown')}`
+- Manifest sections: `{manifest.get('sections', 'unknown')}`
+
+## Runtime instructions
+
+{runtime_instructions}
+
+## Review checklist
+
+1. Confirm the source, commit/snapshot, file count, and section count match the repo you intended to package.
+2. Read `runtime-instructions.md`; this is the behavior a runtime should follow.
+3. Read `evidence-preview.md`; it shows concrete indexed chunks and code symbols this Repo Agent can use.
+4. If the generated content is too thin/noisy/stale, refresh the source index before publishing.
+5. Publishing approves this bundle as a runtime contract. It does not deploy or mutate the GitHub repo.
+
+## Warnings
+
+{json.dumps(warnings, ensure_ascii=False, indent=2) if warnings else 'No warnings.'}
+
+## Errors
+
+{json.dumps(errors, ensure_ascii=False, indent=2) if errors else 'No errors.'}
+"""
+    runtime = f"""# Runtime instructions for `{agent.agent_key}`
+
+{runtime_instructions}
+
+## Invocation contract
+
+- repo_agent_key: `{agent.agent_key}`
+- resource_ref: `{resource.name if resource else source.get('name', '')}`
+- source_uri: `{resource.uri if resource else source.get('uri', '')}`
+- snapshot_version: `{snapshot.get('version') or 'pinned indexed snapshot'}`
+- context_pack_key: `{agent.pack_key if version.context_pack_version_id else 'none (live indexed source)'}`
+
+## Safety boundary
+
+Read-only context only. Production mutations require separate explicit authorization and evidence workflow.
+"""
+    evidence = f"""# Evidence preview for `{agent.agent_key}` v{version.version}
+
+This file is intentionally not just metadata: it samples concrete indexed repo content and symbols that the Repo Agent points at.
+
+## Symbol samples
+
+{chr(10).join(symbol_lines) if symbol_lines else 'No symbol samples found in this snapshot.'}
+
+## Indexed content samples
+
+{chr(10).join(evidence_lines) if evidence_lines else 'No chunk samples found in this snapshot.'}
+"""
+    manifest_json = json.dumps(
+        {
+            "schema_version": "sourcebrief.repo-agent.bundle.v1",
+            "agent_key": agent.agent_key,
+            "title": agent.title,
+            "version": version.version,
+            "status": version.status,
+            "version_hash": version.version_hash,
+            "summary": public_summary,
+            "diff": version.diff_json or {},
+            "validation": validation,
+            "install": public_install,
+        },
+        ensure_ascii=False,
+        indent=2,
+        default=str,
+    )
+    files = [
+        {"path": "README.md", "kind": "readme", "content_type": "text/markdown", "content": readme},
+        {"path": "runtime-instructions.md", "kind": "runtime_instructions", "content_type": "text/markdown", "content": runtime},
+        {"path": "evidence-preview.md", "kind": "evidence_preview", "content_type": "text/markdown", "content": evidence},
+        {"path": "manifest.json", "kind": "manifest", "content_type": "application/json", "content": manifest_json},
+    ]
+    return {
+        "agent_key": agent.agent_key,
+        "version": version.version,
+        "status": version.status,
+        "package_hash": canonical_hash({"version_hash": version.version_hash, "files": files}),
+        "generated_at": datetime.now(UTC),
+        "files": files,
+    }
 
 
 def compile_repo_agent_version(session: Session, agent: RepoAgent, resource: Resource | None, *, actor_id: UUID | None, rollback_from: RepoAgentVersion | None = None) -> RepoAgentCompileResult:

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
-// Git environment settings moved into the Advanced section of each source in
-// the canonical /sources hub (PR2). Keep this route reachable to avoid 404s.
+// Git indexing settings now live in Settings alongside workspace/project scope.
+// Keep this route reachable to avoid 404s from old bookmarks.
 export default function GitEnvRedirect() {
-  redirect('/sources');
+  redirect('/config');
 }

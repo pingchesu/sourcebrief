@@ -110,6 +110,14 @@ h2 { font-size: 16px; font-weight: 700; }
 .input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
 .label { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.08em; margin-bottom: 6px; }
 
+/* ---------- Graph merge source picker ---------- */
+.graph-source-list { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; padding: 2px; }
+.graph-source-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; }
+.graph-source-row:hover { border-color: var(--accent); background: var(--accent-soft); }
+.graph-source-row input { margin: 3px 0 0; }
+.graph-source-row > span { display: grid; gap: 2px; min-width: 0; }
+.graph-source-row .muted { display: block; font-size: 12px; overflow-wrap: anywhere; }
+
 /* ---------- Action links ---------- */
 .action-grid { display: grid; gap: 10px; }
 .action-link { display: grid; gap: 3px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--surface); transition: border-color 0.12s ease, background 0.12s ease; }

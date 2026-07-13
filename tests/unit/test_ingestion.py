@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 from email.message import Message
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ import pytest
 from sourcebrief_worker.ingestion import (
     _budget_exceeded_message,
     _coerce_documents,
+    _git_env,
     chunk_text,
     content_hash,
     fetch_url_document,
@@ -22,6 +24,22 @@ from sourcebrief_worker.ingestion import (
     validate_git_url,
     validate_http_url,
 )
+
+
+def test_git_env_uses_scoped_basic_auth_header_without_plaintext_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SOURCEBRIEF_TEST_GIT_TOKEN", "test-token-value")
+
+    env = _git_env(
+        {"auth_token_env": "SOURCEBRIEF_TEST_GIT_TOKEN"},
+        "https://github.com/example/private.git",
+    )
+
+    assert env["GIT_CONFIG_COUNT"] == "1"
+    assert env["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraHeader"
+    prefix, scheme, encoded = env["GIT_CONFIG_VALUE_0"].split(" ", 2)
+    assert (prefix, scheme) == ("Authorization:", "Basic")
+    assert "test-token-value" not in env["GIT_CONFIG_VALUE_0"]
+    assert base64.b64decode(encoded).decode("utf-8") == "x-access-token:test-token-value"
 
 
 def test_content_hash_is_stable_and_sensitive() -> None:

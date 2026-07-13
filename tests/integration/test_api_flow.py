@@ -132,7 +132,7 @@ def test_workspace_project_resource_refresh_flow() -> None:
     assert denied.status_code == 404
 
 
-def test_agent_context_partial_resource_preserves_corpus_caveat() -> None:
+def test_agent_context_configured_budget_without_truncation_stays_full() -> None:
     require_real_services()
     client = TestClient(app)
     headers, workspace_id, project_id, _resource_id = create_flow(client, "partial-coverage")
@@ -165,14 +165,14 @@ def test_agent_context_partial_resource_preserves_corpus_caveat() -> None:
     body = response.json()
     coverage = body["resource_coverage"][0]
     assert coverage["resource_id"] == resource_id
-    assert coverage["coverage_status"] == "partial"
+    assert coverage["coverage_status"] == "full"
     assert coverage["configured_budgets"] == {"max_repo_files": 500}
     assert coverage["limited_budget_keys"] == ["max_repo_files"]
-    assert coverage["budget_reason"] == "limited import budget (max_repo_files=500)"
-    assert coverage["suggested_retry"]
-    assert "evidence may be partial" in " ".join(body["coverage_warnings"])
-    assert "Caveat:" in body["answer"]["text"]
-    assert any("evidence may be partial" in caveat for caveat in body["answer"]["caveats"])
+    assert coverage["budget_reason"] is None
+    assert coverage["suggested_retry"] is None
+    assert "evidence may be partial" not in " ".join(body["coverage_warnings"])
+    assert "Caveat:" not in body["answer"]["text"]
+    assert not any("evidence may be partial" in caveat for caveat in body["answer"]["caveats"])
 
 
 

@@ -357,15 +357,17 @@ class ResourceRead(BaseModel):
             for key in ("max_file_bytes", "max_repo_files", "max_repo_bytes", "max_chunks", "max_symbols")
             if source_config.get(key) is not None
         ]
-        partial = bool(source_config.get("partial") or source_config.get("limited") or source_config.get("import_profile") in {"limited", "limited500", "limited250"} or limited_keys)
+        partial = bool(source_config.get("partial") or source_config.get("limited") or source_config.get("import_profile") in {"limited", "limited500", "limited250"})
         if not data.get("current_snapshot_id"):
             warnings.append("resource has no current snapshot and is not queryable yet")
         if data.get("retrieval_enabled") and not queryable:
             warnings.append("retrieval is enabled but no retrievable snapshot is available")
         if data.get("status") == "failed" and queryable:
             warnings.append("latest refresh failed; existing snapshot remains queryable but may be stale")
-        if partial:
-            warnings.append("resource uses an explicit limited import budget; evidence may be partial")
+        # Bounded imports are an operator-controlled performance guard, not an actionable
+        # per-resource error. Keep the structured partial coverage status/diagnostics so
+        # agents can caveat answers, but do not repeat a warning line for every source in
+        # the UI.
         coverage_status = "full"
         if not queryable:
             coverage_status = "not_queryable"
@@ -449,6 +451,8 @@ class GitResourceEnvRead(BaseModel):
     max_file_bytes: int | None = None
     max_repo_files: int | None = None
     max_repo_bytes: int | None = None
+    max_chunks: int | None = None
+    max_symbols: int | None = None
     update_frequency: str
     next_refresh_at: datetime | None = None
 
@@ -457,9 +461,11 @@ class GitResourceEnvUpdate(BaseModel):
     branch: str | None = None
     auth_token_env: str | None = None
     clone_timeout: int | None = Field(default=None, ge=1, le=600)
-    max_file_bytes: int | None = Field(default=None, ge=1)
-    max_repo_files: int | None = Field(default=None, ge=1)
-    max_repo_bytes: int | None = Field(default=None, ge=1)
+    max_file_bytes: int | None = Field(default=None, ge=1, le=100_000_000)
+    max_repo_files: int | None = Field(default=None, ge=1, le=50_000)
+    max_repo_bytes: int | None = Field(default=None, ge=1, le=2_000_000_000)
+    max_chunks: int | None = Field(default=None, ge=1, le=200_000)
+    max_symbols: int | None = Field(default=None, ge=1, le=200_000)
     update_frequency: str | None = None
 
 
@@ -950,6 +956,22 @@ class RepoAgentRefreshResponse(BaseModel):
     status: str
     unchanged: bool = False
     version: RepoAgentVersionRead
+
+
+class RepoAgentBundleFileRead(BaseModel):
+    path: str
+    kind: str
+    content_type: str
+    content: str
+
+
+class RepoAgentBundleRead(BaseModel):
+    agent_key: str
+    version: int
+    status: str
+    package_hash: str
+    generated_at: datetime
+    files: list[RepoAgentBundleFileRead] = Field(default_factory=list)
 
 
 class ManifestDiffRowRead(BaseModel):

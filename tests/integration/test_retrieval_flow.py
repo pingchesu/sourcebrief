@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 import sourcebrief_api.main as api_main
 import sourcebrief_api.retrieval as retrieval_module
+from sourcebrief_api.services import context_packets as context_packets_service
 from sourcebrief_api.main import app
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
@@ -323,7 +324,7 @@ def test_context_packet_failure_persists_failed_query_run(monkeypatch) -> None:
     def boom(*args, **kwargs):
         raise RuntimeError("synthetic retrieval failure")
 
-    monkeypatch.setattr(api_main, "retrieve_context_candidates", boom)
+    monkeypatch.setattr(context_packets_service, "retrieve_context_candidates", boom)
     response = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/context-packets",
         json={"query": "will fail", "top_k": 3},

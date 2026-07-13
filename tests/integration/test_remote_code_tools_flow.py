@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from sqlalchemy import text
 
-from sourcebrief_api import main as api_main
+from sourcebrief_api.routers import remote_code as remote_code_router
 from sourcebrief_api.main import app
 from sourcebrief_shared.config import get_settings
 from sourcebrief_shared.db import get_engine, get_sessionmaker
@@ -259,7 +259,7 @@ def test_lookup_all_fails_soft_when_code_scan_budget_exceeded(tmp_path, monkeypa
     os.environ["SOURCEBRIEF_ALLOW_LOCAL_GIT"] = "true"
     resource_id = add_git_resource(client, workspace_id, project_id, headers, repo_path)
     ingest(resource_id, workspace_id, project_id)
-    monkeypatch.setattr(api_main, "MAX_SCANNED_FILES", 1)
+    monkeypatch.setattr(remote_code_router, "MAX_SCANNED_FILES", 1)
 
     broad_grep = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/remote-code/grep_code",
