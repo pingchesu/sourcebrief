@@ -58,8 +58,8 @@ test('validates and saves Git indexing settings from Settings', async ({ page })
   await expect(page.getByText('Max chunks must be a positive whole number.')).toBeVisible();
   expect(patchBody).toBeNull();
 
-  await page.getByLabel('Max chunks').fill('25000');
+  await page.getByLabel('Max chunks').fill('20000');
   await page.getByRole('button', { name: 'Save Git settings' }).click();
   await expect(page.getByText('Git settings saved.')).toBeVisible();
-  expect(patchBody).toMatchObject({ max_chunks: 25000, max_symbols: 5000, branch: 'main' });
+  expect(patchBody).toMatchObject({ max_chunks: 20000, max_symbols: 5000, branch: 'main' });
 });
