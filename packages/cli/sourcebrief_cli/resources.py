@@ -52,7 +52,7 @@ def cmd_resource_add_repo(client: SourceBriefClient, args: argparse.Namespace) -
             "type": "git",
             "name": args.name,
             "uri": args.repo_url,
-            "update_frequency": args.update_frequency,
+            "update_frequency": args.update_frequency or "daily",
             "source_config": source_config,
         },
         expected={201},

@@ -266,7 +266,7 @@ class ResourceCreate(BaseModel):
     type: str = Field(min_length=1)
     name: str = Field(min_length=1)
     uri: str = Field(min_length=1)
-    update_frequency: str = "manual"
+    update_frequency: str | None = None
     source_config: dict = Field(default_factory=dict)
 
 

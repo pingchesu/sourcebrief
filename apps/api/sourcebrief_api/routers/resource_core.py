@@ -17,6 +17,7 @@ from sourcebrief_api.auth import Principal, require_principal, require_scope, to
 from sourcebrief_api.constants import (
     ACTIVE_INDEX_STATUSES,
     FOLDER_BUNDLE_RESOURCE_TYPES,
+    GIT_RESOURCE_TYPES,
     URL_RESOURCE_TYPES,
 )
 from sourcebrief_api.schemas import (
@@ -76,6 +77,12 @@ ACTIVE_INDEX_RUN_STATUSES = ("enqueueing", "queued", "running")
 _deps: ResourceCoreRouterDeps
 
 
+def _effective_update_frequency(resource_type: str, requested: str | None) -> str:
+    if requested is not None:
+        return requested
+    return "daily" if resource_type.lower() in GIT_RESOURCE_TYPES else "manual"
+
+
 def create_router(deps: ResourceCoreRouterDeps) -> APIRouter:
     global _deps
     _deps = deps
@@ -107,7 +114,7 @@ def create_resource(
         type=payload.type,
         name=payload.name,
         uri=resource_uri,
-        update_frequency=payload.update_frequency,
+        update_frequency=_effective_update_frequency(payload.type, payload.update_frequency),
         source_config=source_config,
         created_by=user.id,
     )

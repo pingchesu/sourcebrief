@@ -42,7 +42,7 @@ def test_add_repo_builds_git_resource_and_waits(monkeypatch, capsys):
         "type": "git",
         "name": "SourceBrief repo",
         "uri": "https://github.com/pingchesu/sourcebrief.git",
-        "update_frequency": "manual",
+        "update_frequency": "daily",
         "source_config": {
             "url": "https://github.com/pingchesu/sourcebrief.git",
             "branch": "main",
@@ -58,6 +58,32 @@ def test_add_repo_builds_git_resource_and_waits(monkeypatch, capsys):
     assert "Resource" in output
     assert "Index run" in output
     assert "succeeded" in output
+
+
+def test_add_repo_preserves_explicit_manual_frequency(monkeypatch, capsys):
+    patch_client(monkeypatch)
+
+    exit_code = cli_main(
+        [
+            "resource",
+            "add-repo",
+            "--workspace-id",
+            "ws-1",
+            "--project-id",
+            "proj-1",
+            "--name",
+            "Manual repo",
+            "--repo-url",
+            "https://github.com/example/manual.git",
+            "--update-frequency",
+            "manual",
+        ]
+    )
+
+    assert exit_code == 0
+    body = FakeClient.instances[0].calls[0][2]
+    assert isinstance(body, dict)
+    assert body["update_frequency"] == "manual"
 
 
 def test_add_doc_requires_content(monkeypatch, capsys):

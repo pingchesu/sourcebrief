@@ -22,6 +22,7 @@ ACTIVE_INDEX_STATUSES = {"enqueueing", "queued", "running"}
 URL_RESOURCE_TYPES = {"url", "web", "webpage", "website", "http", "https"}
 UPLOAD_RESOURCE_TYPES = {"upload", "uploaded_file", "file_upload"}
 FOLDER_BUNDLE_RESOURCE_TYPES = {"folder_bundle"}
+GIT_RESOURCE_TYPES = {"git", "git_repo", "git-repo", "repo", "repository"}
 
 # Runtime context instructions.
 COMMON_AGENT_INSTRUCTION = (
