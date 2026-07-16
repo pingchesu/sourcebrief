@@ -13,6 +13,7 @@ from sourcebrief_api.auth import Principal, require_principal, require_scope
 from sourcebrief_api.constants import (
     ACTIVE_INDEX_STATUSES,
     FOLDER_BUNDLE_RESOURCE_TYPES,
+    GIT_RESOURCE_TYPES,
     URL_RESOURCE_TYPES,
 )
 from sourcebrief_api.schemas import (
@@ -157,12 +158,12 @@ def create_router(deps: ResourceLifecycleRouterDeps) -> APIRouter:
             effective_source_config = dict(
                 fields.get("source_config", resource.source_config or {})
             )
-            if str(effective_type).lower() == "git" and "uri" in fields:
+            if str(effective_type).lower() in GIT_RESOURCE_TYPES and "uri" in fields:
                 effective_source_config["url"] = str(fields["uri"])
             fields["source_config"] = deps.validate_source_config(
                 effective_type, effective_uri, effective_source_config
             )
-            if effective_type.lower() in URL_RESOURCE_TYPES | {"git"}:
+            if effective_type.lower() in URL_RESOURCE_TYPES | GIT_RESOURCE_TYPES:
                 fields["uri"] = sanitize_remote_url(fields["source_config"]["url"])
         for key, value in fields.items():
             setattr(resource, key, value)
