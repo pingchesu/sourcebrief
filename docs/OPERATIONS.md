@@ -180,6 +180,19 @@ docker compose exec -T postgres psql -U sourcebrief -d sourcebrief -c \
 
 Save the result as rollout evidence. A non-empty result is not safe to hide: repair/backfill those resources with the new worker path before enabling fail-closed runtime access broadly.
 
+### Git import-bound audit
+
+Generic Git resource create/update rejects configured integer bounds outside the supported envelope with HTTP `422`; the worker repeats the same validation as a final defense. Omitted fields keep worker defaults. Deployments must not silently clamp or rewrite legacy rows at startup because changing a bound changes the extraction fingerprint and therefore the indexed corpus.
+
+Before enabling scheduled refresh for legacy resources, run this read-only audit:
+
+```bash
+docker compose exec -T postgres psql -U sourcebrief -d sourcebrief -c \
+  "with limits(field, maximum) as (values ('clone_timeout',600::numeric),('max_file_bytes',10000000),('max_repo_files',5000),('max_repo_bytes',200000000),('max_chunks',20000),('max_symbols',20000)) select r.id,r.name,l.field,r.source_config->>l.field as configured,l.maximum from resources r cross join limits l where lower(r.type) in ('git','git_repo','git-repo','repo','repository') and r.status = 'active' and r.deleted_at is null and r.archived_at is null and r.source_config ? l.field and case when r.source_config->>l.field ~ '^[0-9]+$' then (r.source_config->>l.field)::numeric not between 1 and l.maximum else true end order by r.name,l.field;"
+```
+
+An empty result is the required precondition. For a non-empty result, review each resource and update it through the supported Git settings/resource API; then refresh in bounded waves so the new extraction fingerprint produces an explicit snapshot/graph pair. Retain failed runs as audit evidence rather than deleting them.
+
 ### Worker-first deployment order
 
 A mixed old-worker/new-runtime deployment is unsupported because an old worker can advance a snapshot without publishing its matching graph. Use this order:

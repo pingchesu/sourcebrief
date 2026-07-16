@@ -6,6 +6,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from sourcebrief_shared.import_limits import (
+    GIT_CLONE_TIMEOUT,
+    GIT_MAX_CHUNKS,
+    GIT_MAX_FILE_BYTES,
+    GIT_MAX_REPO_BYTES,
+    GIT_MAX_REPO_FILES,
+    GIT_MAX_SYMBOLS,
+)
+
 
 class WorkspaceCreate(BaseModel):
     name: str = Field(min_length=1)
@@ -460,12 +469,12 @@ class GitResourceEnvRead(BaseModel):
 class GitResourceEnvUpdate(BaseModel):
     branch: str | None = None
     auth_token_env: str | None = None
-    clone_timeout: int | None = Field(default=None, ge=1, le=600)
-    max_file_bytes: int | None = Field(default=None, ge=1, le=10_000_000)
-    max_repo_files: int | None = Field(default=None, ge=1, le=5_000)
-    max_repo_bytes: int | None = Field(default=None, ge=1, le=200_000_000)
-    max_chunks: int | None = Field(default=None, ge=1, le=20_000)
-    max_symbols: int | None = Field(default=None, ge=1, le=20_000)
+    clone_timeout: int | None = Field(default=None, ge=1, le=GIT_CLONE_TIMEOUT.maximum)
+    max_file_bytes: int | None = Field(default=None, ge=1, le=GIT_MAX_FILE_BYTES.maximum)
+    max_repo_files: int | None = Field(default=None, ge=1, le=GIT_MAX_REPO_FILES.maximum)
+    max_repo_bytes: int | None = Field(default=None, ge=1, le=GIT_MAX_REPO_BYTES.maximum)
+    max_chunks: int | None = Field(default=None, ge=1, le=GIT_MAX_CHUNKS.maximum)
+    max_symbols: int | None = Field(default=None, ge=1, le=GIT_MAX_SYMBOLS.maximum)
     update_frequency: str | None = None
 
 
