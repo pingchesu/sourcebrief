@@ -107,7 +107,11 @@ def create_resource(
         raise HTTPException(status_code=403, detail="resource-scoped tokens cannot create new resources")
     _deps.require_project_member(session, workspace_id, project_id, principal, required_scopes={"resource:write"})
     source_config = _deps.validate_source_config(payload.type, payload.uri, payload.source_config)
-    resource_uri = sanitize_remote_url(source_config["url"]) if payload.type.lower() in URL_RESOURCE_TYPES | {"git"} else payload.uri
+    resource_uri = (
+        sanitize_remote_url(source_config["url"])
+        if payload.type.lower() in URL_RESOURCE_TYPES | GIT_RESOURCE_TYPES
+        else payload.uri
+    )
     resource = Resource(
         workspace_id=workspace_id,
         project_id=project_id,

@@ -171,6 +171,52 @@ def test_generic_git_resource_create_and_update_reject_unbounded_import_limits()
         assert unchanged.source_config["max_repo_bytes"] == 200_000_000
 
 
+@pytest.mark.parametrize("resource_type", ["git_repo", "git-repo", "repo", "repository"])
+def test_git_alias_create_and_update_keep_public_uri_and_clone_target_consistent(resource_type: str) -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "git-alias-uri")
+    path = f"/workspaces/{workspace_id}/projects/{project_id}/resources"
+    safe_uri = "https://github.com/example/original.git"
+    credential_uri = "https://alice:secret@github.com/example/leaked.git?token=secret"
+
+    created = client.post(
+        path,
+        json={
+            "type": resource_type,
+            "name": f"Alias {resource_type}",
+            "uri": credential_uri,
+            "update_frequency": "manual",
+            "source_config": {"url": safe_uri, "branch": "main"},
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    resource_id = created.json()["id"]
+    assert created.json()["uri"] == safe_uri
+
+    updated_uri = "https://github.com/example/updated.git"
+    updated = client.patch(f"{path}/{resource_id}", json={"uri": updated_uri}, headers=headers)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["uri"] == updated_uri
+
+    rejected = client.patch(
+        f"{path}/{resource_id}",
+        json={"uri": "https://alice:secret@github.com/example/rejected.git"},
+        headers=headers,
+    )
+    assert rejected.status_code == 422, rejected.text
+
+    with get_sessionmaker()() as session:
+        durable = session.get(Resource, UUID(resource_id))
+        assert durable is not None
+        assert durable.uri == updated_uri
+        assert durable.source_config["url"] == updated_uri
+
+    deleted = client.delete(f"{path}/{resource_id}", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+
+
 def ingest(resource_id: str, workspace_id: str, project_id: str) -> None:
     session = get_sessionmaker()()
     run = IndexRun(
