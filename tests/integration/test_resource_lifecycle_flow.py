@@ -116,6 +116,61 @@ def test_create_resource_frequency_defaults_follow_source_type() -> None:
     assert explicit_manual.json()["next_refresh_at"] is None
 
 
+def test_generic_git_resource_create_and_update_reject_unbounded_import_limits() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "git-import-bounds")
+    path = f"/workspaces/{workspace_id}/projects/{project_id}/resources"
+    uri = "https://github.com/example/bounded.git"
+
+    rejected_create = client.post(
+        path,
+        json={
+            "type": "git",
+            "name": "Unbounded Git",
+            "uri": uri,
+            "source_config": {"url": uri, "max_file_bytes": 10_000_001},
+        },
+        headers=headers,
+    )
+    assert rejected_create.status_code == 422, rejected_create.text
+    assert rejected_create.json()["detail"] == "max_file_bytes must be <= 10000000"
+
+    accepted_create = client.post(
+        path,
+        json={
+            "type": "git",
+            "name": "Bounded Git",
+            "uri": uri,
+            "source_config": {
+                "url": uri,
+                "clone_timeout": 600,
+                "max_file_bytes": 10_000_000,
+                "max_repo_files": 5_000,
+                "max_repo_bytes": 200_000_000,
+                "max_chunks": 20_000,
+                "max_symbols": 20_000,
+            },
+        },
+        headers=headers,
+    )
+    assert accepted_create.status_code == 201, accepted_create.text
+    resource_id = accepted_create.json()["id"]
+
+    rejected_update = client.patch(
+        f"{path}/{resource_id}",
+        json={"source_config": {"url": uri, "max_repo_bytes": 200_000_001}},
+        headers=headers,
+    )
+    assert rejected_update.status_code == 422, rejected_update.text
+    assert rejected_update.json()["detail"] == "max_repo_bytes must be <= 200000000"
+
+    with get_sessionmaker()() as session:
+        unchanged = session.get(Resource, UUID(resource_id))
+        assert unchanged is not None
+        assert unchanged.source_config["max_repo_bytes"] == 200_000_000
+
+
 def ingest(resource_id: str, workspace_id: str, project_id: str) -> None:
     session = get_sessionmaker()()
     run = IndexRun(

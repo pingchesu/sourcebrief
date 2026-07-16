@@ -46,6 +46,14 @@ from sourcebrief_shared.embeddings import (
     vector_literal,
 )
 from sourcebrief_shared.graph_index import build_graph_index
+from sourcebrief_shared.import_limits import (
+    GIT_CLONE_TIMEOUT,
+    GIT_MAX_CHUNKS,
+    GIT_MAX_FILE_BYTES,
+    GIT_MAX_REPO_BYTES,
+    GIT_MAX_REPO_FILES,
+    GIT_MAX_SYMBOLS,
+)
 from sourcebrief_shared.models import (
     Chunk,
     CodeSymbol,
@@ -65,25 +73,26 @@ from sourcebrief_worker.section_store import build_snapshot_sections
 
 # --- configuration ---------------------------------------------------------
 
-DEFAULT_MAX_FILE_BYTES = 1_000_000
 # Hard caps are still operator-tunable per resource, but they must stay inside
 # a bounded per-import envelope. The previous caps allowed a single source to
 # request multi-GB imports and hundreds of thousands of chunks/symbols, which
 # made one bad resource capable of exhausting workers and retrieval indexes.
-HARD_MAX_FILE_BYTES = 10_000_000
-DEFAULT_MAX_REPO_FILES = 1_000
-HARD_MAX_REPO_FILES = 5_000
-DEFAULT_MAX_REPO_BYTES = 20_000_000
-HARD_MAX_REPO_BYTES = 200_000_000
+DEFAULT_MAX_FILE_BYTES = GIT_MAX_FILE_BYTES.default
+HARD_MAX_FILE_BYTES = GIT_MAX_FILE_BYTES.maximum
+DEFAULT_MAX_REPO_FILES = GIT_MAX_REPO_FILES.default
+HARD_MAX_REPO_FILES = GIT_MAX_REPO_FILES.maximum
+DEFAULT_MAX_REPO_BYTES = GIT_MAX_REPO_BYTES.default
+HARD_MAX_REPO_BYTES = GIT_MAX_REPO_BYTES.maximum
 DEFAULT_MAX_DOCUMENT_BYTES = 5_000_000
 HARD_MAX_DOCUMENT_BYTES = 10_000_000
-DEFAULT_MAX_CHUNKS = 5_000
-HARD_MAX_CHUNKS = 20_000
-DEFAULT_MAX_SYMBOLS = 5_000
-HARD_MAX_SYMBOLS = 20_000
+DEFAULT_MAX_CHUNKS = GIT_MAX_CHUNKS.default
+HARD_MAX_CHUNKS = GIT_MAX_CHUNKS.maximum
+DEFAULT_MAX_SYMBOLS = GIT_MAX_SYMBOLS.default
+HARD_MAX_SYMBOLS = GIT_MAX_SYMBOLS.maximum
 DEFAULT_MAX_CHARS = 2_000
 DEFAULT_OVERLAP = 200
-DEFAULT_CLONE_TIMEOUT = 120
+DEFAULT_CLONE_TIMEOUT = GIT_CLONE_TIMEOUT.default
+HARD_MAX_CLONE_TIMEOUT = GIT_CLONE_TIMEOUT.maximum
 DEFAULT_FETCH_TIMEOUT = 20
 DEFAULT_MAX_URL_BYTES = 2_000_000
 HARD_MAX_URL_BYTES = 10_000_000
@@ -362,7 +371,7 @@ def parse_positive_int(value: object, *, default: int, hard_limit: int, name: st
     if parsed < 1:
         raise ValueError(f"{name} must be >= 1")
     if parsed > hard_limit:
-        raise ValueError(f"{name} exceeds hard limit")
+        raise ValueError(f"{name} must be <= {hard_limit}")
     return parsed
 
 
@@ -907,7 +916,10 @@ def _collect_git(resource: Resource) -> tuple[list[dict], str, str, dict]:
         config.get("max_file_bytes"), default=DEFAULT_MAX_FILE_BYTES, hard_limit=HARD_MAX_FILE_BYTES, name="max_file_bytes"
     )
     timeout = parse_positive_int(
-        config.get("clone_timeout"), default=DEFAULT_CLONE_TIMEOUT, hard_limit=600, name="clone_timeout"
+        config.get("clone_timeout"),
+        default=DEFAULT_CLONE_TIMEOUT,
+        hard_limit=HARD_MAX_CLONE_TIMEOUT,
+        name="clone_timeout",
     )
     max_files = parse_positive_int(
         config.get("max_repo_files"), default=DEFAULT_MAX_REPO_FILES, hard_limit=HARD_MAX_REPO_FILES, name="max_repo_files"

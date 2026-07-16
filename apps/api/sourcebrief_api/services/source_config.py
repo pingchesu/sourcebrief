@@ -6,10 +6,12 @@ from fastapi import HTTPException
 
 from sourcebrief_api.constants import (
     FOLDER_BUNDLE_RESOURCE_TYPES,
+    GIT_RESOURCE_TYPES,
     UPLOAD_RESOURCE_TYPES,
     URL_RESOURCE_TYPES,
 )
 from sourcebrief_api.git_env import validate_auth_token_env
+from sourcebrief_shared.import_limits import GIT_INTEGER_IMPORT_LIMITS
 from sourcebrief_worker.ingestion import (
     DEFAULT_MAX_CHUNKS,
     DEFAULT_MAX_DOCUMENT_BYTES,
@@ -50,7 +52,7 @@ def validate_source_config(resource_type: str, uri: str, source_config: dict) ->
                 )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if rtype == "git":
+    if rtype in GIT_RESOURCE_TYPES:
         try:
             _is_local, target = validate_git_url(
                 config.get("url") or uri,
@@ -62,6 +64,14 @@ def validate_source_config(resource_type: str, uri: str, source_config: dict) ->
                 config.pop("auth_token_env", None)
             else:
                 config["auth_token_env"] = auth_token_env
+            for field, limit in GIT_INTEGER_IMPORT_LIMITS.items():
+                if field in config:
+                    config[field] = parse_positive_int(
+                        config.get(field),
+                        default=limit.default,
+                        hard_limit=limit.maximum,
+                        name=field,
+                    )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     if rtype in UPLOAD_RESOURCE_TYPES:
