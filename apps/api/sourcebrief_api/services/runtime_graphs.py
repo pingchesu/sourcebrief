@@ -11,7 +11,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from sourcebrief_api.auth import Principal, require_scope, token_allows_resource
-from sourcebrief_api.graph_merges import GRAPH_MERGE_VERSION_PUBLISHED, find_path
+from sourcebrief_api.graph_merges import (
+    GRAPH_MERGE_VERSION_PUBLISHED,
+    find_path,
+    stale_merge_inputs,
+)
 from sourcebrief_api.graph_versions import GRAPH_VERSION_PUBLISHED
 from sourcebrief_shared.models import (
     Graph,
@@ -225,10 +229,8 @@ def graph_overview(session: Session, workspace_id: UUID, project_id: UUID, princ
             GraphMerge.workspace_id == workspace_id,
             GraphMerge.project_id == project_id,
             GraphMerge.status == "active",
-            GraphMergeVersion.status == GRAPH_MERGE_VERSION_PUBLISHED,
         )
         .order_by(GraphMerge.merge_key.asc())
-        .limit(max_resources)
     ).all()
     for merge, version in merge_rows:
         inputs = session.execute(
@@ -240,6 +242,8 @@ def graph_overview(session: Session, workspace_id: UUID, project_id: UUID, princ
         input_resources = [resource for _input, resource in inputs]
         if not input_resources or not all(resource.id in visible_ids for resource in input_resources):
             continue
+        stale_inputs = stale_merge_inputs(session, version)
+        merge_is_stale = version.status != GRAPH_MERGE_VERSION_PUBLISHED or bool(stale_inputs)
         payload = {
             "kind": "merge",
             "merge_key": merge.merge_key,
@@ -250,7 +254,21 @@ def graph_overview(session: Session, workspace_id: UUID, project_id: UUID, princ
             "edge_count": version.edge_count,
             "unresolved_candidate_count": version.unresolved_candidate_count,
             "input_sources": [resource.name for resource in input_resources],
+            "freshness": "stale" if merge_is_stale else "current",
+            "status": version.status,
+            "status_reason": version.status_reason,
+            "stale_inputs": stale_inputs,
         }
+        if merge_is_stale:
+            stale_or_missing.append(
+                {
+                    "merge_key": merge.merge_key,
+                    "status": "stale_merge_graph",
+                    "version_status": version.status,
+                    "status_reason": version.status_reason,
+                    "stale_inputs": stale_inputs,
+                }
+            )
         graphs.append(payload)
         merge_graphs.append(payload)
         for candidate in session.scalars(
@@ -272,6 +290,8 @@ def graph_overview(session: Session, workspace_id: UUID, project_id: UUID, princ
                     "right": candidate.right_origin_json,
                 }
             )
+        if len(merge_graphs) >= max_resources:
+            break
 
     status_value = "missing_graphs" if visible and not graphs else "partial" if stale_or_missing else "current"
     truncated = truncated or len(entries) > max_items or len(unresolved) > max_items
@@ -298,35 +318,126 @@ def graph_overview(session: Session, workspace_id: UUID, project_id: UUID, princ
     }
 
 
-def get_graph_inventory(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any], deps: RuntimeGraphDeps) -> dict[str, Any]:
+def get_graph_inventory(
+    session: Session,
+    workspace_id: UUID,
+    project_id: UUID,
+    principal: Principal,
+    args: dict[str, Any],
+    deps: RuntimeGraphDeps,
+) -> dict[str, Any]:
     require_scope(principal, "project:query")
     require_scope(principal, "resource:read")
     kind = str(args.get("kind") or "all")
     query = str(args.get("query") or "").strip().lower()
     limit = deps.runtime_limit(args.get("limit"), default=100, max_value=100)
     offset = deps.runtime_cursor(args.get("cursor"))
-    resource_graphs: list[dict[str, Any]] = []
-    merge_graphs: list[dict[str, Any]] = []
+    authorized_resource_graphs: list[dict[str, Any]] = []
+    authorized_merge_graphs: list[dict[str, Any]] = []
+
     if kind in {"all", "resource"}:
-        resource_rows = session.execute(select(Graph, GraphVersion, Resource).join(GraphVersion, Graph.current_version_id == GraphVersion.id).join(Resource, Graph.resource_id == Resource.id).where(Graph.workspace_id == workspace_id, Graph.project_id == project_id, Graph.status == "active", GraphVersion.status == GRAPH_VERSION_PUBLISHED, Resource.deleted_at.is_(None), Resource.archived_at.is_(None)).order_by(Graph.graph_key.asc()).offset(offset).limit(limit)).all()
+        resource_rows = session.execute(
+            select(Graph, GraphVersion, Resource)
+            .join(GraphVersion, Graph.current_version_id == GraphVersion.id)
+            .join(Resource, Graph.resource_id == Resource.id)
+            .where(
+                Graph.workspace_id == workspace_id,
+                Graph.project_id == project_id,
+                Graph.status == "active",
+                GraphVersion.status == GRAPH_VERSION_PUBLISHED,
+                Resource.deleted_at.is_(None),
+                Resource.archived_at.is_(None),
+            )
+            .order_by(Graph.graph_key.asc())
+        ).all()
         for graph, version, resource in resource_rows:
             if not token_allows_resource(principal, resource.id):
                 continue
-            if query and query not in graph.graph_key.lower() and query not in graph.title.lower() and query not in resource.name.lower():
+            if (
+                query
+                and query not in graph.graph_key.lower()
+                and query not in graph.title.lower()
+                and query not in resource.name.lower()
+            ):
                 continue
-            resource_graphs.append({"graph_key": graph.graph_key, "title": graph.title, "resource_id": str(resource.id), "resource_name": resource.name, "current_version": version.version, "node_count": version.node_count, "edge_count": version.edge_count})
+            authorized_resource_graphs.append(
+                {
+                    "graph_key": graph.graph_key,
+                    "title": graph.title,
+                    "resource_id": str(resource.id),
+                    "resource_name": resource.name,
+                    "current_version": version.version,
+                    "node_count": version.node_count,
+                    "edge_count": version.edge_count,
+                    "freshness": (
+                        "current"
+                        if version.source_snapshot_id == resource.current_snapshot_id
+                        else "stale"
+                    ),
+                    "graph_snapshot_id": str(version.source_snapshot_id),
+                    "current_snapshot_id": (
+                        str(resource.current_snapshot_id)
+                        if resource.current_snapshot_id
+                        else None
+                    ),
+                }
+            )
+
     if kind in {"all", "merge"}:
-        merge_rows = session.execute(select(GraphMerge, GraphMergeVersion).join(GraphMergeVersion, GraphMerge.current_version_id == GraphMergeVersion.id).where(GraphMerge.workspace_id == workspace_id, GraphMerge.project_id == project_id, GraphMerge.status == "active", GraphMergeVersion.status == GRAPH_MERGE_VERSION_PUBLISHED).order_by(GraphMerge.merge_key.asc()).offset(offset).limit(limit)).all()
+        merge_rows = session.execute(
+            select(GraphMerge, GraphMergeVersion)
+            .join(GraphMergeVersion, GraphMerge.current_version_id == GraphMergeVersion.id)
+            .where(
+                GraphMerge.workspace_id == workspace_id,
+                GraphMerge.project_id == project_id,
+                GraphMerge.status == "active",
+            )
+            .order_by(GraphMerge.merge_key.asc())
+        ).all()
         for merge, version in merge_rows:
-            inputs = session.execute(select(GraphMergeInput, Resource).join(Resource, GraphMergeInput.input_resource_id == Resource.id).where(GraphMergeInput.graph_merge_version_id == version.id).order_by(GraphMergeInput.ordinal.asc())).all()
+            inputs = session.execute(
+                select(GraphMergeInput, Resource)
+                .join(Resource, GraphMergeInput.input_resource_id == Resource.id)
+                .where(GraphMergeInput.graph_merge_version_id == version.id)
+                .order_by(GraphMergeInput.ordinal.asc())
+            ).all()
             resources = [resource for _input, resource in inputs]
-            if not deps.runtime_resource_rows_allowed(principal, [resource.id for resource in resources]):
+            if not deps.runtime_resource_rows_allowed(
+                principal, [resource.id for resource in resources]
+            ):
                 continue
             if query and query not in merge.merge_key.lower() and query not in merge.title.lower():
                 continue
-            merge_graphs.append({"merge_key": merge.merge_key, "title": merge.title, "current_version": version.version, "node_count": version.node_count, "edge_count": version.edge_count, "input_sources": [resource.name for resource in resources]})
-    returned = len(resource_graphs) + len(merge_graphs)
-    return {"resource_graphs": resource_graphs, "merge_graphs": merge_graphs, "next_cursor": str(offset + limit) if returned >= limit else None}
+            stale_inputs = stale_merge_inputs(session, version)
+            merge_is_stale = (
+                version.status != GRAPH_MERGE_VERSION_PUBLISHED or bool(stale_inputs)
+            )
+            authorized_merge_graphs.append(
+                {
+                    "merge_key": merge.merge_key,
+                    "title": merge.title,
+                    "current_version": version.version,
+                    "status": version.status,
+                    "status_reason": version.status_reason,
+                    "node_count": version.node_count,
+                    "edge_count": version.edge_count,
+                    "input_sources": [resource.name for resource in resources],
+                    "freshness": "stale" if merge_is_stale else "current",
+                    "stale_inputs": stale_inputs,
+                }
+            )
+
+    resource_graphs = authorized_resource_graphs[offset : offset + limit]
+    merge_graphs = authorized_merge_graphs[offset : offset + limit]
+    has_more = (
+        len(authorized_resource_graphs) > offset + limit
+        or len(authorized_merge_graphs) > offset + limit
+    )
+    return {
+        "resource_graphs": resource_graphs,
+        "merge_graphs": merge_graphs,
+        "next_cursor": str(offset + limit) if has_more else None,
+    }
 
 
 def resolve_graph_target(session: Session, workspace_id: UUID, project_id: UUID, principal: Principal, args: dict[str, Any], deps: RuntimeGraphDeps) -> tuple[str, Graph | GraphMerge, GraphVersion | GraphMergeVersion]:
@@ -345,19 +456,46 @@ def resolve_graph_target(session: Session, workspace_id: UUID, project_id: UUID,
                 graph_version = session.scalar(select(GraphVersion).where(GraphVersion.graph_id == graph.id, GraphVersion.version == int(version_number), GraphVersion.status == GRAPH_VERSION_PUBLISHED))
             if graph_version is None:
                 raise HTTPException(status_code=404, detail={"code": "graph_not_found", "message": "published graph version not found"})
+            if version_number is None:
+                resource = session.get(Resource, graph_version.resource_id)
+                if resource is None or resource.current_snapshot_id != graph_version.source_snapshot_id:
+                    raise HTTPException(status_code=409, detail={"code": "stale_resource_graph", "message": "published graph does not match the current resource snapshot", "graph_snapshot_id": str(graph_version.source_snapshot_id), "current_snapshot_id": str(resource.current_snapshot_id) if resource and resource.current_snapshot_id else None})
             return "resource", graph, graph_version
     if kind in {"auto", "merge"}:
         merge = session.scalar(select(GraphMerge).where(GraphMerge.workspace_id == workspace_id, GraphMerge.project_id == project_id, GraphMerge.merge_key == key, GraphMerge.status == "active"))
         if merge is not None:
             if version_number is None:
-                merge_version = session.scalar(select(GraphMergeVersion).where(GraphMergeVersion.id == merge.current_version_id, GraphMergeVersion.status == GRAPH_MERGE_VERSION_PUBLISHED))
+                merge_version = session.scalar(
+                    select(GraphMergeVersion).where(
+                        GraphMergeVersion.id == merge.current_version_id
+                    )
+                )
             else:
-                merge_version = session.scalar(select(GraphMergeVersion).where(GraphMergeVersion.graph_merge_id == merge.id, GraphMergeVersion.version == int(version_number), GraphMergeVersion.status == GRAPH_MERGE_VERSION_PUBLISHED))
+                merge_version = session.scalar(
+                    select(GraphMergeVersion).where(
+                        GraphMergeVersion.graph_merge_id == merge.id,
+                        GraphMergeVersion.version == int(version_number),
+                        GraphMergeVersion.status == GRAPH_MERGE_VERSION_PUBLISHED,
+                    )
+                )
             if merge_version is None:
                 raise HTTPException(status_code=404, detail={"code": "graph_not_found", "message": "published merge graph version not found"})
             inputs = list(session.scalars(select(GraphMergeInput.input_resource_id).where(GraphMergeInput.graph_merge_version_id == merge_version.id)))
             if not deps.runtime_resource_rows_allowed(principal, inputs):
                 raise HTTPException(status_code=404, detail={"code": "graph_not_found", "message": "published graph not found"})
+            if version_number is None:
+                stale_inputs = stale_merge_inputs(session, merge_version)
+                if merge_version.status != GRAPH_MERGE_VERSION_PUBLISHED or stale_inputs:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "stale_merge_graph",
+                            "message": "merge graph is invalidated or no longer matches current resource graphs",
+                            "version_status": merge_version.status,
+                            "status_reason": merge_version.status_reason,
+                            "stale_inputs": stale_inputs,
+                        },
+                    )
             return "merge", merge, merge_version
     raise HTTPException(status_code=404, detail={"code": "graph_not_found", "message": "published graph not found"})
 

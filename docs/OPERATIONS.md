@@ -156,6 +156,91 @@ docker compose exec -T postgres psql -U sourcebrief -d sourcebrief -c \
   "select id, resource_id, trigger, status, created_at, started_at, error_message from index_runs where status in ('queued','running') order by created_at asc;"
 ```
 
+## Atomic Git snapshot/graph rollout and recovery
+
+The Git refresh consistency contract is enforced by application code and does not require a schema migration. It becomes active only after the new workers and API/runtime are deployed. Keep production Git resources on `manual` during the rollout; changing refresh frequency is a separate, explicit operation.
+
+### Preflight and drift inventory
+
+Before replacing workers, stop the maintenance scheduler so it cannot enqueue new scheduled work, then let active default-queue work drain:
+
+```bash
+docker compose stop worker-maintenance
+docker compose exec -T redis redis-cli LLEN rq:queue:default
+docker compose exec -T postgres psql -U sourcebrief -d sourcebrief -c \
+  "select id, resource_id, trigger, status, created_at, started_at from index_runs where status in ('enqueueing','queued','running') order by created_at asc;"
+```
+
+Do not stop default workers until the queue is empty and no run is `enqueueing`, `queued`, or `running`. Record legacy Git snapshot/graph drift before deployment:
+
+```bash
+docker compose exec -T postgres psql -U sourcebrief -d sourcebrief -c \
+  "select r.id as resource_id, r.name, r.current_snapshot_id, g.id as graph_id, g.current_version_id, gv.status as graph_status, gv.source_snapshot_id as graph_snapshot_id from resources r left join graphs g on g.resource_id = r.id and g.status = 'active' left join graph_versions gv on gv.id = g.current_version_id where lower(r.type) in ('git','git_repo','git-repo','repo','repository') and r.status = 'active' and r.deleted_at is null and r.archived_at is null and (r.current_snapshot_id is null or g.id is null or gv.id is null or gv.status <> 'published' or gv.source_snapshot_id is distinct from r.current_snapshot_id) order by r.created_at asc;"
+```
+
+Save the result as rollout evidence. A non-empty result is not safe to hide: repair/backfill those resources with the new worker path before enabling fail-closed runtime access broadly.
+
+### Worker-first deployment order
+
+A mixed old-worker/new-runtime deployment is unsupported because an old worker can advance a snapshot without publishing its matching graph. Use this order:
+
+```bash
+# Maintenance is already stopped from preflight. Stop every default-worker replica.
+docker compose stop worker-default
+
+# Build the shared API/worker image from the intended commit.
+docker compose build api worker-default worker-maintenance
+
+# Start new workers first and verify their logs/liveness.
+docker compose up -d worker-default worker-maintenance
+docker compose ps worker-default worker-maintenance
+docker compose logs --tail=100 worker-default worker-maintenance
+
+# Only after old workers are absent, recreate the API/runtime.
+docker compose up -d api
+curl -fsS http://localhost:${SOURCEBRIEF_API_PORT:-18000}/readyz
+```
+
+For deployments with scaled workers, verify every old replica is gone rather than checking only one container name. Do not change any resource from `manual` to `daily` yet.
+
+### Canary and post-deploy proof
+
+Refresh one non-empty Git canary through the normal UI or CLI:
+
+```bash
+sourcebrief resource refresh \
+  --workspace <workspace-name-or-slug> \
+  --project <project-name> \
+  --resource-id <resource-id> \
+  --wait
+```
+
+Then verify:
+
+1. The run succeeded and did not return to `queued` after a fast worker completed.
+2. `graph_versions.source_snapshot_id` equals `resources.current_snapshot_id`.
+3. Repeating a scheduled refresh at the same commit and policy produces no snapshot/version churn.
+4. A source-config policy change at the same commit creates a new matching snapshot/graph pair.
+5. Any dependent current merge version becomes `invalidated`, inventory reports it stale, and default graph query/path calls return `409 stale_merge_graph`.
+6. Audit evidence contains `graph_version.compile`, `graph_version.publish`, and, when applicable, `graph_merge.stale`.
+
+Inspect invalidated current merges:
+
+```bash
+docker compose exec -T postgres psql -U sourcebrief -d sourcebrief -c \
+  "select gm.merge_key, gmv.version, gmv.status, gmv.invalidated_at, gmv.status_reason from graph_merges gm join graph_merge_versions gmv on gmv.id = gm.current_version_id where gm.status = 'active' and gmv.status = 'invalidated' order by gmv.invalidated_at desc;"
+```
+
+Re-run the drift inventory after the canary/backfill. Proceed to a small `daily` cohort only when the result is empty and the canary evidence is complete.
+
+### Legacy fingerprint and failure behavior
+
+Snapshots created before the atomic-refresh release do not contain an extraction-policy fingerprint. Their first scheduled refresh on the new worker intentionally rebuilds once even when the Git commit is unchanged. Roll out `daily` in bounded cohorts so this one-time indexing load does not create a queue spike.
+
+If graph compile, validation, or publish fails, the new snapshot/graph transaction rolls back and the previous complete pair remains current. Scheduled failures set `next_refresh_at` to approximately 15 minutes later. Diagnose the failed run and provider/source health; do not manually promote a staged snapshot or graph version.
+
+When a merge is invalidated, rebuild it through the Graph UI/API using current published resource graph inputs, review reconciliation candidates, and publish the replacement. Do not manually change merge-version status or current pointers. An application rollback does not automatically republish an invalidated merge; prefer a forward fix/rebuild with retained audit history.
+
 ## Handling stuck index runs
 
 1. Confirm worker containers are healthy/running:

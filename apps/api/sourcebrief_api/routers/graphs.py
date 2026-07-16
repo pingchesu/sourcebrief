@@ -23,11 +23,9 @@ from sourcebrief_api.graph_merges import (
 )
 from sourcebrief_api.graph_versions import (
     GRAPH_STATUS_ARCHIVED,
-    GRAPH_VERSION_DRAFT,
     GRAPH_VERSION_INVALIDATED,
-    GRAPH_VERSION_PUBLISHED,
-    GRAPH_VERSION_SUPERSEDED,
     compile_graph_version,
+    publish_graph_version_record,
 )
 from sourcebrief_api.schemas import (
     GraphCompileRequest,
@@ -970,60 +968,27 @@ def create_router(deps: GraphRouterDeps) -> APIRouter:
         principal: Principal = Depends(require_principal),
         session: Session = Depends(get_session),
     ) -> GraphStreamRead:
-        graph = resolve_graph(session, workspace_id, project_id, graph_key, for_update=True)
+        graph = resolve_graph(session, workspace_id, project_id, graph_key)
         require_graph_review_write(session, graph, principal, deps)
         assert_graph_active(graph)
         version = session.scalar(
-            select(GraphVersion)
-            .where(GraphVersion.graph_id == graph.id, GraphVersion.version == version_number)
-            .with_for_update()
+            select(GraphVersion).where(
+                GraphVersion.graph_id == graph.id,
+                GraphVersion.version == version_number,
+            )
         )
         if version is None:
             raise HTTPException(status_code=404, detail="graph version not found")
-        if version.status != GRAPH_VERSION_DRAFT:
-            raise HTTPException(
-                status_code=422, detail="only draft graph versions can be published"
+        try:
+            result = publish_graph_version_record(
+                session,
+                graph,
+                version,
+                actor_id=principal.user.id,
+                comment=payload.comment,
             )
-        if not version.validation_json.get("ok"):
-            raise HTTPException(
-                status_code=422, detail="graph version validation must pass before publish"
-            )
-        locked_resource = session.scalar(
-            select(Resource)
-            .where(
-                Resource.id == version.resource_id,
-                Resource.workspace_id == workspace_id,
-                Resource.project_id == project_id,
-            )
-            .with_for_update()
-        )
-        if locked_resource is None:
-            raise HTTPException(status_code=422, detail="graph resource no longer exists")
-        if locked_resource.deleted_at is not None or locked_resource.status in {
-            "deleted",
-            "archived",
-        }:
-            raise HTTPException(
-                status_code=422,
-                detail="cannot publish graph versions for deleted or archived resources",
-            )
-        if locked_resource.current_snapshot_id != version.source_snapshot_id:
-            raise HTTPException(
-                status_code=422,
-                detail="graph draft is stale; recompile against the current resource snapshot",
-            )
-        current = (
-            session.get(GraphVersion, graph.current_version_id)
-            if graph.current_version_id
-            else None
-        )
-        if current and current.status == GRAPH_VERSION_PUBLISHED:
-            current.status = GRAPH_VERSION_SUPERSEDED
-        version.status = GRAPH_VERSION_PUBLISHED
-        version.published_by = principal.user.id
-        version.published_at = datetime.now(UTC)
-        version.status_reason = payload.comment
-        graph.current_version_id = version.id
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         session.add(
             AuditEvent(
                 workspace_id=workspace_id,
@@ -1031,16 +996,16 @@ def create_router(deps: GraphRouterDeps) -> APIRouter:
                 actor_token_id=principal.token_id,
                 action="graph_version.publish",
                 target_type="graph_version",
-                target_id=version.id,
+                target_id=result.version.id,
                 meta={
-                    "graph_key": graph.graph_key,
-                    "version": version.version,
+                    "graph_key": result.graph.graph_key,
+                    "version": result.version.version,
                     "comment": payload.comment,
                 },
             )
         )
         session.commit()
-        return graph_stream_read(session, graph)
+        return graph_stream_read(session, result.graph)
 
     @router.post(
         "/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_key}/versions/{version_number}/invalidate",

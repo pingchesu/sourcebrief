@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import ipaddress
+import json
 import os
 import re
 import shutil
@@ -98,6 +99,7 @@ DOCUMENT_TYPES = {
     "runbook",
 }
 GIT_TYPES = {"git", "git_repo", "git-repo", "repo", "repository"}
+GIT_EXTRACTION_POLICY_VERSION = 1
 URL_TYPES = {"url", "web", "webpage", "website", "http", "https"}
 UPLOAD_TYPES = {"upload", "uploaded_file", "file_upload"}
 FOLDER_BUNDLE_TYPES = {"folder_bundle"}
@@ -947,11 +949,38 @@ def _collect_git(resource: Resource) -> tuple[list[dict], str, str, dict]:
     finally:
         shutil.rmtree(clone_dir, ignore_errors=True)
 
+    extraction_fingerprint = content_hash(
+        json.dumps(
+            {
+                "policy_version": GIT_EXTRACTION_POLICY_VERSION,
+                "remote_url": sanitize_remote_url(url),
+                "branch": branch,
+                "max_file_bytes": max_file_bytes,
+                "max_repo_files": max_files,
+                "max_repo_bytes": max_total_bytes,
+                "max_chunks": parse_positive_int(
+                    config.get("max_chunks"),
+                    default=DEFAULT_MAX_CHUNKS,
+                    hard_limit=HARD_MAX_CHUNKS,
+                    name="max_chunks",
+                ),
+                "max_symbols": parse_positive_int(
+                    config.get("max_symbols"),
+                    default=DEFAULT_MAX_SYMBOLS,
+                    hard_limit=HARD_MAX_SYMBOLS,
+                    name="max_symbols",
+                ),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
     meta = {
         "source": "git",
         "remote_url": sanitize_remote_url(url),
         "commit": commit,
         "branch": branch,
+        "extraction_fingerprint": extraction_fingerprint,
         "file_count": len(docs),
         "max_files": max_files,
         "max_total_bytes": max_total_bytes,
@@ -1125,6 +1154,41 @@ def ingest_resource(session: Session, resource: Resource, run: IndexRun) -> Sour
 
     if rtype in GIT_TYPES:
         docs, version, version_kind, meta = _collect_git(resource)
+        current_snapshot = (
+            session.get(SourceSnapshot, resource.current_snapshot_id)
+            if resource.current_snapshot_id
+            else None
+        )
+        current_commit = (
+            str((current_snapshot.meta or {}).get("commit") or current_snapshot.version)
+            if current_snapshot is not None
+            else None
+        )
+        fetched_commit = str(meta.get("commit") or version)
+        current_fingerprint = (
+            str((current_snapshot.meta or {}).get("extraction_fingerprint") or "")
+            if current_snapshot is not None
+            else ""
+        )
+        fetched_fingerprint = str(meta.get("extraction_fingerprint") or "")
+        if (
+            run.trigger == "scheduled"
+            and current_snapshot is not None
+            and current_snapshot.status == "succeeded"
+            and current_commit == fetched_commit
+            and current_fingerprint == fetched_fingerprint
+        ):
+            run.snapshot_id = current_snapshot.id
+            run.meta = {
+                **dict(run.meta or {}),
+                "unchanged": True,
+                "source_commit": fetched_commit,
+                "reused_snapshot_id": str(current_snapshot.id),
+            }
+            session.delete(snapshot)
+            session.flush()
+            resource.status = "active"
+            return current_snapshot
     elif rtype in URL_TYPES:
         docs, version, version_kind, meta = fetch_url_document(resource)
     elif rtype in UPLOAD_TYPES:

@@ -10,11 +10,15 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from redis import Redis
 from rq import Queue
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from sourcebrief_api.auth import Principal, require_principal, require_scope, token_allows_resource
-from sourcebrief_api.constants import FOLDER_BUNDLE_RESOURCE_TYPES, URL_RESOURCE_TYPES
+from sourcebrief_api.constants import (
+    ACTIVE_INDEX_STATUSES,
+    FOLDER_BUNDLE_RESOURCE_TYPES,
+    URL_RESOURCE_TYPES,
+)
 from sourcebrief_api.schemas import (
     DeletedFileImpactStubRead,
     DueRefreshResponse,
@@ -807,6 +811,31 @@ def refresh_resource(
         return active_run
     if resource.type.lower() in FOLDER_BUNDLE_RESOURCE_TYPES:
         raise HTTPException(status_code=422, detail="folder bundle resources are updated by uploading a new zip, not by refresh")
+    locked_resource = session.scalar(
+        select(Resource)
+        .where(
+            Resource.workspace_id == workspace_id,
+            Resource.project_id == project_id,
+            Resource.id == resource_id,
+        )
+        .with_for_update()
+    )
+    if locked_resource is None:
+        raise HTTPException(status_code=404, detail="resource not found")
+    resource = locked_resource
+    active_run = session.scalar(
+        select(IndexRun)
+        .where(
+            IndexRun.workspace_id == workspace_id,
+            IndexRun.project_id == project_id,
+            IndexRun.resource_id == resource_id,
+            IndexRun.status.in_(ACTIVE_INDEX_STATUSES),
+        )
+        .order_by(IndexRun.created_at.desc())
+        .limit(1)
+    )
+    if active_run is not None:
+        return active_run
     run = IndexRun(
         workspace_id=workspace_id,
         project_id=project_id,
@@ -833,14 +862,23 @@ def refresh_resource(
     try:
         queue.enqueue("sourcebrief_worker.jobs.run_index", str(run.id), job_timeout=600)
     except Exception as exc:
-        run.status = "failed"
-        run.error_message = f"failed to enqueue index job: {exc}"[:1000]
-        session.add(run)
+        session.execute(
+            update(IndexRun)
+            .where(IndexRun.id == run.id, IndexRun.status == "enqueueing")
+            .values(
+                status="failed",
+                error_message=f"failed to enqueue index job: {exc}"[:1000],
+            )
+        )
         session.commit()
         raise HTTPException(status_code=503, detail="failed to enqueue index job") from exc
-    run.status = "queued"
-    session.add(run)
+    session.execute(
+        update(IndexRun)
+        .where(IndexRun.id == run.id, IndexRun.status == "enqueueing")
+        .values(status="queued")
+    )
     session.commit()
+    session.refresh(run)
     return run
 
 
