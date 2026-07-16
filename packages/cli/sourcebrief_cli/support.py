@@ -320,7 +320,11 @@ def add_common_resource_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", help="project name; defaults to sourcebrief use selection")
     parser.add_argument("--project-id", help="advanced: project ID; defaults to sourcebrief use selection")
     parser.add_argument("--name", required=True)
-    parser.add_argument("--update-frequency", default="manual")
+    parser.add_argument(
+        "--update-frequency",
+        default=None,
+        help="refresh cadence; omitted Git repositories default to daily, other source types to manual",
+    )
     parser.add_argument("--refresh", action="store_true", help="refresh after creating the resource")
     parser.add_argument("--wait", action="store_true", help="wait for refresh completion")
     parser.add_argument("--timeout", type=int, default=120, help="seconds to wait for refresh")

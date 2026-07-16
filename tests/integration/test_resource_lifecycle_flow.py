@@ -66,6 +66,56 @@ def add_doc(client: TestClient, workspace_id: str, project_id: str, headers: dic
     return res.json()["id"]
 
 
+def test_create_resource_frequency_defaults_follow_source_type() -> None:
+    require_real_services()
+    client = TestClient(app)
+    headers, workspace_id, project_id = make_project(client, "git-frequency-default")
+    path = f"/workspaces/{workspace_id}/projects/{project_id}/resources"
+
+    git_default = client.post(
+        path,
+        json={
+            "type": "git",
+            "name": "Daily Git",
+            "uri": "https://github.com/example/daily.git",
+            "source_config": {"url": "https://github.com/example/daily.git", "branch": "main"},
+        },
+        headers=headers,
+    )
+    assert git_default.status_code == 201, git_default.text
+    assert git_default.json()["update_frequency"] == "daily"
+    assert git_default.json()["next_refresh_at"] is not None
+
+    markdown_default = client.post(
+        path,
+        json={
+            "type": "markdown",
+            "name": "Manual Markdown",
+            "uri": "doc://manual-default",
+            "source_config": {"content": "manual", "path": "manual.md"},
+        },
+        headers=headers,
+    )
+    assert markdown_default.status_code == 201, markdown_default.text
+    assert markdown_default.json()["update_frequency"] == "manual"
+    assert markdown_default.json()["next_refresh_at"] is None
+
+    explicit_manual = client.post(
+        path,
+        json={
+            "type": "git",
+            "name": "Explicit Manual Git",
+            "uri": "https://github.com/example/manual.git",
+            "update_frequency": "manual",
+            "source_config": {"url": "https://github.com/example/manual.git", "branch": "main"},
+        },
+        headers=headers,
+    )
+    assert explicit_manual.status_code == 201, explicit_manual.text
+    assert explicit_manual.json()["update_frequency"] == "manual"
+    assert explicit_manual.json()["next_refresh_at"] is None
+
+
 def ingest(resource_id: str, workspace_id: str, project_id: str) -> None:
     session = get_sessionmaker()()
     run = IndexRun(

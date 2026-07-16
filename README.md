@@ -171,6 +171,27 @@ connect sources
 
 A SourceBrief project is a context boundary for a product, service, or repo group. Put multiple repos, runbooks, architecture notes, URLs, uploads, and zip/folder bundles into one project, then let agents ask one authorized endpoint for evidence across the resources they are allowed to see.
 
+### Git freshness policy
+
+New Git resources default to `update_frequency=daily` in the web UI, HTTP API, and CLI. Operators can explicitly choose `manual`, `hourly`, or `weekly`; the stored resource field is the source of truth, and `next_refresh_at` records the next scheduled attempt. A successful Git refresh advances the source snapshot and its published resource graph together, so a current snapshot is never exposed with an older resource graph.
+
+```bash
+# New repositories are daily unless --update-frequency is supplied.
+sourcebrief resource add-repo \
+  --workspace <workspace> \
+  --project <project> \
+  --name <owner/repo> \
+  --repo-url https://github.com/<owner>/<repo>.git \
+  --refresh --wait
+
+# Inspect or override an existing repository cadence.
+sourcebrief resource get --workspace <workspace> --project <project> --resource-id <resource-id>
+sourcebrief resource update --workspace <workspace> --project <project> \
+  --resource-id <resource-id> --update-frequency daily
+```
+
+Changing the cadence does not silently repair legacy snapshot/graph drift. Follow the worker-first rollout, canary, and backfill procedure in [Operations](docs/OPERATIONS.md#atomic-git-snapshotgraph-rollout-and-recovery) before enabling daily refresh on an existing fleet.
+
 ## The agent workflow
 
 <img src="docs/assets/sourcebrief-agent-workflow.svg" alt="Agent workflow showing SourceBrief evidence lookup before local checkout edits and tests" width="100%" />
