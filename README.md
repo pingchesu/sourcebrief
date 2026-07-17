@@ -2,19 +2,22 @@
 
 > Connect source. Ask with citations. Wire into your agent.
 
-SourceBrief gives coding agents a project evidence layer they can inspect before they edit. Connect a repo, docs folder, runbook, URL, upload, or folder bundle; ask a project question; get an answer with citations, snapshots, paths, line ranges, hashes, and follow-up read handles.
+SourceBrief gives coding agents a project evidence layer they can inspect before they edit. Connect a repo, docs folder, runbook, URL, upload, or folder bundle; ask a project question; get a cited evidence packet with snapshots, paths, line ranges, hashes, an extractive preview, and follow-up read handles.
 
 Use it when you need agents to answer with evidence, not vibes.
 
 ```text
-source -> indexed snapshot -> cited answer -> agent pack -> safer coding agent
+source -> indexed snapshot -> cited evidence packet -> agent pack -> safer coding agent
 ```
+
+> [!WARNING]
+> **Core product reset:** the current alpha ships a deterministic evidence, governance, and runtime-adapter substrate. It does **not** yet ship an AI knowledge compiler, a reviewed semantic knowledge graph, claim-verified generated answers, or AI-compiled Skill Packs. Existing hashing/term-overlap retrieval and template-generated Skill Exports are development-quality/deterministic capabilities, not proof of semantic intelligence. See the [Core Product Reset](docs/CORE_PRODUCT_RESET.md), [ADR-0002](docs/decisions/ADR-0002-ai-intelligence-plane.md), and [claim ledger](docs/CLAIM_LEDGER.md).
 
 A useful SourceBrief setup has three pieces:
 
 | Piece | What you get |
 | --- | --- |
-| **Cited evidence service** | MCP/API/CLI answers that point back to exact source sections. |
+| **Cited evidence service** | MCP/API/CLI evidence packets and extractive previews that point back to exact source sections. |
 | **Human workbench** | Web UI for sources, indexing state, review, and cited questions. |
 | **Agent Pack** | Repo/Project Agent runtime adapters, Skill Exports, and MCP/runtime guidance that teach agents when to ask SourceBrief first. Claude, Codex, Cursor, Hermes, and other MCP clients use the same cited evidence service through their runtime setup paths. |
 
@@ -25,7 +28,7 @@ A useful SourceBrief setup has three pieces:
 SourceBrief's default runtime package is **remote-live**: install the adapter, not the corpus. A Repo/Project Agent is the user-facing published runtime view; an Agent Pack / Skill Pack is the small local adapter that teaches Hermes, Claude, Codex, Cursor, or another MCP client how to ask SourceBrief for current cited evidence.
 
 ```text
-Review graph -> Publish Agent -> Install Agent Pack -> Validate Runtime
+Review evidence / structural graph -> Publish Agent -> Install Agent Pack -> Validate Runtime
 ```
 
 `sourcebrief agent-pack doctor --package ...` now validates package integrity and manifest policy locally. Add `--query` only when you want the optional remote citation smoke. Explicit non-default modes are modeled too: `pinned-snapshot` is bounded/offline-but-not-current, while `local-mirror` is exceptional policy validation only. SourceBrief does not sync full sources, embeddings, or graph indexes as a side effect of normal install.
@@ -116,14 +119,14 @@ The response includes runtime instructions, cited snippets, structured citations
 optional code symbols, and a token budget hint.
 ```
 
-That is the product bar: an agent can act on the answer because every claim points back to source.
+That is the target product bar, not a claim that the current deterministic preview already meets it: an agent should act on an answer only when each claim is explicitly verified against source evidence.
 
-## Self-improvement without silent mutation
+## Review and proposal loop without silent mutation
 
-SourceBrief now ships a productized, artifact-based self-improvement loop for reviewing its own cited answers and PR-review evidence:
+SourceBrief ships an artifact-based review and proposal loop for reviewing cited evidence and PR-review evidence:
 
 ```text
-cited answer or PR evidence
+cited evidence/preview or PR evidence
     -> review bundle
     -> local reviewer report with findings
     -> regression proposal
@@ -132,7 +135,7 @@ cited answer or PR evidence
     -> review history
 ```
 
-This is not an automatic optimizer and it does not rewrite prompts, skills, runtime packs, docs, or code by itself. The shipped path writes bounded JSON artifacts and human-reviewable staged patches; applying a change remains an explicit developer/PR action.
+This is not autonomous self-improvement or an automatic optimizer, and it does not rewrite prompts, skills, runtime packs, docs, or code by itself. The shipped path writes bounded JSON artifacts and human-reviewable staged patches; applying a change remains an explicit developer/PR action. The existing **Self-improvement** UI label is retained temporarily for compatibility and is part of the product-reset terminology migration.
 
 Use the web console for the product path:
 
@@ -241,7 +244,7 @@ For runtime setup, prompts, token scopes, remote-code safety, generated skills, 
 | Operate or debug the local stack | [Operations](docs/OPERATIONS.md) |
 | Check alpha readiness and limits | [Project status](docs/STATUS.md) |
 | Review real evaluation examples | [Awesome Agent Harness 50-question example](examples/awesome-agent-harness-50q/README.md) |
-| Run the self-improvement proof path | [Self-improvement MVP smoke](docs/SELF_IMPROVEMENT_MVP_SMOKE.md) |
+| Run the review/proposal proof path | [Self-improvement MVP smoke (legacy name)](docs/SELF_IMPROVEMENT_MVP_SMOKE.md) |
 | Pick a product workflow | [Recipes](docs/RECIPES.md) |
 | Use SourceBrief with a local agent | [Local-agent runtime example](examples/use-sourcebrief-with-local-agent/README.md) |
 

@@ -2,6 +2,9 @@
 
 SourceBrief is easier to understand as a pipeline than as a feature list:
 
+> [!IMPORTANT]
+> Current SourceBrief is a deterministic evidence and runtime-adapter alpha. The [Core Product Reset](CORE_PRODUCT_RESET.md) defines, but does not yet ship, the AI knowledge compiler, reviewed semantic graph, claim-verified answers, and AI-compiled Skill Packs.
+
 ```text
 Source -> Snapshot -> Evidence -> Review -> Runtime
 ```
@@ -33,13 +36,13 @@ If you remember one sentence, use this:
 | Source / Resource | User-facing source material; backend APIs often call it a resource. | You connect or scope knowledge. |
 | Snapshot | Indexed version of a resource. | You need provenance, freshness, or reproducibility. |
 | Citation | A pointer back to path/title, ordinal or lines, snapshot, hash, and score. | You need to verify a claim. |
-| Agent Context | Runtime-shaped answer with instruction, context, citations, symbols, and follow-up tool hints. | An agent needs a cited project answer. |
+| Agent Context | Runtime-shaped evidence packet with instruction, context, citations, symbols, a deterministic extractive preview, and follow-up tool hints. | An agent needs cited project evidence. |
 | Resource Map | Reviewable map of what SourceBrief found in one source. | You are onboarding or auditing a source. |
-| Resource Graph / Evidence Graph | Permissioned graph of snapshots, sections, symbols, citations, and relationships. | You need the canonical evidence layer that agents query. |
+| Resource Graph / Evidence Graph | Permissioned structural graph of snapshots, sections, symbols, citations, and observed relationships. | You need the canonical deterministic evidence layer that agents query. |
 | Context Pack | Versioned, published bundle of approved artifacts. | A team wants stable evidence for repeatable work. |
 | Repo Agent / Project Agent | User-facing published runtime view over resources, context packs, freshness, capabilities, and known limits. | You want to present an installable agent capability without exposing graph internals. |
 | Agent Pack / Skill Pack | Runtime adapter files that tell an agent how to call SourceBrief and respect citations. | You want repeatable agent behavior, not one-off prompts. |
-| Skill Export | One packaging format for an Agent Pack. | You need downloadable/installable runtime adapter files. |
+| Skill Export | One deterministic packaging format for an Agent Pack. | You need downloadable/installable runtime adapter files, not AI-compiled knowledge. |
 | MCP tools | JSON-RPC tool surface for live agent sessions. | Hermes, Claude Code, Codex, Cursor, or another MCP client needs on-demand evidence. |
 
 ## Resource Map vs Context Pack
@@ -66,7 +69,7 @@ An **Agent Pack** answers:
 
 Agent Packs are thin runtime adapters. They should not contain the full source corpus, embeddings, vector indexes, raw chunks, or graph indexes by default. The default install mode is `remote-live`: the installed pack routes the runtime back to SourceBrief MCP/API/RPC for current cited evidence.
 
-A **Skill Export** is one packaging format for an Agent Pack. It is generated from reviewed SourceBrief evidence, but it is not the evidence itself.
+A **Skill Export** is currently a deterministic packaging format for an Agent Pack. It is generated from reviewed SourceBrief evidence, but it is not the evidence itself and does not imply LLM-backed synthesis.
 
 ## Agent Context vs Context Packet
 

@@ -1,13 +1,16 @@
-# SourceBrief self-improvement
+# SourceBrief Review and Proposal Loop
 
-SourceBrief self-improvement is an evidence-backed product loop, not an agent that silently rewrites itself.
+> [!WARNING]
+> **Transitional terminology:** current UI/API paths retain `self-improvement` for compatibility, but the shipped capability is a Review and Proposal Loop. It does not autonomously learn, optimize prompts/skills, or adopt changes. See the [Core Product Reset](CORE_PRODUCT_RESET.md).
 
-The goal is to turn important agent outputs into reviewable artifacts, run autonomous reviewers over those artifacts, convert validated failures into regressions or staged proposals, and adopt improvements only after gates pass.
+The Review and Proposal Loop is evidence-backed, not an agent that silently rewrites itself.
+
+The goal is to turn important agent outputs into reviewable artifacts, run bounded deterministic or explicitly configured reviewers over those artifacts, convert validated failures into regressions or staged proposals, and adopt improvements only after gates pass.
 
 ```text
 agent answer / PR / demo / recipe run
     -> review bundle
-    -> autonomous reviewer agent
+    -> bounded reviewer
     -> structured findings
     -> regression or learning proposal
     -> validation gate
@@ -15,7 +18,7 @@ agent answer / PR / demo / recipe run
     -> explicit adoption
 ```
 
-## Product promise
+## Product boundary
 
 A normal RAG system stops at:
 
@@ -23,13 +26,13 @@ A normal RAG system stops at:
 query -> answer
 ```
 
-SourceBrief should close the loop:
+The current workflow preserves a review trail:
 
 ```text
-query -> cited answer -> autonomous review -> regression/proposal -> better future answer
+query -> cited evidence/preview -> reviewer report -> regression/proposal -> explicit human adoption
 ```
 
-The product value is that agent mistakes do not disappear in chat history. They become inspectable, replayable, and reviewable evidence.
+The product value is that agent mistakes do not disappear in chat history. They become inspectable, replayable, and reviewable evidence. A better future answer is an intended outcome that still requires held-out evaluation; it is not guaranteed by creating proposal artifacts.
 
 ## Product UI and API surface
 

@@ -4,8 +4,11 @@ Agent Packs are the installable runtime adapters that teach Hermes, Claude Code,
 
 They are not the resource itself.
 
+> [!IMPORTANT]
+> Current Agent Packs and Skill Exports are deterministic runtime adapters. They are not LLM-generated project knowledge. The separate `ai-compiled` package contract is unshipped and defined by the [Core Product Reset](CORE_PRODUCT_RESET.md).
+
 ```text
-Resources are indexed into a Resource Graph.
+Resources are indexed into a structural Resource Graph.
 Context Packs publish scoped evidence from that graph.
 Repo/Project Agents are user-facing runtime views over those packs.
 Agent Packs install the instructions and connection contract for an agent runtime.

@@ -11,7 +11,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | 3 | [Recipes](RECIPES.md) | Choose a user workflow such as repo onboarding, PR review, incident runbooks, API services, frontend product work, or multi-repo platforms. |
 | 4 | [Product walkthrough](WALKTHROUGH.md) | Real UI screenshots and captured `agent-context` output before installing. |
 | 5 | [Concepts](CONCEPTS.md) | Source -> Snapshot -> Evidence -> Review -> Runtime mental model. |
-| 6 | [Quick start](QUICKSTART.md) | Run the local stack and reach the first cited answer. |
+| 6 | [Quick start](QUICKSTART.md) | Run the local stack and reach the first cited evidence response. |
 | 7 | [Agent Packs](AGENT_PACKS.md) | Product model for Resource Graphs, Repo/Project Agents, Skill Packs, and remote-live install boundaries. |
 | 8 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Long-form operator guide for Hermes, Claude Code, Codex, Cursor, MCP clients, scopes, skills, and failure modes. |
 | Reference | [Default credential policy](DEFAULT_CREDENTIAL_POLICY.md) | Why SourceBrief has no universal `changeme` login and how local demos authenticate. |
@@ -27,7 +27,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Demo runtime output](examples/demo-runtime-output.md) | Captured output | Normalized output from a real local demo run. |
 | [Captured agent-context output](examples/agent-context-output.md) | Captured output | Normalized response from the product walkthrough run. |
 | [Awesome Agent Harness 50-question example](../examples/awesome-agent-harness-50q/README.md) | Real corpus eval example | Five public repos, 50 questions, bounded import notes, and final RISK verdict. |
-| [Current screenshot-backed 50Q launch walkthrough](evaluations/sourcebrief-launch-50q-20260630.md) | Launch proof | Current isolated local stack run with 50/50 pass, clean browser console/network transcript, screenshot inventory hashes, and committed screenshots. |
+| [Current screenshot-backed 50Q walkthrough](evaluations/sourcebrief-launch-50q-20260630.md) | Mechanical proof / semantic RISK | Current isolated local stack run with 50/50 mechanical execution, clean browser console/network transcript, screenshot inventory hashes, and committed screenshots; it does not prove production semantic quality. |
 | [Use SourceBrief with a local agent](../examples/use-sourcebrief-with-local-agent/README.md) | Product-led runtime example | Current MCP/runtime setup path plus Agent Pack / Skill Export validation, doctor, and local apply flow. |
 
 ## Runtime and operations
@@ -56,7 +56,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Roadmap](ROADMAP.md) | Planning reference | Finite alpha roadmap and future work. |
 | [Git repo import product gaps](GIT_REPO_IMPORT_PRODUCT_GAPS.md) | Product backlog | Enterprise Git onboarding gaps. |
 | [Out-of-box product plan](OUT_OF_BOX_PRODUCT_PLAN.md) | Productization backlog | More attractive first-use experience and recipe/agent-pack roadmap. |
-| [Self-improvement](SELF_IMPROVEMENT.md) | Product architecture + UI contract | Web console entry, review bundles, autonomous reviewer agents, regression proposals, validation gates, and staged adoption. |
+| [Review and Proposal Loop (`SELF_IMPROVEMENT.md` legacy name)](SELF_IMPROVEMENT.md) | Product architecture + transitional UI contract | Web console entry, review bundles, reviewer reports, regression proposals, validation gates, and staged adoption; no autonomous optimizer or silent learning. |
 | [Review bundle schema](REVIEW_BUNDLE_SCHEMA.md) | Artifact schema | Typed `sourcebrief.review-bundle.v1` fields, examples, redaction/completeness contract, and validation path. |
 | [Review bundle capture](REVIEW_BUNDLE_CAPTURE.md) | CLI capture path | Opt-in `sourcebrief ask` / `quickstart-demo` bundle writes with scope, citations, proof, and completeness metadata. |
 | [Review bundle runner](REVIEW_BUNDLE_RUNNER.md) | Reviewer execution | Local deterministic `sourcebrief review run` over bundles, report writing, verdicts, and fail-closed incomplete handling. |
@@ -79,7 +79,9 @@ These documents are for contributors and reviewers. They are useful when changin
 
 | Doc | Status |
 | --- | --- |
-| [Product spec](SPEC.md) | Deep reference |
+| [Core Product Reset](CORE_PRODUCT_RESET.md) | **Proposed core product and architecture reset contract** |
+| [ADR-0002: AI intelligence plane](decisions/ADR-0002-ai-intelligence-plane.md) | Proposed decision; preserves evidence substrate and rebuilds intelligence |
+| [Product spec](SPEC.md) | Historical/deep reference; subordinate to the Core Product Reset where they differ |
 | [Codebase Memory MCP reference spec](CODEBASE_MEMORY_MCP_REFERENCE_SPEC.md) | Deep reference / follow-up roadmap |
 | [Remote repo agent skill pack spec](REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md) | Deep reference |
 | [Context Artifact Compiler repo-agent spec](CONTEXT_ARTIFACT_COMPILER_REPO_AGENT_SPEC.md) | Deep reference |
@@ -93,7 +95,7 @@ Context Artifact Compiler specs:
 - [B0 Resource Map](context-artifact-compiler/B0-resource-map-spec.md)
 - [B1 Context Pack versions](context-artifact-compiler/B1-context-pack-versions-spec.md)
 - [C Skill Export](context-artifact-compiler/C-skill-export-spec.md)
-- [C2 Skill Pack Compiler](context-artifact-compiler/C2-skill-pack-compiler-spec.md)
+- [C2 Skill Pack Compiler — deterministic adapter baseline](context-artifact-compiler/C2-skill-pack-compiler-spec.md)
 - [D Repo Agent v0](context-artifact-compiler/D-repo-agent-v0-spec.md)
 - [E0 Graph version storage](context-artifact-compiler/E0-graph-version-storage-spec.md)
 - [E1 Graph merge v0](context-artifact-compiler/E1-graph-merge-v0-spec.md)
