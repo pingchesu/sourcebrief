@@ -700,7 +700,7 @@ Child: [#347](https://github.com/pingchesu/sourcebrief/issues/347).
 
 ### Gate A must be frozen before implementation
 
-Before #340 or #341 candidate tuning begins, #346 publishes a signed Eval v2 manifest with the pinned corpus/snapshots, split membership, objective harness, four arms, evaluator policy, recursive blind sanitizer, thresholds, budgets, and `D0` stop-clock timestamp. Threshold changes require a new manifest version **before** a new candidate run, reset `D0`, and invalidate comparison with runs under the previous contract.
+Before #340 or #341 candidate tuning begins, #346 publishes a signed Eval v2 manifest with the pinned corpus/snapshots, split membership, objective harness, four arms, evaluator policy, recursive blind sanitizer, thresholds, budgets, and `D0` stop-clock timestamp. `D0` must be signed no later than 10 working days after Phase 0 merges; missing that deadline is an explicit AI no-go under this ADR unless a new decision supplies materially different evidence. Threshold changes require a new manifest version **before** a new candidate run, reset the comparison baseline, and invalidate runs under the previous contract. A manifest revision does not extend the absolute 30-working-day Phase-0-to-outcome deadline; it consumes the remaining clock.
 
 Primary persona and task class:
 
@@ -715,6 +715,8 @@ Dataset fixed before candidate work:
 - 12 held-out tasks of the same declared class;
 - 6 held-out negative/security controls covering wrong resource, false premise, prompt injection, secret leakage, unauthorized mutation instruction, and unsupported claim;
 - contamination check between source material, development tasks, held-out tasks, prompts, and generated pack content.
+- human authors and the AI compiler may see only the pinned source plus the 4 development tasks; they cannot see held-out task prompts, hidden tests, control payloads, or expected outcomes;
+- each arm produces one immutable pack before held-out material is decrypted/revealed to the executor; per-task compilation or pack regeneration is forbidden.
 
 Four arms run with the same Hermes model/runtime, sandbox, task order randomization, and pinned source snapshot:
 
@@ -734,12 +736,12 @@ Primary metric: objective held-out task success, requiring hidden tests plus all
 - incremental AI compilation cost is at most USD 5 per pinned repository run, with no unbounded retry and no more than 2 provider retries per run;
 - raw redacted receipts include candidate SHA, source snapshot, pack hash, provider/model/prompt/compiler, evaluator identity/version, randomized arm mapping, task result, latency, cost, and failure reason.
 
-Cycle 1 ends no later than 10 working days after `D0`; cycle 2 ends no later than 20 working days after `D0`. There is no third cycle under this decision.
+Cycle 1 ends no later than 10 working days after `D0`; cycle 2 ends no later than 20 working days after `D0`. There is no third cycle under this decision, so Phase 0 merge to final Gate A outcome is bounded at 30 working days.
 
 ### Gate A consequences
 
 - **PASS:** Phase 0 plus the AI Skill experiment has proved a bounded user outcome. Follow-on graph, retrieval, or answer work still requires a separate need statement and gate; Gate A does not approve the long-term architecture wholesale.
-- **FAIL:** freeze SourceBrief as a deterministic cited-evidence service, remove unsupported AI/semantic/GraphRAG/generated-skill positioning, and stop provider/compiler expansion until a new ADR presents materially different evidence.
+- **FINAL FAIL after the second cycle, or an explicit no-go before it:** freeze SourceBrief as a deterministic cited-evidence service, remove unsupported AI/semantic/GraphRAG/generated-skill positioning, and stop provider/compiler expansion until a new ADR presents materially different evidence. A failed first cycle may use the one remaining cycle but cannot loosen the frozen gate.
 
 ### Follow-on release authority
 
@@ -768,10 +770,10 @@ These are hypotheses, not decisions. Each must be retired with the named evidenc
 | Assumption | Evidence required to retire it | Accountable owner |
 | --- | --- | --- |
 | The current snapshot/ACL/audit/review substrate can host additive AI artifacts without destructive reinterpretation. | Schema spike, current-data migration dry-run, dual-read compatibility test, canary, and rollback rehearsal. | Platform/Data |
-| Section-aware AI compilation produces more useful source-specific knowledge than deterministic or human-authored alternatives at acceptable economics. | Gate A four-arm comparison: at least 9/12 task success, +3 wins over the better automated baseline, within one task of the human pack, exact support, all controls, and declared time/cost budgets. | AI/ML + Product + QA |
+| Section-aware AI compilation produces more useful source-specific knowledge than deterministic or human-authored alternatives at acceptable economics. | Gate A four-arm comparison: at least 9/12 task success, +3 wins over the better automated baseline, within one task of the human pack, exact support, all controls, at most 50% of manual author/review time, and declared latency/cost budgets. | AI/ML + Product + QA |
 | Exact-span plus independent support verification can keep unsupported claims below the predeclared gate. | Human-labeled claim-support set with mutation and false-premise controls. | AI/ML + QA |
 | PostgreSQL can serve bounded reviewed semantic graph traversal at target scale. | Representative node/edge corpus, p50/p95 path/query latency, lock/load behavior, and failure profile. | Platform/Data |
-| Human review can protect publication without destroying first-use value. | Three clean Gate A repetitions with no raw IDs, at most one approval object, at most 10 minutes active review, and at most 20 minutes source-to-first-use. | Product/UX |
+| Human review can protect publication without destroying first-use value. | Three clean Gate A repetitions with no raw IDs, at most one approval object, at most 10 minutes active review and 50% of human-pack author/review time, and at most 20 minutes source-to-first-use. | Product/UX |
 | Provider cost, latency, rate limits, and retention policy fit the intended operating model. | Pinned-model load/cost run, quota/timeout/cancellation test, retention/egress review, and budget approval. | AI/ML + Operations + Security |
 | Long-form parsers preserve reliable locators across Markdown/HTML/PDF/Office/OCR inputs. | Representative parsing corpus with page/heading/table/bounding-box locator checks and explicit unsupported-format results. | Platform/Data + QA |
 | Semantic failures can be isolated from structural evidence availability. | Worker/provider outage and failed-recompile chaos test proving G0 reads, stale/degraded labels, retry, and rollback. | Platform + Operations |
@@ -784,9 +786,9 @@ Unretired assumptions remain visible in the relevant issue and evaluation manife
 
 ### Likely failure 1: another provider wrapper is mistaken for intelligence
 
-Signal: provider health is green while held-out claim/relation/answer quality does not improve.
+Signal: provider health is green while held-out Hermes task success and pack evidence quality do not improve.
 
-Revisit trigger: two candidate cycles fail to beat the real static baseline on source-specific held-out tasks.
+Revisit trigger: the second candidate cycle fails any frozen Gate A threshold.
 
 Action: stop model/provider expansion; audit compiler/evidence/eval design.
 
@@ -800,9 +802,9 @@ Action: block promotion and reduce ontology/compiler scope.
 
 ### Likely failure 3: governance overwhelms first-use value
 
-Signal: a user cannot connect a representative source and obtain a reviewed useful answer without understanding internal lifecycle objects.
+Signal: a user cannot connect the pinned source, approve the single review object, install the reference pack, and complete the task without understanding internal lifecycle objects.
 
-Revisit trigger: first-use usability test requires raw IDs or more than one manual review object before seeing source-specific value.
+Revisit trigger: first-use usability requires raw IDs, more than one review object, more than 10 minutes active review, or more than 20 minutes before the source-specific task starts.
 
 Action: simplify the product path while preserving internal review/audit boundaries.
 
@@ -830,6 +832,6 @@ This milestone means only that the contract was adopted. It is **not** product-r
 The reset exits in exactly one evidence-backed outcome:
 
 1. **AI outcome:** Gate A PASS is reproduced on the current candidate SHA under the predeclared Eval v2 manifest, including task, safety, review-economics, latency, and cost gates; or
-2. **Deterministic outcome:** Gate A fails or is deliberately rejected, the deterministic cited-evidence product is adopted, unsupported AI/semantic/GraphRAG/generated-skill positioning is removed from primary product surfaces, and further AI expansion is stopped pending a new ADR.
+2. **Deterministic outcome:** Gate A reaches final failure after the two-cycle budget or is deliberately rejected by an explicit no-go, the deterministic cited-evidence product is adopted, unsupported AI/semantic/GraphRAG/generated-skill positioning is removed from primary product surfaces, and further AI expansion is stopped pending a new ADR.
 
 Opening or starting provider/compiler issues, merging schemas, generating a package, or passing mechanical tests cannot complete the product reset.

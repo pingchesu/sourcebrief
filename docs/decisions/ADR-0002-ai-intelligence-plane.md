@@ -2,7 +2,7 @@
 
 - Status: Proposed Phase 0 / Gate A decision; broad intelligence architecture not yet approved
 - Date: 2026-07-17
-- Decision horizon: two Gate A cycles, at most 20 working days after Eval v2 `D0`; later architecture requires a follow-on decision
+- Decision horizon: Eval v2 `D0` within 10 working days of Phase 0 merge, then two Gate A cycles within 20 more working days; later architecture requires a follow-on decision
 - Umbrella: [#337](https://github.com/pingchesu/sourcebrief/issues/337)
 - Product contract: [Core Product Reset](../CORE_PRODUCT_RESET.md)
 
@@ -60,7 +60,7 @@ Approve only:
 1. Phase 0 truth adoption and chosen-Git-source evidence hardening;
 2. Eval v2 freeze before candidate tuning;
 3. the minimal typed provider/compiler/reference-pack work needed to execute Gate A;
-4. the 20-working-day, two-cycle stop rule in the product contract.
+4. the 10-working-day `D0` deadline plus 20-working-day, two-cycle stop rule in the product contract.
 
 Gate A uses the same Hermes runtime on 4 development tasks, 12 held-out repository-maintenance tasks, and 6 negative/security controls. It compares the current deterministic adapter, deterministic plus real static retrieval, a human-authored reviewed reference pack, and the AI-compiled reviewed reference pack. Exact task, quality, review-time, latency, cost, and stop thresholds are normative in [Core Product Reset §15](../CORE_PRODUCT_RESET.md#15-outcome-based-release-gates).
 
@@ -98,7 +98,7 @@ Any AI-labeled capability still requires a healthy typed provider plane. Determi
 - The first AI compiler is narrow and task-specific rather than universal.
 - Deterministic artifacts remain first-class but no longer stand in for semantic output.
 - PostgreSQL remains the graph store until measured traversal limits justify another database.
-- Gate A permits at most one visible approval object, 10 minutes of active review, and 20 minutes source-to-first-use; governance that exceeds those limits fails the product gate.
+- Gate A permits at most one visible approval object, 10 minutes of active review, 50% of human-pack author/review time, and 20 minutes source-to-first-use; governance that exceeds those limits fails the product gate.
 - Semantic graph, generalized retrieval, and generated answers are explicitly deferred until task evidence demonstrates need.
 
 ## Rejected shortcuts
@@ -114,9 +114,9 @@ Any AI-labeled capability still requires a healthy typed provider plane. Determi
 
 The AI plane is separately disableable. If it fails adoption gates:
 
-- stop semantic compilation jobs;
+- stop AI compilation jobs;
 - retain G0 structural evidence and cited MCP/API access;
-- roll back G2 to the prior reviewed version;
+- roll back/remove Gate A candidate artifacts and restore the prior deterministic adapter; if a later G2 capability was separately approved, roll it back to its prior reviewed version;
 - keep deterministic adapters installable;
 - mark AI artifacts stale/unavailable;
 - remove unsupported AI/semantic/GraphRAG/generated-skill product claims.
@@ -126,7 +126,7 @@ No destructive rewrite of existing snapshots, Context Packs, graphs, or Skill Ex
 ## Operational ownership
 
 - Platform/Data: evidence substrate, schemas, jobs, isolation, APIs, audit, rollback.
-- AI/ML and Knowledge Engineering: provider policy, compiler, ontology, retrieval, answer/verifier quality.
+- AI/ML and Knowledge Engineering: provider policy and Gate A compiler; ontology, retrieval, and answer/verifier ownership activates only after separate approval.
 - Product: user tasks, capability labels, first-use outcome.
 - QA/Security: held-out gates, negative controls, promotion verdict, tenant/egress/injection/leakage tests.
 - Operations: provider/runtime health, budget, canary, backfill, incident and rollback execution.
@@ -134,10 +134,10 @@ No destructive rewrite of existing snapshots, Context Packs, graphs, or Skill Ex
 ## Failure signals
 
 1. Provider health is green but the AI arm misses any Gate A quality/economics threshold after two cycles or 20 working days after `D0`.
-2. Graph/claim volume rises while reviewed precision, required-resource coverage, or answer support is flat or lower.
+2. If a follow-on capability is approved, graph/claim volume rises while reviewed precision, required-resource coverage, or answer support is flat or lower.
 3. AI mode silently produces deterministic output or lacks provider/model/prompt/snapshot provenance.
 4. Users still need raw internal IDs or multiple lifecycle objects before seeing source-specific value.
-5. Semantic-worker failure blocks structural evidence access.
+5. Any approved AI worker failure blocks structural evidence access.
 6. A launch report uses mechanical success to override RISK/PARTIAL semantic evidence.
 
 ## Revisit triggers
