@@ -1,5 +1,8 @@
 # Example agent-context output
 
+> [!WARNING]
+> **Historical mechanical example:** this captured packet demonstrates retrieval, citation, and response shape—not semantic answer quality. Its quoted C2 passage uses the former “source-aware Skill Pack Compiler” wording; current Skill Export is a deterministic adapter with `llm_provider_used=false`. See the [Core Product Reset](../CORE_PRODUCT_RESET.md).
+
 > Captured from a real local SourceBrief run for the product walkthrough. Internal IDs and token values are normalized or omitted in this rendered example; the source response was produced by the live API, Postgres, Redis, workers, and indexed resources. The rendered Concepts citation is refreshed to match the current `Source -> Snapshot -> Evidence -> Review -> Runtime` terminology.
 
 ## Request

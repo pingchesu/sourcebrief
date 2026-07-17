@@ -677,7 +677,25 @@ The same inputs are evaluated through the deterministic adapter and a real stati
 
 A child may not declare itself complete from helper/unit tests alone. Each must prove the consumed API/artifact/UI/runtime path named in its acceptance criteria.
 
-## 17. Pre-mortem and revisit triggers
+## 17. Assumption ledger
+
+These are hypotheses, not decisions. Each must be retired with the named evidence before its dependent capability is promoted.
+
+| Assumption | Evidence required to retire it | Accountable owner |
+| --- | --- | --- |
+| The current snapshot/ACL/audit/review substrate can host additive AI artifacts without destructive reinterpretation. | Schema spike, current-data migration dry-run, dual-read compatibility test, canary, and rollback rehearsal. | Platform/Data |
+| Section-aware AI compilation produces more useful source-specific knowledge than deterministic templates. | Blinded held-out comparison on the first bounded corpus, with citation support and negative controls. | AI/ML + Product + QA |
+| Exact-span plus independent support verification can keep unsupported claims below the predeclared gate. | Human-labeled claim-support set with mutation and false-premise controls. | AI/ML + QA |
+| PostgreSQL can serve bounded reviewed semantic graph traversal at target scale. | Representative node/edge corpus, p50/p95 path/query latency, lock/load behavior, and failure profile. | Platform/Data |
+| Human review can protect publication without destroying first-use value. | Timed usability test showing source-specific value without raw IDs and no more than one visible review object before first useful result. | Product/UX |
+| Provider cost, latency, rate limits, and retention policy fit the intended operating model. | Pinned-model load/cost run, quota/timeout/cancellation test, retention/egress review, and budget approval. | AI/ML + Operations + Security |
+| Long-form parsers preserve reliable locators across Markdown/HTML/PDF/Office/OCR inputs. | Representative parsing corpus with page/heading/table/bounding-box locator checks and explicit unsupported-format results. | Platform/Data + QA |
+| Semantic failures can be isolated from structural evidence availability. | Worker/provider outage and failed-recompile chaos test proving G0 reads, stale/degraded labels, retry, and rollback. | Platform + Operations |
+| AI-compiled packs improve real Hermes tasks without introducing executable or prompt-injection authority. | Installed-package held-out task run, deterministic baseline, injection/leak/mutation controls, and runtime receipt audit. | Product + AI/ML + Security + QA |
+
+Unretired assumptions remain visible in the relevant issue and evaluation manifest. A successful demo does not retire an assumption unless it exercises the stated evidence path.
+
+## 18. Pre-mortem and revisit triggers
 
 ### Likely failure 1: another provider wrapper is mistaken for intelligence
 
@@ -707,7 +725,7 @@ Action: simplify the product path while preserving internal review/audit boundar
 
 If the AI plane cannot meet the release gates within two bounded candidate cycles, freeze SourceBrief as a deterministic, cited evidence service. Remove AI/semantic/GraphRAG/generated-skill positioning rather than continuing indefinite platform expansion.
 
-## 18. Completion definition for the reset
+## 19. Completion definition for the reset
 
 The reset itself is complete only when:
 

@@ -27,7 +27,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Demo runtime output](examples/demo-runtime-output.md) | Captured output | Normalized output from a real local demo run. |
 | [Captured agent-context output](examples/agent-context-output.md) | Captured output | Normalized response from the product walkthrough run. |
 | [Awesome Agent Harness 50-question example](../examples/awesome-agent-harness-50q/README.md) | Real corpus eval example | Five public repos, 50 questions, bounded import notes, and final RISK verdict. |
-| [Current screenshot-backed 50Q walkthrough](evaluations/sourcebrief-launch-50q-20260630.md) | Mechanical proof / semantic RISK | Current isolated local stack run with 50/50 mechanical execution, clean browser console/network transcript, screenshot inventory hashes, and committed screenshots; it does not prove production semantic quality. |
+| [Latest committed screenshot-backed 50Q walkthrough](evaluations/sourcebrief-launch-50q-20260630.md) | Historical mechanics proof / semantic RISK | Named-commit isolated local stack run with 50/50 mechanical execution, clean browser console/network transcript, screenshot inventory hashes, and committed screenshots; it is not current-head or semantic-quality PASS. |
 | [Use SourceBrief with a local agent](../examples/use-sourcebrief-with-local-agent/README.md) | Product-led runtime example | Current MCP/runtime setup path plus Agent Pack / Skill Export validation, doctor, and local apply flow. |
 
 ## Runtime and operations

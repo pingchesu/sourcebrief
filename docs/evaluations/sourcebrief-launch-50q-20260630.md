@@ -1,4 +1,7 @@
-# SourceBrief current 50Q launch walkthrough
+# SourceBrief historical 50Q mechanical walkthrough
+
+> [!WARNING]
+> This artifact preserved a successful UI/API/mechanics run for its named 2026-06-30 commit. Its `PASS` does not prove current semantic retrieval, claim support, graph quality, or AI compilation. Under the [current claim ledger](../CLAIM_LEDGER.md), the product-level semantic verdict is RISK.
 
 Issue: [#210](https://github.com/pingchesu/sourcebrief/issues/210)
 Run date: 2026-06-30
@@ -7,13 +10,14 @@ Local artifact bundle: `artifacts/sourcebrief-launch-50q-210-20260630160727-reru
 
 ## Verdict
 
-`PASS`
+- Mechanical verdict: `PASS`
+- Current semantic product verdict: `RISK`
 
 | Check | Result |
 | --- | --- |
 | Question coverage | 50/50 |
 | Mechanical questions | 50/50 passed |
-| Answer-quality warnings | 0 |
+| Scripted answer-warning checks | 0 warnings (not semantic-quality proof) |
 | Negative controls | 1 |
 | Index status | `succeeded` (313 docs, 2123 chunks, 2732 symbols) |
 | Browser transcript | 0 console errors, 0 page errors, 0 failed requests, 0 bad responses |
