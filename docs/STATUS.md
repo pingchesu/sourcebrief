@@ -12,7 +12,7 @@ SourceBrief is an early local alpha undergoing a [core product reset](CORE_PRODU
 - Current safe operating mode: deterministic evidence service and runtime adapters
 - AI intelligence mode: not shipped
 
-The reset preserves verified snapshot, provenance, ACL, audit, review, API/MCP, package-integrity, and rollback work. It rebuilds semantic compilation, semantic graph, retrieval planning, grounded answers, and AI-compiled Agent/Skill Packs behind explicit typed provider and evaluation gates.
+Phase 0 preserves verified snapshot, provenance, ACL, audit, review, API/MCP, package-integrity, and rollback work, freezes Eval v2, and proposes one bounded AI-compiled reference-pack experiment. Semantic graph, generalized evidence-closure retrieval, grounded answers, and broad AI-compiled packs remain conditional and are not approved merely by adopting the reset contract.
 
 ## Shipped and honestly supportable in the local alpha
 
@@ -81,6 +81,7 @@ The reset preserves verified snapshot, provenance, ACL, audit, review, API/MCP, 
 - Real-service Docker QA smoke covering ingestion, indexing, retrieval mechanics, MCP, auth denial, provider diagnostics, web health, and lifecycle flows.
 - Real-corpus and 50Q evidence with explicit RISK/PARTIAL accounting.
 - Provider-quality downgrade gates that prevent development-quality providers from silently producing launch PASS.
+- Current pairwise profile payloads are not blind release authority: a reproduced RED case retains nested profile/retrieval identity until Eval v2 adds recursive allowlist sanitization.
 
 Mechanical QA proves wiring and failure handling. It does not prove semantic relation quality, grounded answer quality, or source-specific AI Skill quality.
 
@@ -90,7 +91,7 @@ The following claims are unsupported until the linked reset children pass curren
 
 - AI knowledge compiler or section-aware LLM map-reduce.
 - Reviewed cross-resource semantic knowledge graph.
-- Production-quality GraphRAG or WEAVE retrieval.
+- Production-quality GraphRAG or generalized semantic evidence-closure retrieval.
 - Claim-level generated answers with evidence verification.
 - AI-compiled source-specific Agent/Skill Packs.
 - Autonomous self-improvement, prompt optimization, or silent learning.
@@ -98,19 +99,17 @@ The following claims are unsupported until the linked reset children pass curren
 
 A disabled, missing, failed, or unhealthy AI provider must never silently return deterministic output under an AI label.
 
-## Experimental or being rebuilt
+## Proposed experiment and conditional follow-ons
 
 - Private Git repository connection UX.
 - Git Resource Map UI flow and review ergonomics.
 - Folder-bundle partial update UX.
 - Large-repo progress UI, skipped-file reports, cancel/retry controls, and indexing explainability.
 - Graph merge hardening for enterprise cross-repo workflows.
-- Typed AI provider/execution plane.
-- Citation-bound AI knowledge compiler.
-- Provenance-gated semantic graph.
-- WEAVE query planning and evidence closure.
-- Grounded answer composer and verifier.
-- AI-compiled Agent/Skill Pack quality and runtime task evaluation.
+- Eval v2 and Gate A: one pinned Git source, one repository-maintenance task class, four comparison arms, 12 held-out tasks, 6 controls, and fixed quality/economics thresholds.
+- Minimal typed AI provider/execution and citation-bound compiler needed for that experiment; not started or shipped.
+- Minimal AI-compiled reference pack with deterministic control files; not started or shipped.
+- Provenance-gated semantic graph, generalized evidence-closure retrieval, and grounded answers are conditional follow-ons requiring separate measured need and gates.
 - Product capability truth labels, observability, migration, and rollback.
 
 ## Not alpha-ready / non-goals today
@@ -136,7 +135,7 @@ Safe:
 
 Safe:
 
-> SourceBrief can generate reviewed deterministic runtime adapters that point agents back to current cited evidence.
+> SourceBrief can package deterministic runtime adapters from approved context that point agents back to cited evidence.
 
 Avoid:
 

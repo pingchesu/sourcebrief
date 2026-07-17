@@ -12,7 +12,7 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | 4 | [Product walkthrough](WALKTHROUGH.md) | Real UI screenshots and captured `agent-context` output before installing. |
 | 5 | [Concepts](CONCEPTS.md) | Source -> Snapshot -> Evidence -> Review -> Runtime mental model. |
 | 6 | [Quick start](QUICKSTART.md) | Run the local stack and reach the first cited evidence response. |
-| 7 | [Agent Packs](AGENT_PACKS.md) | Product model for Resource Graphs, Repo/Project Agents, Skill Packs, and remote-live install boundaries. |
+| 7 | [Deterministic adapters (current Agent Packs)](AGENT_PACKS.md) | Honest current product model for deterministic runtime adapters and remote-live install boundaries; AI-compiled packs are unshipped. |
 | 8 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Long-form operator guide for Hermes, Claude Code, Codex, Cursor, MCP clients, scopes, skills, and failure modes. |
 | Reference | [Default credential policy](DEFAULT_CREDENTIAL_POLICY.md) | Why SourceBrief has no universal `changeme` login and how local demos authenticate. |
 
@@ -28,14 +28,14 @@ Use this page as a map. New readers should stay in the **primary path** first; s
 | [Captured agent-context output](examples/agent-context-output.md) | Captured output | Normalized response from the product walkthrough run. |
 | [Awesome Agent Harness 50-question example](../examples/awesome-agent-harness-50q/README.md) | Real corpus eval example | Five public repos, 50 questions, bounded import notes, and final RISK verdict. |
 | [Latest committed screenshot-backed 50Q walkthrough](evaluations/sourcebrief-launch-50q-20260630.md) | Historical mechanics proof / semantic RISK | Named-commit isolated local stack run with 50/50 mechanical execution, clean browser console/network transcript, screenshot inventory hashes, and committed screenshots; it is not current-head or semantic-quality PASS. |
-| [Use SourceBrief with a local agent](../examples/use-sourcebrief-with-local-agent/README.md) | Product-led runtime example | Current MCP/runtime setup path plus Agent Pack / Skill Export validation, doctor, and local apply flow. |
+| [Use SourceBrief with a local agent](../examples/use-sourcebrief-with-local-agent/README.md) | Deterministic runtime example | Current MCP/runtime setup path plus deterministic Agent Pack / Skill Export adapter validation, doctor, and local apply flow. |
 
 ## Runtime and operations
 
 | Doc | Status | Use it for |
 | --- | --- | --- |
 | [Agent runtime usage](AGENT_RUNTIME_USAGE.md) | Active runtime guide | MCP tools, runtime-specific setup, token scopes, skills, remote-code safety, failure modes. |
-| [Agent Packs](AGENT_PACKS.md) | Active product/runtime model | Resource Graph, Repo/Project Agent, Skill Pack, remote-live install, pinned snapshot, and local-mirror boundaries. |
+| [Deterministic adapters (current Agent Packs)](AGENT_PACKS.md) | Active runtime model | Current deterministic package/adapter behavior, remote-live install, pinned snapshot, and local-mirror boundaries; no AI compilation claim. |
 | [Runtime install plan](RUNTIME_INSTALL_PLAN.md) | Active runtime guide | Dry-run setup plans, validation, apply boundary, rollback receipts. |
 | [Operations](OPERATIONS.md) | Active runbook | Health checks, logs, queues, migrations, stuck jobs, rollback, restore/purge, reset. |
 | [Project status](STATUS.md) | Active status | Shipped alpha capabilities, experimental areas, non-goals, safe wording. |
@@ -79,8 +79,8 @@ These documents are for contributors and reviewers. They are useful when changin
 
 | Doc | Status |
 | --- | --- |
-| [Core Product Reset](CORE_PRODUCT_RESET.md) | **Proposed core product and architecture reset contract** |
-| [ADR-0002: AI intelligence plane](decisions/ADR-0002-ai-intelligence-plane.md) | Proposed decision; preserves evidence substrate and rebuilds intelligence |
+| [Core Product Reset](CORE_PRODUCT_RESET.md) | **Proposed Phase 0 truth contract plus falsifiable Gate A; product reset not yet complete** |
+| [ADR-0002: Gate AI expansion behind product proof](decisions/ADR-0002-ai-intelligence-plane.md) | Proposed Phase 0 / Gate A decision; broader intelligence architecture is not approved |
 | [Product spec](SPEC.md) | Historical/deep reference; subordinate to the Core Product Reset where they differ |
 | [Codebase Memory MCP reference spec](CODEBASE_MEMORY_MCP_REFERENCE_SPEC.md) | Deep reference / follow-up roadmap |
 | [Remote repo agent skill pack spec](REMOTE_REPO_AGENT_SKILL_PACK_SPEC.md) | Deep reference |

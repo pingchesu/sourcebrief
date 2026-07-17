@@ -7,8 +7,8 @@ The intended user story is deliberately stronger than "run a CLI command":
 ```text
 I have a project.
 I connect it to SourceBrief.
-SourceBrief indexes, reviews, publishes a Repo/Project Agent, and packages runtime guidance as an Agent Pack.
-My local agent installs or loads a small Agent Pack / Skill Export adapter.
+SourceBrief indexes and packages deterministic runtime guidance under the current Agent Pack / Skill Export label.
+My local agent installs or loads that small deterministic adapter.
 The agent uses SourceBrief MCP/API for current citations and code drilldown while it works.
 The CLI stays available as a setup/doctor/resource fallback, not the main reasoning surface.
 ```
@@ -18,7 +18,7 @@ The CLI stays available as a setup/doctor/resource fallback, not the main reason
 - SourceBrief is a runtime context product, not just a search demo.
 - The agent should not need a local checkout of every indexed source to answer with evidence.
 - MCP is the default live evidence path.
-- Generated Agent Packs teach the agent when to call MCP and how to preserve citation discipline.
+- Current deterministic adapters teach the agent when to call MCP and how to preserve citation discipline; they are not AI-compiled knowledge.
 - CLI is the setup/admin/fallback path and must be documented for the agent/operator.
 - Agent Packs / Skill Exports are local instruction/config artifacts; SourceBrief remains the remote source of truth by default.
 - `remote-live` is the normal mode. `pinned-snapshot` and `local-mirror` are explicit non-default manifest policies, not silent full-corpus install side effects.
@@ -27,14 +27,14 @@ The CLI stays available as a setup/doctor/resource fallback, not the main reason
 
 This example is not complete if it only demonstrates CLI output. A local agent integration must prove:
 
-1. the generated Agent Pack / Skill Export is installed or loaded;
+1. the deterministic Agent Pack / Skill Export adapter is installed or loaded;
 2. SourceBrief MCP `tools/list` and a smoke `tools/call` work;
 3. CLI fallback works for `doctor`, `runtime validate`, `agent-pack doctor --package`, and local apply dry-runs;
 4. the agent answer cites SourceBrief evidence and does not pretend remote indexed code is a local checkout.
 
 ## Current runnable path
 
-Run the local stack, create an indexed demo project, generate an approved skill package, and install it locally with a receipt.
+Run the local stack, create an indexed demo project, package a deterministic adapter from approved context, and install it locally with a receipt.
 
 ### 1. Start SourceBrief
 
@@ -101,7 +101,7 @@ sourcebrief --json runtime apply --plan plan.json --target hermes --dry-run
 sourcebrief --json runtime apply --plan plan.json --target hermes --apply
 ```
 
-The runtime plan wires the local agent to the project-scoped SourceBrief MCP endpoint. The Agent Pack / Skill Export flow below installs the project-specific local instructions.
+The runtime plan wires the local agent to the project-scoped SourceBrief MCP endpoint. The deterministic Agent Pack / Skill Export flow below installs the project-specific local instructions.
 
 ## Agent Pack / Skill Export validation and local apply
 
@@ -110,7 +110,7 @@ This is the implemented Hermes first slice from [`PROJECT_SKILL_PACK_LOCAL_INSTA
 The desired flow is:
 
 ```bash
-# 1. Export a project-specific Agent Pack / Skill Export from an approved/published context pack.
+# 1. Package a deterministic Agent Pack / Skill Export adapter from an approved/published context pack.
 sourcebrief skill export \
   --workspace "SourceBrief CLI Demo" \
   --project "First useful moment" \
@@ -142,7 +142,7 @@ sourcebrief skill install \
 sourcebrief skill uninstall --receipt ./sourcebrief-skill-receipt.json
 ```
 
-After install, the local runtime should have a small SourceBrief-generated skill such as:
+After install, the local runtime should have a small SourceBrief-packaged deterministic skill adapter such as:
 
 ```text
 ~/.hermes/skills/sourcebrief-default/
@@ -200,7 +200,7 @@ A finished version of this example should commit sanitized output showing:
 - local stack health;
 - source creation and indexing completion;
 - MCP validation;
-- generated Agent Pack / Skill Export file inventory;
+- deterministic Agent Pack / Skill Export adapter file inventory;
 - `agent-pack doctor --package` result;
 - dry-run install diff;
 - install receipt with no plaintext token;

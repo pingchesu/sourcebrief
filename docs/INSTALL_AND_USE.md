@@ -21,32 +21,32 @@ The product advantage is not "another chat UI". It is evidence discipline:
 
 ## What each surface is for
 
-SourceBrief is not trying to be "just a CLI tool." Treat it as an agent operating contract with three required pieces: generated skill/agent instructions, MCP evidence tools, and CLI/API control-plane fallback. The surfaces are:
+SourceBrief is not trying to be "just a CLI tool." Treat the current alpha as an agent operating contract with three required pieces: a deterministic runtime adapter, MCP evidence tools, and CLI/API control-plane fallback. The adapter is not AI-compiled knowledge. The surfaces are:
 
 | Surface | Primary user | Purpose |
 | --- | --- | --- |
 | Web UI / Workbench | Humans | Inspect sources, indexing state, citations, coverage, and product proof visually. |
 | MCP tools | Agents | Primary runtime path for cited answers, lookup, `read_section`, code search/grep, symbols, graphs, and drilldown. |
-| Generated skills / agent packs | Agents and runtime owners | Teach the agent when and how to use SourceBrief, preserve citation discipline, and avoid confusing remote indexed snapshots with local editable checkouts. |
+| Deterministic runtime adapters (current Agent Pack / Skill Export label) | Agents and runtime owners | Teach the agent when and how to use SourceBrief, preserve citation discipline, and avoid confusing remote indexed snapshots with local editable checkouts. |
 | CLI | Humans, CI, and agent fallback | Bootstrap/login, create/update resources, run demos, generate runtime plans, validate setup, and automate lifecycle operations when MCP is not available. |
 | HTTP API | Integrators | Stable programmatic control plane behind the UI, CLI, MCP, and custom automation. |
 
 The intended agent path is therefore:
 
 ```text
-skill/agent instruction tells the agent to ask SourceBrief
+deterministic runtime adapter tells the agent to ask SourceBrief
         -> agent uses MCP tools for cited evidence and drilldown
         -> CLI is used only for setup, resource lifecycle automation, or fallback when MCP is unavailable
         -> agent edits/tests in the real checkout, not inside SourceBrief
 ```
 
-CLI completeness matters because it gives operators, CI, and agents a reliable toolbelt when setup/debug/resource lifecycle work is needed. It is not the core product surface for agent reasoning; MCP plus generated skills are. Do not call an agent integration complete until MCP works, the generated skill/pack is installed or loaded, and CLI fallback validation passes.
+CLI completeness matters because it gives operators, CI, and agents a reliable toolbelt when setup/debug/resource lifecycle work is needed. It is not the core product surface for agent reasoning; MCP plus the current deterministic adapter are. Do not call an agent integration complete until MCP works, the deterministic adapter is installed or loaded, and CLI fallback validation passes.
 
 ## The strong agent install bar
 
 For a coding agent, SourceBrief is only "installed" when all three checks pass:
 
-1. **Skill/agent pack loaded** — the runtime can read the generated `SKILL.md`, `AGENTS.md`, or `CLAUDE.md` so it knows the project scope, citation policy, and mutation boundary.
+1. **Deterministic adapter loaded** — the runtime can read the packaged `SKILL.md`, `AGENTS.md`, or `CLAUDE.md` so it knows the project scope, citation policy, and mutation boundary.
 2. **MCP live evidence works** — `tools/list` exposes SourceBrief tools and a smoke `tools/call` returns citations.
 3. **CLI fallback is available** — `sourcebrief doctor`, `sourcebrief runtime validate --run`, and `sourcebrief skill install --dry-run` are available for setup/debug/resource lifecycle without pasting secrets.
 
@@ -236,7 +236,7 @@ MCP-capable agents should start broad, then drill down:
 
 ## 6. Connect an agent runtime
 
-This is the important agent path. Use the short guided path first; it must end with MCP configured, a generated skill/pack loaded, and CLI fallback validated:
+This is the important agent path. Use the short guided path first; it must end with MCP configured, a deterministic adapter loaded, and CLI fallback validated:
 
 ```bash
 sourcebrief runtime setup hermes \
@@ -258,9 +258,9 @@ sourcebrief runtime apply \
   --apply
 ```
 
-For runtime-specific details, token scopes, generated skills, and failure modes, read [Agent runtime usage](AGENT_RUNTIME_USAGE.md). That guide is longer because it is the operator/runtime reference, not the first-use path.
+For runtime-specific details, token scopes, deterministic adapters, and failure modes, read [Agent runtime usage](AGENT_RUNTIME_USAGE.md). That guide is longer because it is the operator/runtime reference, not the first-use path.
 
-Generated skills are not optional decoration. They are how the agent learns the operating order: ask SourceBrief MCP first, preserve citations, drill down with exact tools, and use CLI only for setup/fallback/admin work.
+Current deterministic adapters are not optional decoration. They are how the agent learns the operating order: ask SourceBrief MCP first, preserve citations, drill down with exact tools, and use CLI only for setup/fallback/admin work. This statement makes no AI-generation claim.
 
 ## 7. Embeddings and rerank: what is actually tested
 

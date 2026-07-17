@@ -1,6 +1,6 @@
-# Agent Packs
+# Deterministic Runtime Adapters (current Agent Packs)
 
-Agent Packs are the installable runtime adapters that teach Hermes, Claude Code, Codex, Cursor, or another MCP-capable agent how to use SourceBrief.
+The current package type, still named Agent Pack / Skill Export in parts of the UI and API, is a deterministic installable runtime adapter that teaches Hermes, Claude Code, Codex, Cursor, or another MCP-capable agent how to use SourceBrief.
 
 They are not the resource itself.
 
@@ -27,7 +27,7 @@ If you remember one sentence, use this:
 | Agent Pack / Skill Pack | Runtime adapter files that can be installed or copied into Hermes, Claude, Codex, Cursor, or another client. | Instructions, manifests, MCP/API config hints, smoke queries, validation. |
 | Skill Export | One concrete packaging format for an Agent Pack. | File layout, leak scan, manifest hashing, install instructions. |
 
-A Repo Agent is not a skill. The skill is an adapter generated from a Repo/Project Agent or Context Pack.
+A Repo Agent is not a skill. The current skill package is a deterministic adapter packaged from a Repo/Project Agent or Context Pack.
 
 ## Default install mode: `remote-live`
 
@@ -96,7 +96,7 @@ Use only with purge/update commands, TTL/freshness checks, sensitivity labels, d
 
 ## Manifest contract
 
-Generated packs should declare their data and runtime policy explicitly. A representative manifest shape:
+Packaged deterministic adapters should declare their data and runtime policy explicitly. A representative manifest shape:
 
 ```json
 {

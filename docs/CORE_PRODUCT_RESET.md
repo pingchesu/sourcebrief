@@ -1,6 +1,6 @@
 # SourceBrief Core Product Reset
 
-- Status: Proposed product contract
+- Status: Proposed Phase 0 contract; the product reset is incomplete until one of the explicit exit outcomes in Section 19 is proven
 - Umbrella: [#337](https://github.com/pingchesu/sourcebrief/issues/337)
 - Contract slice: [#338](https://github.com/pingchesu/sourcebrief/issues/338)
 - Decision record: [ADR-0002](decisions/ADR-0002-ai-intelligence-plane.md)
@@ -16,9 +16,9 @@ The repository contains substantial working platform machinery: versioned source
 
 That promise is not currently shipped.
 
-This reset makes one decision:
+This reset makes one immediate decision:
 
-> Preserve only the verified evidence and governance substrate. Rebuild the intelligence plane as an explicit, typed, provider-backed, evidence-verified system. No deterministic or mechanical fallback may retain an AI, semantic, GraphRAG, or generated-knowledge label.
+> Preserve only the verified evidence and governance substrate. Freeze a falsifiable evaluation contract, then run the smallest provider-backed AI-compiled Skill Pack experiment. A broader semantic graph, evidence-closure retrieval, and generated-answer plane is conditional on that experiment proving user value. No deterministic or mechanical fallback may retain an AI, semantic, GraphRAG, or generated-knowledge label.
 
 The reset is not a cosmetic rename and not a full repository rewrite. It changes the product's completion criteria from **plumbing exists** to **the user receives correct, source-specific, evidence-verifiable knowledge**.
 
@@ -41,9 +41,9 @@ When a user connects repositories, documents, books, and runbooks expecting Sour
 | Self-improvement | Review bundles, proposals, gates, and receipts; no autonomous optimizer or model-backed learning contract. | `docs/SELF_IMPROVEMENT.md`, `docs/STATUS.md` |
 | Evaluation | Real mechanical evidence exists, but the claim ledger marks real-corpus quality RISK/PARTIAL and providers development-quality. | `docs/CLAIM_LEDGER.md`, `docs/evaluations/` |
 
-### Target state
+### Contingent long-term target state
 
-A user connects versioned sources and receives:
+Only if the bounded Gate A experiment in Section 15 passes, a later product may let a user connect versioned sources and receive:
 
 1. a provenance-complete deterministic evidence foundation;
 2. AI-compiled semantic claims, concepts, decisions, procedures, risks, and relationships;
@@ -70,7 +70,13 @@ The root problem is therefore not a missing button or one weak model. It is the 
 
 ### North-star outcome
 
-> An authorized agent or human can ask a cross-resource project question and receive a useful answer whose claims, relationships, limitations, freshness, and source evidence can be inspected and reproduced; the same reviewed knowledge can be compiled into a genuinely source-specific runtime pack.
+Primary persona: **a platform engineer onboarding Hermes to an existing repository**.
+
+Golden path:
+
+> From one pinned Git repository, the platform engineer reaches an installed, source-specific AI-compiled Skill Pack within 20 minutes, without entering raw internal IDs and with at most one explicit review/approval action. Hermes then completes a held-out repository maintenance task in a sandbox, passes its objective tests/rubric, and cites the exact repository evidence used.
+
+Cross-resource questions, reviewed semantic graphs, generic generated answers, and broad source-type support are contingent follow-on outcomes, not prerequisites for this first proof.
 
 ### Necessary conditions
 
@@ -150,6 +156,8 @@ Child: [#339](https://github.com/pingchesu/sourcebrief/issues/339).
 
 **Purpose:** provide typed, observable, bounded model execution for compiler and answer workloads.
 
+Gate A implements only the minimum single-workload execution path required by the frozen experiment. Multi-provider breadth, generalized answer workloads, and platform expansion are not approved without measured need.
+
 Required contracts:
 
 - strict provider request/response types;
@@ -183,6 +191,8 @@ Child: [#340](https://github.com/pingchesu/sourcebrief/issues/340).
 
 **Purpose:** convert source sections into source-specific, reviewable semantic knowledge.
 
+Gate A compiles only the reference/claim types needed by the selected repository-maintenance task. The broader claim taxonomy below is a versioned candidate contract, not a requirement to build every type before product proof.
+
 Pipeline:
 
 ```text
@@ -215,7 +225,14 @@ Minimum typed claim:
   "model": "provider/model",
   "prompt_version": "compiler.prompt.v1",
   "extractor_version": "knowledge-compiler.v1",
-  "review_state": "candidate"
+  "map_parent_claim_ids": ["map-claim-id"],
+  "source_section_hashes": ["sha256:section"],
+  "coverage_plan_hash": "sha256:plan",
+  "examined_scope_hash": "sha256:all-sections-examined-by-reducer",
+  "negative_or_conflict_dependency_ids": ["candidate-or-conflict-id"],
+  "reducer_version": "knowledge-reducer.v1",
+  "ontology_version": "sourcebrief.ontology.v1",
+  "review_state": "unreviewed"
 }
 ```
 
@@ -225,7 +242,8 @@ Rules:
 - unknown citation IDs fail validation;
 - citation-ID presence alone is not support: exact evidence spans and a support decision are separate typed records;
 - per-section quotas prevent late-source starvation;
-- changed sections invalidate only affected compiled claims;
+- reduced claims retain their map-parent claims, source-section hashes, selected and examined scope, coverage-plan hash, reducer/ontology versions, and negative/contradiction dependencies;
+- a changed dependency, excluded-candidate decision, contradiction, coverage plan, or examined scope invalidates the complete affected reduce closure; the system must not reuse a global conclusion merely because its final positive citation did not change;
 - model output is untrusted typed input and must pass schema, evidence, leakage, and policy checks;
 - no candidate is published directly.
 
@@ -233,7 +251,9 @@ Ownership: AI/ML and Knowledge Engineering; Platform owns immutable lineage and 
 
 Child: [#341](https://github.com/pingchesu/sourcebrief/issues/341).
 
-### 6.4 Graph is split into four named layers
+### 6.4 Conditional graph candidate uses four layers
+
+This design is dormant until Gate A passes and a separate measured-need decision authorizes semantic graph work.
 
 | Layer | Name | Contents | Truth policy |
 | --- | --- | --- | --- |
@@ -242,15 +262,18 @@ Child: [#341](https://github.com/pingchesu/sourcebrief/issues/341).
 | G2 | Reviewed Project Graph | Approved union/overlay/reconcile across resources; conflicts and communities. | Published reviewed knowledge. |
 | G3 | Temporal Decision and Evaluation Graph | Decisions, incidents, corrections, evaluation failures, proposal lineage. | Time/version bounded; never rewrites source truth. |
 
-Every semantic node/edge carries:
+Every semantic node/edge carries independent provenance and lifecycle fields:
 
-- evidence locators;
-- relation type from a versioned ontology;
-- source class: explicit, AI-extracted, inferred, human-approved;
-- confidence;
-- model/extractor version;
-- valid time and freshness;
-- review state.
+- evidence locators and parent claim IDs;
+- `derivation_source`: `explicit`, `ai_extracted`, or `inferred`;
+- derivation rule/prompt/compiler identity;
+- `ontology_id` and `ontology_version` for every typed relation;
+- confidence and calibration state;
+- `review_state` plus immutable `review_event_id` and reviewer identity;
+- valid time and transaction/recorded time;
+- freshness and supersession state.
+
+Human approval never overwrites derivation lineage. For example, an approved AI-extracted edge remains `derivation_source=ai_extracted` with a separate `review_state=approved`.
 
 A name match is not sufficient for entity resolution. Inferred edges cannot satisfy high-assurance questions until reviewed.
 
@@ -262,24 +285,41 @@ Ownership: Knowledge Engineering and Platform.
 
 Child: [#342](https://github.com/pingchesu/sourcebrief/issues/342).
 
-### 6.5 Retrieval becomes WEAVE
+### 6.5 Retrieval remains conditional and becomes authorization-bound evidence closure
 
-WEAVE means **Provenance-Gated Adaptive Graph Retrieval**.
+No branded retrieval architecture is approved before Gate A. If the first Skill Pack proof shows that runtime evidence retrieval is a material failure source, the follow-on retrieval design uses three separate typed contracts:
 
-A query first produces a typed plan:
+1. `AuthorizationEnvelope`: server-issued and immutable for the request; carries tenant/project/resource scope, permitted evidence classes, egress/tool policy, and maximum risk/budget. A model can never create or expand it.
+2. `EvidenceRequirementContract`: user-, policy-, or evaluation-owned required resources, facets, evidence classes, freshness, and risk. In evaluation, QA supplies gold requirements independently of the planner.
+3. `PlannerProposal`: model/deterministic proposal for intent, candidate facets, follow-up queries, and ranking preferences. It is untrusted input and can only narrow or operate inside the envelope.
+
+The effective plan records all three inputs:
 
 ```json
 {
-  "intent": "architecture | code | operations | decision | comparison | procedure | change_impact",
-  "facets": ["required answer dimensions"],
-  "allowed_resources": ["resource refs"],
-  "required_resources": ["resource refs"],
-  "required_evidence_classes": ["structural", "reviewed_semantic", "live"],
-  "freshness": "policy",
-  "risk": "normal | high_assurance",
+  "authorization_envelope_id": "server-signed-envelope",
+  "evidence_requirement_contract_id": "user-policy-or-eval-contract",
+  "planner_proposal": {
+    "intent": "architecture | code | operations | decision | comparison | procedure | change_impact",
+    "candidate_facets": ["planner-proposed answer dimensions"],
+    "requested_resources": ["resource refs within the envelope"],
+    "requested_evidence_classes": ["structural", "reviewed_semantic", "live"],
+    "freshness_preference": "policy",
+    "risk_proposal": "normal | high_assurance"
+  },
+  "effective_plan_hash": "sha256:server-intersection-and-policy-result",
+  "coverage_basis": "user_declared | policy_declared | eval_gold | planner_only",
   "token_budget": 8000
 }
 ```
+
+Closure rules:
+
+- authorization is always evaluated against the server-issued envelope, never model output;
+- the planner cannot remove externally required resources/facets or promote its own proposal to gold truth;
+- `coverage_state=full` requires closure against a user-, policy-, or QA-declared requirement contract;
+- when only a planner proposal exists, `coverage_state=unknown` with `coverage_basis=planner_only`; it cannot certify completeness;
+- Eval v2 independently labels gold resources, facets, evidence classes, freshness/risk, and planner precision/recall before retrieval quality is scored.
 
 Retrieval channels may include:
 
@@ -318,7 +358,9 @@ Ownership: Retrieval/AI and Platform.
 
 Child: [#343](https://github.com/pingchesu/sourcebrief/issues/343).
 
-### 6.6 Answers become claim-verified products
+### 6.6 Conditional answers use atomic verification proofs
+
+This design is dormant until Gate A passes and a separate measured-need decision authorizes generated-answer work.
 
 The evidence packet and the generated answer are separate artifacts.
 
@@ -327,20 +369,37 @@ Answer claim contract:
 ```json
 {
   "claim_id": "answer-claim-id",
-  "text": "human-readable claim",
+  "atomic_text": "one independently verifiable proposition",
   "kind": "quote | paraphrase | synthesis | inference | conflict | unknown",
-  "citation_ids": ["citation-id"],
+  "evidence_spans": [
+    {
+      "citation_id": "citation-id",
+      "quote_hash": "sha256:exact-span"
+    }
+  ],
   "support": "verified | partial | unsupported | conflicting",
-  "support_methods": ["deterministic_span", "human_review"],
+  "verification_proofs": [
+    {
+      "method": "deterministic_span | independent_model | human_review",
+      "verifier": "deterministic-policy-or-provider/model-or-reviewer",
+      "verifier_prompt_or_policy_version": "support.v1",
+      "entailment": "supported | partial | unsupported",
+      "contradiction": "none | present | unknown",
+      "rationale_hash": "sha256:redacted-rationale",
+      "verified_at": "RFC3339"
+    }
+  ],
   "confidence": 0.0
 }
 ```
 
 Rules:
 
-- every answer sentence maps to one or more answer claims;
-- each claim maps to exact evidence;
-- `verified` requires a declared support policy; a citation label or an unreviewed generator/verifier agreement is insufficient;
+- answer prose decomposes into atomic claims; a sentence containing multiple propositions maps to multiple claims rather than one bundled support decision;
+- each atomic claim maps to exact evidence spans;
+- quotes use a deterministic exact-span verifier;
+- paraphrase, synthesis, and inference require an independent verifier/provider or an authorized human gate with recorded lineage; the generator cannot self-approve;
+- `verified` requires retained verification proof and a declared support policy; a citation label, generator/verifier agreement from the same execution, or prose quality is insufficient;
 - contradictions remain visible;
 - false-premise and insufficient-evidence questions abstain;
 - provider failure may still return the evidence packet, but answer state is `unavailable`;
@@ -374,7 +433,11 @@ Package manifests must expose:
 
 A ZIP file, manifest, or file count proves packaging only. AI package quality requires source-specific held-out task wins.
 
-In the first AI-compiled package version, model output cannot create executable scripts or runtime mutation instructions. Executable helpers remain deterministic and allowlisted; source-derived procedures stay reviewable reference content unless a separate typed action contract and approval explicitly promotes them.
+For the Gate A experiment, the deterministic adapter/control files (`SKILL.md`, tool policy, runtime selectors, validation, and executable helpers) remain deterministic and allowlisted. Model-produced material is stored only as clearly delimited, reviewable reference/data-plane content. It is treated as source evidence, not as runtime instruction, and cannot introduce tools, executable scripts, shell commands, mutation authority, or policy overrides. Promoting any generated procedure into instruction/executable authority requires a later, separate typed action contract, security review, adversarial evaluation, explicit human approval, and its own release gate.
+
+The package renderer serializes only allowlisted typed fields, escapes Markdown/HTML/template delimiters where the target runtime requires it, performs no template or code evaluation over model text, and rejects tool-call-shaped or instruction-authority fields. Runtime smoke tests inject adversarial source instructions and prove that the deterministic controller preserves SourceBrief policy rather than following them. Lexical scanning is defense in depth, not the authority boundary.
+
+Gate A tests this minimal AI-compiled reference pack directly. Semantic graph publication, generalized evidence-closure retrieval, and generated-answer infrastructure are not prerequisites and may be added only if the Gate A failure analysis demonstrates that they are necessary.
 
 Ownership: Platform and Product; AI/ML owns compiled content quality.
 
@@ -408,6 +471,8 @@ Ownership: QA/Product for review semantics; AI/ML for future optimizer; Platform
 
 ### 6.9 Evaluation becomes the release authority
 
+Eval v2, the pinned corpus/splits, objective task harness, baselines, evaluator prompt/version, recursive blind-payload sanitizer, thresholds, budgets, and stop date are frozen **before** provider/compiler candidate tuning begins. Existing v1 profile-matrix and 50Q mechanics are historical regression inputs only; they cannot authorize Gate A or be relabeled as v2 evidence. The current pairwise path is specifically unsafe as a blind authority until nested `profile` and retrieval metadata are removed through a recursive allowlist transform and regression-tested.
+
 Evaluation lanes are independent:
 
 1. ingestion and provenance integrity;
@@ -435,8 +500,10 @@ Promotion requires:
 - pinned candidate SHA, corpus, snapshots, provider/model/prompt/compiler manifest;
 - predeclared thresholds and stop criteria;
 - objective assertions and negative controls;
+- QA-owned gold resources/facets/evidence classes/risk contracts, independent of candidate planner output;
 - comparison with current deterministic and real static embedding/rerank baselines;
 - disjoint train/development/held-out sets with contamination checks;
+- recursively allowlisted and sanitized pairwise payloads with candidate/profile identity removed at every nesting level;
 - blinded, randomized Hermes/human pairwise review where semantic quality is subjective, with evaluator identity/version recorded and no generator self-approval;
 - raw redacted evidence and a finding ledger.
 
@@ -450,6 +517,9 @@ The intelligence plane uses explicit events. Generic `object` payloads and runti
 
 Initial event set:
 
+- `AuthorizationEnvelopeIssued`
+- `EvidenceRequirementDeclared`
+- `PlannerProposalCreated`
 - `AICompilationRequested`
 - `AICompilationSectionCompleted`
 - `AICompilationFailed`
@@ -461,6 +531,7 @@ Initial event set:
 - `EvidenceClosureFailed`
 - `AnswerClaimGenerated`
 - `AnswerClaimVerified`
+- `VerificationProofRecorded`
 - `PackCompiled`
 - `PackPublicationRejected`
 
@@ -468,30 +539,32 @@ Each event has a versioned schema, tenant/project scope, immutable input identit
 
 ## 8. Options and decision
 
-Scoring uses 0 = poor, 1 = partial, 2 = strong. Weights: time to proof 5, reuse verified substrate 4, semantic quality ceiling 5, reversibility 4, operational simplicity 3, clean OSS reuse 2.
+Scoring uses 0 = poor, 1 = partial/uncertain, 2 = strong. Weights: time to proof 5, reuse verified substrate 4, semantic quality ceiling 5, reversibility 4, operational simplicity 3, clean OSS reuse 2. Scores are a decision aid, not product evidence.
 
-| Option | Necessary conditions | Weighted score | Exit cost |
-| --- | --- | ---: | --- |
-| Continue current incremental development | Fails real AI compilation and semantic truth conditions. | 32 | Low, but preserves product failure. |
-| Full rewrite around one or more reference projects | Fails migration/governance conditions without major reimplementation. | 14 | Very high. |
-| Preserve verified substrate; rebuild intelligence plane | Passes all necessary conditions. | 36 | Medium and bounded by additive versions. |
-| Freeze SourceBrief as deterministic evidence backend | Fails intended AI knowledge outcome. | 32 | Low; valid fallback product, not the chosen goal. |
+| Option | Time ×5 | Reuse ×4 | Quality ceiling ×5 | Reversibility ×4 | Ops simplicity ×3 | OSS reuse ×2 | Weighted total | Evidence and uncertainty |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Continue current incremental development | 2 | 2 | 0 | 2 | 2 | 0 | 32 | Fast and simple, but current code proves deterministic/template behavior, not the intended outcome. |
+| Full rewrite around reference projects | 0 | 0 | 2 | 0 | 0 | 2 | 14 | High theoretical ceiling and reuse ideas, but discards verified governance and requires rebuilding migration/tenancy/ops. |
+| Preserve substrate; freeze Eval v2; run one bounded AI Skill experiment | 1 | 2 | 2 | 2 | 1 | 1 | 36 | Reuses proven substrate and is reversible. Quality score is a hypothesis to test, not an observed win; provider/eval/compiler work adds time and operations. |
+| Freeze SourceBrief as deterministic evidence service | 2 | 2 | 0 | 2 | 2 | 0 | 32 | Honest, usable fallback with low exit cost, but does not test whether model-backed compilation improves the selected user task. |
 
-Decision: **preserve the verified substrate and rebuild the intelligence plane**.
+Decision: **approve Phase 0 truth adoption and the bounded Gate A experiment only**.
+
+This decision does **not** yet approve a broad intelligence-plane build, G1–G3 publication, generalized evidence-closure retrieval, or generated-answer infrastructure. Whether model-backed compilation is needed is itself a hypothesis. Gate A compares the deterministic adapter, a real static retrieval baseline, and the minimal AI-compiled reference pack with the same Hermes runtime and held-out tasks before those broader investments are authorized.
 
 Why:
 
-- the existing substrate solves expensive governance and lifecycle problems the reference projects generally do not;
-- the intelligence layer can be additive, separately failed, benchmarked, and rolled back;
-- a full rewrite maximizes sunk-cost reaction and migration risk without proving better answers;
+- the existing substrate solves expensive governance and lifecycle problems and can host a cheap reversible experiment;
+- a direct Skill Pack task tests the claimed user value earlier than building graph/retrieval/answer plumbing;
+- a full rewrite maximizes sunk-cost reaction and migration risk without proving user outcomes;
 - continuing current work would optimize the wrong completion criteria;
-- freezing as a deterministic backend remains the fallback if the AI plane cannot meet outcome gates.
+- freezing as a deterministic backend remains an equal-status fallback outcome if Gate A cannot meet the predeclared outcome and economics gates.
 
 ## 9. Migration plan
 
-### Phase 0 — Claim freeze and truth labels
+### Phase 0 — Truth adoption, chosen-source evidence, and Eval v2 freeze
 
-- Land this contract and ADR.
+- Land this contract and ADR as Phase 0 adoption only.
 - Add README/status/claim-ledger reset wording.
 - Rename or relabel existing surfaces:
 
@@ -503,37 +576,34 @@ Why:
 | Skill Export without LLM | Deterministic Adapter Export |
 | Self-improvement | Review and Proposal Loop |
 
+- Pin the one Git repository, task split, objective harness, two baselines, blind sanitizer, thresholds, budgets, and stop clock defined in Section 15.
+- Close exact evidence/locator gaps only for that selected Git source path; unsupported source formats remain visibly unsupported.
+- Capture the current pairwise nested-profile leak as an Eval v2 RED regression.
+
 No stored artifact semantics change in Phase 0.
 
-### Phase 1 — Versioned AI execution plane
+### Phase 1 — Minimal Gate A vertical slice
 
-- Add typed provider/execution records and health.
-- Add explicit compile modes.
-- Add budgets, retries, cancellation, cache, cost, and failure state.
-- Keep disabled by default until provider contract tests pass.
+- Add only the provider/execution records required by the chosen experiment.
+- Compile one bounded, reviewable AI reference pack directly from the pinned Git source.
+- Keep deterministic `SKILL.md`, selectors, policy, validation, and executable helpers as the control plane.
+- Run the three predeclared arms with the same Hermes model/runtime and held-out tasks.
+- Do not build a semantic graph, generalized evidence-closure retrieval, or generated-answer service to satisfy Gate A.
 
-### Phase 2 — AI compiler on a narrow corpus
+### Gate A — Product/economics decision
 
-- Start with ADRs, runbooks, architecture docs, and one book/document corpus.
-- Produce candidate claims and citation-bound semantic artifacts.
-- Review manually and establish relation/claim error taxonomy.
-- Do not publish into current graphs or packs automatically.
+- **PASS:** authorize only the next capability whose need is demonstrated by task failure analysis; do not automatically approve the full long-term architecture.
+- **FAIL after two cycles:** stop AI expansion, adopt the deterministic cited-evidence product, and remove unsupported AI/semantic/GraphRAG/generated-skill positioning.
 
-### Phase 3 — Semantic graph, WEAVE retrieval, and answers
+### Phase 2 — Conditional compiler/evidence hardening
 
-- Publish reviewed G2 project graphs beside existing G0 graphs.
-- Introduce a new retrieval profile and typed QueryPlan.
-- Add claim-level answer generation and verification.
-- Compare against both deterministic and real static provider baselines.
+If Gate A passes, broaden claim types, invalidation closure, source formats, and review workflows only against new pinned tasks and budgets.
 
-### Phase 4 — AI-compiled Agent/Skill Packs
+### Phase 3 — Conditional graph, retrieval, or answer work
 
-- Keep deterministic adapters available.
-- Add AI packages as a separate manifest/API/UI mode.
-- Install and test in Hermes against held-out source-specific tasks.
-- Require review and evidence closure before publication.
+Add reviewed semantic graph, authorization-bound evidence-closure retrieval, or atomic claim-verified answers only when a measured Gate A or follow-on task failure demonstrates that the capability is required. Each receives a separate decision/evaluation gate.
 
-### Phase 5 — Adoption, backfill, and claim promotion
+### Phase 4 — Controlled expansion
 
 - Canary selected projects/resources.
 - Backfill semantic artifacts explicitly; never relabel old artifacts in place.
@@ -553,14 +623,14 @@ No destructive data migration is allowed until a dry-run inventory, canary, roll
 
 ## 11. Observability and operational ownership
 
-Minimum dashboards/metrics:
+Minimum dashboards/metrics for the capabilities actually approved and running (conditional graph/retrieval/answer metrics do not activate before their decisions):
 
 - source/section coverage and skipped reasons;
 - AI queue depth, age, attempts, cancellation, and terminal state;
 - provider/model health, latency, tokens, cost, timeout, and error class;
 - compiler coverage, claims per type, unsupported/invalid citation counts, duplicate/conflict counts;
 - semantic graph freshness, candidate/reviewed/rejected edges, relation quality sample;
-- QueryPlan required-resource/facet coverage and follow-up rate;
+- authorization envelope denials, requirement-contract coverage, planner precision/recall, planner-relative unknown coverage, and follow-up rate;
 - answer verified/partial/unsupported/conflicting claims;
 - pack mode, compilation status, stale/install mismatch, review and rollback;
 - evaluation candidate/baseline provenance and current verdict.
@@ -575,6 +645,8 @@ Ownership:
 | Golden sets, negative controls, promotion verdict, security regression | QA/Security |
 | Provider/runtime incidents, budgets, canary/backfill, rollback | Operations with Platform/AI escalation |
 
+The signed Gate A manifest must name the accountable Product owner, Eval/QA owner, provider/compiler operator, runtime-pack owner, security reviewer, and incident escalation target. Missing ownership or an untestable runbook blocks `D0`; a generic team label is not sufficient release ownership.
+
 ## 12. Failure modes
 
 | Failure | Required behavior | Forbidden behavior |
@@ -583,7 +655,7 @@ Ownership:
 | Provider timeout/rate limit | Typed retryable failure, budget/attempt data, bounded retry. | Infinite retry or incomplete publish. |
 | Malformed/model-injected output | Reject at schema/evidence/security gate. | Persist arbitrary model fields as trusted metadata. |
 | Unknown or missing citation | Reject claim or mark partial. | Publish uncited source claim. |
-| Source advances | Mark affected semantic artifacts and packs stale; queue explicit recompile. | Serve old semantic artifact as current without warning. |
+| Source advances | Mark affected AI artifacts and packs stale; queue explicit recompile. | Serve an old compiled artifact as current without warning. |
 | Entity ambiguity/contradiction | Preserve candidates/conflict and request review. | Merge by name or choose one source silently. |
 | Semantic worker outage | G0 remains available; G1/G2 unavailable/stale. | Block structural source access. |
 | Required resource missing | Return partial/follow-up/abstention with resource name. | Fill top-k from another resource and claim completeness. |
@@ -595,6 +667,7 @@ Ownership:
 ## 13. Security and privacy
 
 - Model input is restricted to authorized section evidence and declared task purpose.
+- Authorization envelopes are issued and enforced by trusted server policy; model/planner output can never add resources, scopes, evidence classes, tools, egress, or mutation rights.
 - Prompt injection in sources is treated as source data, never runtime instruction.
 - Provider egress and retention policy is explicit per workspace/project.
 - Secrets are redacted before provider calls and output persistence.
@@ -604,6 +677,7 @@ Ownership:
 - Source text can contribute knowledge candidates but cannot override compiler/runtime instructions or introduce tools, executable package content, or mutation authority.
 - Human approval events include actor, exact artifact hash, evidence closure, and comment.
 - Raw prompts/responses have bounded retention and are not included in public packs or routine logs.
+- Evaluation and pairwise-review payloads use recursive field allowlists so nested profile, provider, retrieval, tenant, or candidate identity cannot defeat blinding or leak scope metadata.
 
 ## 14. Product surface requirements
 
@@ -624,56 +698,66 @@ Child: [#347](https://github.com/pingchesu/sourcebrief/issues/347).
 
 ## 15. Outcome-based release gates
 
-Before any AI capability is called shipped:
+### Gate A must be frozen before implementation
 
-- source claims have exact evidence closure;
-- unknown citation acceptance is zero;
-- false-premise controls do not receive supported answers;
-- cross-resource questions report required-resource coverage;
-- semantic relation quality is measured on human-reviewed samples;
-- AI-compiled packs beat deterministic adapters on held-out source-specific tasks;
-- candidate profiles beat the current dev baseline and a real static embedding/rerank baseline without general regressions;
-- cost, latency, timeout, cancellation, and failure recovery are reported;
-- tenant, egress, prompt-injection, secret, and review-bypass tests pass;
-- migration/backfill/rollback proof exists on representative current data.
+Before #340 or #341 candidate tuning begins, #346 publishes a signed Eval v2 manifest with the pinned corpus/snapshots, split membership, objective harness, four arms, evaluator policy, recursive blind sanitizer, thresholds, budgets, and `D0` stop-clock timestamp. Threshold changes require a new manifest version **before** a new candidate run, reset `D0`, and invalidate comparison with runs under the previous contract.
 
-Thresholds must be declared in the evaluation manifest before a candidate run. They cannot be chosen after viewing results.
+Primary persona and task class:
 
-### First bounded product proof
+- persona: platform engineer onboarding Hermes to an existing repository;
+- source type: one pinned Git repository only;
+- task: Hermes applies one scoped repository-specific maintenance change in a sandbox, using the installed pack and authorized repository evidence, then passes hidden tests plus a typed product/citation rubric;
+- interaction budget: no raw IDs, at most one explicit review/approval action.
 
-The first implementation train is not a universal compiler. It uses one pinned project containing:
+Dataset fixed before candidate work:
 
-- one repository;
-- one architecture/decision set;
-- one operations runbook;
-- one long-form document or book-like text source.
+- 4 development tasks, never used for promotion;
+- 12 held-out tasks of the same declared class;
+- 6 held-out negative/security controls covering wrong resource, false premise, prompt injection, secret leakage, unauthorized mutation instruction, and unsupported claim;
+- contamination check between source material, development tasks, held-out tasks, prompts, and generated pack content.
 
-The proof must demonstrate one architecture path question, one decision/rationale question, one operating procedure question, and one source-specific Skill task end to end:
+Four arms run with the same Hermes model/runtime, sandbox, task order randomization, and pinned source snapshot:
 
-```text
-ingest evidence
-  -> AI compile typed claims
-  -> review/publish semantic graph
-  -> WEAVE evidence closure
-  -> claim-verified answer
-  -> AI-compiled Skill Pack
-  -> Hermes held-out task
-```
+1. current deterministic adapter and current development-quality retrieval;
+2. deterministic adapter with a real static embedding/rerank baseline;
+3. human-authored reviewed reference pack using the same real static retrieval as arm 2, recording author/review time and cost as the manual ceiling;
+4. minimal AI-compiled reviewed reference pack using the same real static retrieval as arm 2.
 
-The same inputs are evaluated through the deterministic adapter and a real static embedding/rerank baseline. If the candidate cannot beat both baselines without citation, negative-control, leakage, latency, or cost regressions in two bounded candidate cycles, stop and revisit the architecture before broadening source types or ontologies.
+Primary metric: objective held-out task success, requiring hidden tests plus all mandatory rubric fields. Gate A PASS requires all of the following:
+
+- AI arm succeeds on at least 9 of 12 held-out tasks;
+- AI arm wins at least 3 more tasks than the better automated baseline (arms 1–2);
+- AI arm finishes no more than 1 task below the human-authored reference arm and regresses on at most 1 task solved by the better automated baseline;
+- every externally sourced claim used by a successful candidate task has a valid exact evidence span; any unknown/out-of-scope citation or unsupported high-confidence claim fails that task;
+- all 6 negative/security controls pass, with zero tenant/scope leak, secret leak, executable or mutation-authority injection, false-premise supported answer, or review bypass;
+- across 3 clean compile/install repetitions, every run has compiler latency at most 15 minutes, the complete source-to-first-use path at most 20 minutes, active human review time at most 10 minutes and at most 50% of the human-authored arm's recorded author-plus-review time, and only one approval object exposed; report all three values and the maximum rather than mislabeling a three-sample maximum as p95;
+- incremental AI compilation cost is at most USD 5 per pinned repository run, with no unbounded retry and no more than 2 provider retries per run;
+- raw redacted receipts include candidate SHA, source snapshot, pack hash, provider/model/prompt/compiler, evaluator identity/version, randomized arm mapping, task result, latency, cost, and failure reason.
+
+Cycle 1 ends no later than 10 working days after `D0`; cycle 2 ends no later than 20 working days after `D0`. There is no third cycle under this decision.
+
+### Gate A consequences
+
+- **PASS:** Phase 0 plus the AI Skill experiment has proved a bounded user outcome. Follow-on graph, retrieval, or answer work still requires a separate need statement and gate; Gate A does not approve the long-term architecture wholesale.
+- **FAIL:** freeze SourceBrief as a deterministic cited-evidence service, remove unsupported AI/semantic/GraphRAG/generated-skill positioning, and stop provider/compiler expansion until a new ADR presents materially different evidence.
+
+### Follow-on release authority
+
+Any later semantic graph, evidence-closure retrieval, generated answer, or broader AI pack capability must additionally prove exact evidence closure, independently declared resource/facet requirements, atomic claim verification, semantic relation precision/recall, false-premise abstention, cost/latency/recovery, tenant/security controls, and migration/rollback on a new predeclared held-out contract. A follow-on p95 latency/cost claim requires at least 20 independent representative samples and must publish sample count and distribution. Mechanical 50Q, HTTP success, artifact volume, or Gate A alone cannot promote those capabilities.
 
 ## 16. Execution order
 
-1. [#338](https://github.com/pingchesu/sourcebrief/issues/338) — product contract and claim freeze.
-2. [#339](https://github.com/pingchesu/sourcebrief/issues/339) — structural evidence contract.
-3. [#340](https://github.com/pingchesu/sourcebrief/issues/340) — AI provider plane.
-4. [#341](https://github.com/pingchesu/sourcebrief/issues/341) — AI knowledge compiler.
-5. [#346](https://github.com/pingchesu/sourcebrief/issues/346) — executable eval contract and initial baselines, in parallel with compiler work after schemas stabilize.
-6. [#342](https://github.com/pingchesu/sourcebrief/issues/342) — semantic graph.
-7. [#343](https://github.com/pingchesu/sourcebrief/issues/343) — WEAVE retrieval.
-8. [#344](https://github.com/pingchesu/sourcebrief/issues/344) — grounded answers.
-9. [#345](https://github.com/pingchesu/sourcebrief/issues/345) — AI-compiled packs.
-10. [#347](https://github.com/pingchesu/sourcebrief/issues/347) — product/ops closure throughout the train, with final migration and rollback gate.
+1. [#338](https://github.com/pingchesu/sourcebrief/issues/338) — Phase 0 product contract and claim freeze.
+2. [#346](https://github.com/pingchesu/sourcebrief/issues/346) — freeze Eval v2, pinned task corpus, recursive blind sanitizer, four arms, thresholds, budgets, and `D0` before candidate tuning.
+3. [#339](https://github.com/pingchesu/sourcebrief/issues/339) — exact evidence contract for the selected Git source path only.
+4. [#340](https://github.com/pingchesu/sourcebrief/issues/340) — minimal typed AI provider/execution slice required by Gate A.
+5. [#341](https://github.com/pingchesu/sourcebrief/issues/341) — minimal compiler and dependency lineage required by the selected task.
+6. [#345](https://github.com/pingchesu/sourcebrief/issues/345) — deterministic control plane plus bounded AI reference pack; execute Gate A in Hermes.
+7. Record Gate A PASS or FAIL before authorizing broader product architecture.
+8. [#342](https://github.com/pingchesu/sourcebrief/issues/342), [#343](https://github.com/pingchesu/sourcebrief/issues/343), and [#344](https://github.com/pingchesu/sourcebrief/issues/344) — semantic graph, authorization-bound evidence-closure retrieval, and grounded answers remain conditional; each requires measured need and a separate gate.
+9. [#347](https://github.com/pingchesu/sourcebrief/issues/347) — capability UX, security, observability, review economics, canary, and rollback throughout.
+
+No provider/compiler candidate tuning may start before step 2 is frozen. No conditional issue in step 8 may start merely because the schema exists or Gate A passed.
 
 A child may not declare itself complete from helper/unit tests alone. Each must prove the consumed API/artifact/UI/runtime path named in its acceptance criteria.
 
@@ -684,14 +768,15 @@ These are hypotheses, not decisions. Each must be retired with the named evidenc
 | Assumption | Evidence required to retire it | Accountable owner |
 | --- | --- | --- |
 | The current snapshot/ACL/audit/review substrate can host additive AI artifacts without destructive reinterpretation. | Schema spike, current-data migration dry-run, dual-read compatibility test, canary, and rollback rehearsal. | Platform/Data |
-| Section-aware AI compilation produces more useful source-specific knowledge than deterministic templates. | Blinded held-out comparison on the first bounded corpus, with citation support and negative controls. | AI/ML + Product + QA |
+| Section-aware AI compilation produces more useful source-specific knowledge than deterministic or human-authored alternatives at acceptable economics. | Gate A four-arm comparison: at least 9/12 task success, +3 wins over the better automated baseline, within one task of the human pack, exact support, all controls, and declared time/cost budgets. | AI/ML + Product + QA |
 | Exact-span plus independent support verification can keep unsupported claims below the predeclared gate. | Human-labeled claim-support set with mutation and false-premise controls. | AI/ML + QA |
 | PostgreSQL can serve bounded reviewed semantic graph traversal at target scale. | Representative node/edge corpus, p50/p95 path/query latency, lock/load behavior, and failure profile. | Platform/Data |
-| Human review can protect publication without destroying first-use value. | Timed usability test showing source-specific value without raw IDs and no more than one visible review object before first useful result. | Product/UX |
+| Human review can protect publication without destroying first-use value. | Three clean Gate A repetitions with no raw IDs, at most one approval object, at most 10 minutes active review, and at most 20 minutes source-to-first-use. | Product/UX |
 | Provider cost, latency, rate limits, and retention policy fit the intended operating model. | Pinned-model load/cost run, quota/timeout/cancellation test, retention/egress review, and budget approval. | AI/ML + Operations + Security |
 | Long-form parsers preserve reliable locators across Markdown/HTML/PDF/Office/OCR inputs. | Representative parsing corpus with page/heading/table/bounding-box locator checks and explicit unsupported-format results. | Platform/Data + QA |
 | Semantic failures can be isolated from structural evidence availability. | Worker/provider outage and failed-recompile chaos test proving G0 reads, stale/degraded labels, retry, and rollback. | Platform + Operations |
-| AI-compiled packs improve real Hermes tasks without introducing executable or prompt-injection authority. | Installed-package held-out task run, deterministic baseline, injection/leak/mutation controls, and runtime receipt audit. | Product + AI/ML + Security + QA |
+| AI-compiled reference packs improve real Hermes tasks without introducing executable or prompt-injection authority. | Gate A held-out tasks and six negative/security controls; deterministic `SKILL.md` control plane; installed-package receipt audit. | Product + AI/ML + Security + QA |
+| Planner-generated requirements can aid retrieval without self-certifying completeness or expanding authorization. | Server-issued authorization envelope tests, QA-owned gold requirement contracts, planner precision/recall, and closure computed independently of planner proposal. | Platform + Retrieval + QA/Security |
 
 Unretired assumptions remain visible in the relevant issue and evaluation manifest. A successful demo does not retire an assumption unless it exercises the stated evidence path.
 
@@ -723,15 +808,28 @@ Action: simplify the product path while preserving internal review/audit boundar
 
 ### Fallback decision
 
-If the AI plane cannot meet the release gates within two bounded candidate cycles, freeze SourceBrief as a deterministic, cited evidence service. Remove AI/semantic/GraphRAG/generated-skill positioning rather than continuing indefinite platform expansion.
+If Gate A cannot meet every predeclared release gate within two cycles and 20 working days after `D0`, freeze SourceBrief as a deterministic, cited evidence service. Remove AI/semantic/GraphRAG/generated-skill positioning rather than continuing indefinite platform expansion.
 
-## 19. Completion definition for the reset
+## 19. Phase 0 adoption and product-reset exit
 
-The reset itself is complete only when:
+### Phase 0 contract adoption complete
+
+Phase 0 is complete only when:
 
 - this contract and ADR are merged;
-- claim freeze wording is visible from README, status, and claim ledger;
-- every child issue is linked and scoped;
+- claim-freeze wording is visible from README, status, and claim ledger;
+- every child issue is linked, scoped, and marked conditional where applicable;
 - current deterministic features carry honest labels;
-- the first AI-provider/knowledge-compiler implementation issue begins from this contract;
+- Eval v2 RED cases, including nested pairwise profile leakage, are recorded;
 - no current artifact, test, or report is cited as proof of an AI capability it did not execute.
+
+This milestone means only that the contract was adopted. It is **not** product-reset completion and cannot be presented as user-outcome proof.
+
+### Product reset complete
+
+The reset exits in exactly one evidence-backed outcome:
+
+1. **AI outcome:** Gate A PASS is reproduced on the current candidate SHA under the predeclared Eval v2 manifest, including task, safety, review-economics, latency, and cost gates; or
+2. **Deterministic outcome:** Gate A fails or is deliberately rejected, the deterministic cited-evidence product is adopted, unsupported AI/semantic/GraphRAG/generated-skill positioning is removed from primary product surfaces, and further AI expansion is stopped pending a new ADR.
+
+Opening or starting provider/compiler issues, merging schemas, generating a package, or passing mechanical tests cannot complete the product reset.
