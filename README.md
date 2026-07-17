@@ -18,7 +18,7 @@ A useful SourceBrief setup has three pieces:
 | **Human workbench** | Web UI for sources, indexing state, review, and cited questions. |
 | **Agent Pack** | Repo/Project Agent runtime adapters, Skill Exports, and MCP/runtime guidance that teach agents when to ask SourceBrief first. Claude, Codex, Cursor, Hermes, and other MCP clients use the same cited evidence service through their runtime setup paths. |
 
-[Start here](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Recipes](docs/RECIPES.md) · [Agent Packs](docs/AGENT_PACKS.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
+[Start here](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Recipes](docs/RECIPES.md) · [Agent Packs](docs/AGENT_PACKS.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Acknowledgements](ACKNOWLEDGEMENTS.md) · [Contribute](CONTRIBUTING.md)
 
 ## Agent Pack install model
 
@@ -321,6 +321,10 @@ Web UI / CLI / Agent client
 ```
 
 Read the full design in [Architecture](docs/ARCHITECTURE.md).
+
+## Acknowledgements
+
+SourceBrief is an independent project shaped by lessons from open-source knowledge-graph, retrieval, code-navigation, context-packaging, repo-agent, evaluation, and skill-improvement projects. We are grateful to their maintainers and contributors; see the full [Acknowledgements](ACKNOWLEDGEMENTS.md).
 
 ## Contributing
 
