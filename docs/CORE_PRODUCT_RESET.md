@@ -678,6 +678,7 @@ The signed Gate A manifest must name the accountable Product owner, Eval/QA owne
 - Human approval events include actor, exact artifact hash, evidence closure, and comment.
 - Raw prompts/responses have bounded retention and are not included in public packs or routine logs.
 - Evaluation and pairwise-review payloads use recursive field allowlists so nested profile, provider, retrieval, tenant, or candidate identity cannot defeat blinding or leak scope metadata.
+- Gate A Hermes tasks run in disposable sandboxes with no production/user credentials, no deploy/push/PR authority, network egress denied by default, a read-only pinned evidence/source mount plus one scoped writable checkout, bounded CPU/memory/time, and retained command/diff/test receipts. Provider compilation runs in a separate trust boundary; model/source text cannot widen task-executor capabilities.
 
 ## 14. Product surface requirements
 
@@ -714,6 +715,7 @@ Dataset fixed before candidate work:
 - 4 development tasks, never used for promotion;
 - 12 held-out tasks of the same declared class;
 - 6 held-out negative/security controls covering wrong resource, false premise, prompt injection, secret leakage, unauthorized mutation instruction, and unsupported claim;
+- the first corpus is public or purpose-built non-sensitive data with compatible licensing and no customer, employee, production, credential, or restricted-source content;
 - contamination check between source material, development tasks, held-out tasks, prompts, and generated pack content.
 - human authors and the AI compiler may see only the pinned source plus the 4 development tasks; they cannot see held-out task prompts, hidden tests, control payloads, or expected outcomes;
 - each arm produces one immutable pack before held-out material is decrypted/revealed to the executor; per-task compilation or pack regeneration is forbidden.
