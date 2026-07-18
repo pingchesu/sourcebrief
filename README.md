@@ -2,30 +2,33 @@
 
 > Connect source. Ask with citations. Wire into your agent.
 
-SourceBrief gives coding agents a project evidence layer they can inspect before they edit. Connect a repo, docs folder, runbook, URL, upload, or folder bundle; ask a project question; get an answer with citations, snapshots, paths, line ranges, hashes, and follow-up read handles.
+SourceBrief gives coding agents a project evidence layer they can inspect before they edit. Connect a repo, docs folder, runbook, URL, upload, or folder bundle; ask a project question; get a cited evidence packet with snapshots, paths, line ranges, hashes, an extractive preview, and follow-up read handles.
 
 Use it when you need agents to answer with evidence, not vibes.
 
 ```text
-source -> indexed snapshot -> cited answer -> agent pack -> safer coding agent
+source -> indexed snapshot -> cited evidence packet -> deterministic runtime adapter -> agent with SourceBrief access
 ```
+
+> [!WARNING]
+> **Core product reset:** the current alpha ships a deterministic evidence, governance, and runtime-adapter substrate. It does **not** yet ship an AI knowledge compiler, a reviewed semantic knowledge graph, claim-verified generated answers, or AI-compiled Skill Packs. Existing hashing/term-overlap retrieval and template-generated Skill Exports are development-quality/deterministic capabilities, not proof of semantic intelligence. See the [Core Product Reset](docs/CORE_PRODUCT_RESET.md), [ADR-0002](docs/decisions/ADR-0002-ai-intelligence-plane.md), and [claim ledger](docs/CLAIM_LEDGER.md).
 
 A useful SourceBrief setup has three pieces:
 
 | Piece | What you get |
 | --- | --- |
-| **Cited evidence service** | MCP/API/CLI answers that point back to exact source sections. |
+| **Cited evidence service** | MCP/API/CLI evidence packets and extractive previews that point back to exact source sections. |
 | **Human workbench** | Web UI for sources, indexing state, review, and cited questions. |
-| **Agent Pack** | Repo/Project Agent runtime adapters, Skill Exports, and MCP/runtime guidance that teach agents when to ask SourceBrief first. Claude, Codex, Cursor, Hermes, and other MCP clients use the same cited evidence service through their runtime setup paths. |
+| **Deterministic runtime adapter** | The currently shipped Agent Pack / Skill Export package shape: deterministic MCP/runtime guidance that teaches agents when to ask SourceBrief first. It is not AI-compiled project knowledge. |
 
 [Start here](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Recipes](docs/RECIPES.md) · [Agent Packs](docs/AGENT_PACKS.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
 
-## Agent Pack install model
+## Deterministic Adapter install model
 
-SourceBrief's default runtime package is **remote-live**: install the adapter, not the corpus. A Repo/Project Agent is the user-facing published runtime view; an Agent Pack / Skill Pack is the small local adapter that teaches Hermes, Claude, Codex, Cursor, or another MCP client how to ask SourceBrief for current cited evidence.
+SourceBrief's current default runtime package is **remote-live**: install the deterministic adapter, not the corpus. Existing UI/API names may still say Agent Pack or Skill Export, but the shipped package is a small deterministic local adapter that teaches Hermes, Claude, Codex, Cursor, or another MCP client how to ask SourceBrief for current cited evidence. The separate AI-compiled Skill Pack experiment is unshipped.
 
 ```text
-Review graph -> Publish Agent -> Install Agent Pack -> Validate Runtime
+Review evidence / structural graph -> Publish Runtime View -> Install Deterministic Adapter -> Validate Runtime
 ```
 
 `sourcebrief agent-pack doctor --package ...` now validates package integrity and manifest policy locally. Add `--query` only when you want the optional remote citation smoke. Explicit non-default modes are modeled too: `pinned-snapshot` is bounded/offline-but-not-current, while `local-mirror` is exceptional policy validation only. SourceBrief does not sync full sources, embeddings, or graph indexes as a side effect of normal install.
@@ -116,14 +119,14 @@ The response includes runtime instructions, cited snippets, structured citations
 optional code symbols, and a token budget hint.
 ```
 
-That is the product bar: an agent can act on the answer because every claim points back to source.
+That is the target product bar, not a claim that the current deterministic preview already meets it: an agent should act on an answer only when each claim is explicitly verified against source evidence.
 
-## Self-improvement without silent mutation
+## Review and proposal loop without silent mutation
 
-SourceBrief now ships a productized, artifact-based self-improvement loop for reviewing its own cited answers and PR-review evidence:
+SourceBrief ships an artifact-based review and proposal loop for reviewing cited evidence and PR-review evidence:
 
 ```text
-cited answer or PR evidence
+cited evidence/preview or PR evidence
     -> review bundle
     -> local reviewer report with findings
     -> regression proposal
@@ -132,7 +135,7 @@ cited answer or PR evidence
     -> review history
 ```
 
-This is not an automatic optimizer and it does not rewrite prompts, skills, runtime packs, docs, or code by itself. The shipped path writes bounded JSON artifacts and human-reviewable staged patches; applying a change remains an explicit developer/PR action.
+This is not autonomous self-improvement or an automatic optimizer, and it does not rewrite prompts, skills, runtime packs, docs, or code by itself. The shipped path writes bounded JSON artifacts and human-reviewable staged patches; applying a change remains an explicit developer/PR action. The existing **Self-improvement** UI label is retained temporarily for compatibility and is part of the product-reset terminology migration.
 
 Use the web console for the product path:
 
@@ -206,17 +209,17 @@ coding agent gets an issue
     -> explains the change with citations instead of vibes
 ```
 
-Start broad with MCP tools such as `sourcebrief.ask` or `sourcebrief.discover`. Use `sourcebrief.lookup` for docs/code/symbol discovery. Drill down with `sourcebrief.search`, `sourcebrief.read_section`, `sourcebrief.search_code`, `sourcebrief.grep_code`, `sourcebrief.read_file`, `sourcebrief.find_symbol`, and graph tools when the task needs exact evidence. Generated skills and agent packs teach this workflow to the runtime. The CLI is still important, but as the human/CI control plane and fallback path for setup, resource lifecycle, and validation—not as the main agent reasoning surface. Use SourceBrief to know where to look and what to trust; use the coding agent's normal tools to edit, test, commit, and open PRs.
+Start broad with MCP tools such as `sourcebrief.ask` or `sourcebrief.discover`. Use `sourcebrief.lookup` for docs/code/symbol discovery. Drill down with `sourcebrief.search`, `sourcebrief.read_section`, `sourcebrief.search_code`, `sourcebrief.grep_code`, `sourcebrief.read_file`, `sourcebrief.find_symbol`, and graph tools when the task needs exact evidence. Current deterministic adapters teach this workflow to the runtime. The CLI is still important, but as the human/CI control plane and fallback path for setup, resource lifecycle, and validation—not as the main agent reasoning surface. Use SourceBrief to know where to look and what to trust; use the coding agent's normal tools to edit, test, commit, and open PRs.
 
 ### Agent runtime is not complete until all three pieces work
 
 | Piece | Why it matters | Proof |
 | --- | --- | --- |
-| Generated skill / agent pack | Tells the agent when to use SourceBrief, what scope is pinned, citation policy, and mutation boundaries. | Runtime loads `SKILL.md`, `AGENTS.md`, or `CLAUDE.md`. |
+| Deterministic runtime adapter (legacy Agent Pack / Skill Export label) | Tells the agent when to use SourceBrief, what scope is pinned, citation policy, and mutation boundaries. It is not AI-generated knowledge. | Runtime loads `SKILL.md`, `AGENTS.md`, or `CLAUDE.md`. |
 | SourceBrief MCP | Gives the agent live cited evidence and drilldown tools. | `tools/list` shows SourceBrief tools and a smoke `tools/call` returns citations. |
 | CLI fallback/control plane | Lets humans/CI/agents bootstrap, validate, doctor, install/uninstall skills, and manage resources when MCP is down or not yet configured. | `sourcebrief doctor` or `sourcebrief runtime validate --run` passes without printing tokens. |
 
-For runtime setup, prompts, token scopes, remote-code safety, generated skills, and exact MCP tool guidance, read [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md).
+For runtime setup, prompts, token scopes, remote-code safety, deterministic adapters, and exact MCP tool guidance, read [Agent runtime usage](docs/AGENT_RUNTIME_USAGE.md).
 
 ## Before and after SourceBrief
 
@@ -241,7 +244,7 @@ For runtime setup, prompts, token scopes, remote-code safety, generated skills, 
 | Operate or debug the local stack | [Operations](docs/OPERATIONS.md) |
 | Check alpha readiness and limits | [Project status](docs/STATUS.md) |
 | Review real evaluation examples | [Awesome Agent Harness 50-question example](examples/awesome-agent-harness-50q/README.md) |
-| Run the self-improvement proof path | [Self-improvement MVP smoke](docs/SELF_IMPROVEMENT_MVP_SMOKE.md) |
+| Run the review/proposal proof path | [Self-improvement MVP smoke (legacy name)](docs/SELF_IMPROVEMENT_MVP_SMOKE.md) |
 | Pick a product workflow | [Recipes](docs/RECIPES.md) |
 | Use SourceBrief with a local agent | [Local-agent runtime example](examples/use-sourcebrief-with-local-agent/README.md) |
 
@@ -342,7 +345,7 @@ make verify     # full local acceptance gate
 
 SourceBrief analyzes only the sources you connect or upload. Use built-in skip rules, bounded import settings, and redaction checks to reduce accidental indexing of secrets, vendored code, generated files, or private material.
 
-Generated Agent Packs / Skill Exports and runtime adapters should point agents back to SourceBrief citations. They should not embed an entire private source corpus by default; only explicit non-default modes such as bounded `pinned-snapshot` or exceptional `local-mirror` policy validation may declare local payloads.
+Current deterministic Agent Pack / Skill Export adapters should point agents back to SourceBrief citations. They should not embed an entire private source corpus by default; only explicit non-default modes such as bounded `pinned-snapshot` or exceptional `local-mirror` policy validation may declare local payloads. AI-compiled packs remain an unshipped experiment.
 
 ## License
 

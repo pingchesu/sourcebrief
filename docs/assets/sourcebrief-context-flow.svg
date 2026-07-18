@@ -43,7 +43,7 @@
   <text class="text" x="790" y="115">Runtime</text>
   <text class="small" x="790" y="155">HTTP API</text>
   <text class="small" x="790" y="185">MCP tools</text>
-  <text class="small" x="790" y="215">Skill Packs</text>
+  <text class="small" x="790" y="215">runtime adapters</text>
   <text class="mono" x="790" y="260">scoped access</text>
 
   <path class="arrow" d="M930 185 L1020 185"/>

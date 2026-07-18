@@ -19,11 +19,11 @@ integration makes it agent infrastructure:
 | Agent guesses from prompt context. | Agent calls MCP for cited project evidence. |
 | Agent edits the first file it can see. | Agent asks for related docs, tests, symbols, and impact areas first. |
 | Remote indexed repos are confused with local checkouts. | Remote code is treated as static evidence; edits happen only in the real checkout. |
-| Project instructions drift or get copied by hand. | Generated skills and agent packs point runtimes back to SourceBrief citations. |
+| Project instructions drift or get copied by hand. | Current deterministic adapters point runtimes back to SourceBrief citations. |
 
 This page is the practical runtime guide: MCP setup, scoped tokens, remote-code
-safety, Agent Packs, generated skills, Context Pack Skill Exports, and the workflow agents
-should follow before editing or reviewing code. For agents, **MCP plus Agent Packs/skills are
+safety, deterministic Agent Pack / Skill Export adapters, and the workflow agents
+should follow before editing or reviewing code. For agents, **MCP plus deterministic adapters are
 the primary path**. The CLI is the control plane and fallback path for setup,
 resource lifecycle automation, validation, and CI.
 
@@ -31,7 +31,7 @@ Do not present SourceBrief as "a CLI the agent can run." The stronger runtime
 contract is:
 
 ```text
-generated skill/agent pack tells the agent WHEN and WHY to use SourceBrief
+deterministic adapter tells the agent WHEN and WHY to use SourceBrief
         -> MCP gives the agent live cited evidence and drilldown tools
         -> CLI remains available for doctor/setup/resource lifecycle fallback
         -> local checkout tools perform edits/tests/commits outside SourceBrief
@@ -494,7 +494,7 @@ sourcebrief skill uninstall --receipt ./sourcebrief-skill-receipt.json
 
 The API also exposes an approved package download for internal clients; normal users should use the UI/CLI export flow above rather than constructing an internal ID-based URL. Draft exports cannot be downloaded or installed.
 
-Generated skill exports are better for repeatable team workflows because they can include package metadata, references, playbooks, citation policy, freshness rules, local install receipts, and leak-scan validation. They still do not embed the full source corpus or plaintext bearer tokens; generated artifacts should reference token environment variable names and redact token values in examples, receipts, and validation output.
+Current deterministic Skill Export adapters support repeatable team workflows because they can include package metadata, references, playbooks, citation policy, freshness rules, local install receipts, and leak-scan validation. They are not LLM-compiled project knowledge. They do not embed the full source corpus or plaintext bearer tokens; packaged artifacts should reference token environment variable names and redact token values in examples, receipts, and validation output.
 
 ## Usage examples by agent
 

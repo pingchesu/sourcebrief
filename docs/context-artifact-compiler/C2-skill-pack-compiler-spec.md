@@ -1,8 +1,11 @@
 # C2 — Skill Pack Compiler Implementation Spec
 
-Status: Draft v0.1 — implementation target for `feat/c2-skill-pack-compiler`<br/>
+Status: Deterministic baseline implemented; AI knowledge-compilation scope superseded by the [Core Product Reset](../CORE_PRODUCT_RESET.md)<br/>
 Depends on: B0 Resource Map artifacts, B1 Context Pack versions, C Skill Export review/download lifecycle, F expanded MCP tools
 References considered: `book-to-skill`, `rag-skill`, `garden-skills`, `Skill-Anything`
+
+> [!WARNING]
+> C2 produced a safer, richer **deterministic runtime adapter package**. It did not implement LLM-backed semantic compilation: current manifests record `llm_provider_used=false`. In this historical spec, “Compile Knowledge Pack” and “source-aware Skill Pack Compiler” mean deterministic organization of approved metadata, citations, references, and fixed playbooks—not AI understanding. The new `ai-compiled` contract is tracked by [#341](https://github.com/pingchesu/sourcebrief/issues/341) and [#345](https://github.com/pingchesu/sourcebrief/issues/345).
 
 
 ## 1. Problem
@@ -17,7 +20,7 @@ manifest.json
 
 The generated `SKILL.md` mostly tells an agent to call SourceBrief with a pinned Context Pack. That is useful as an audit-safe pointer, but it is not a competitive product feature. A user can reasonably say that a generic LLM could generate a more useful skill because the export lacks source-specific structure, progressive disclosure, task playbooks, examples, and a visible package model.
 
-C2 fixes that by making SourceBrief a **source-aware Skill Pack Compiler**, not merely a Context Pack pointer exporter.
+C2 improves that baseline by making SourceBrief a **deterministic source-aware adapter compiler**, not merely a Context Pack pointer exporter. It does not satisfy the product-reset definition of an AI Knowledge Compiler.
 
 ## 2. Product goal
 
