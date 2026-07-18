@@ -62,6 +62,22 @@ CONTAMINATION_CHECKS = {
     "pack-vs-held-out",
     "prompt-vs-held-out",
 }
+FORBIDDEN_IDENTITY_FIELDS = {
+    "arm",
+    "baseline",
+    "candidate",
+    "deployment_id",
+    "model",
+    "profile",
+    "project_id",
+    "provider",
+    "resource_id",
+    "resource_ids",
+    "retrieval_metadata",
+    "run_id",
+    "tenant_id",
+    "workspace_id",
+}
 NORMATIVE_THRESHOLDS: dict[str, int | float | bool] = {
     "ai_task_success_min": 9,
     "win_margin_vs_best_automated_min": 3,
@@ -82,9 +98,10 @@ NORMATIVE_THRESHOLDS: dict[str, int | float | bool] = {
 
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+_IDENTITY_FIELD_PATTERN = "|".join(sorted(FORBIDDEN_IDENTITY_FIELDS, key=len, reverse=True))
 _BLINDED_IDENTITY_RE = re.compile(
     r"(?i)\b(?:ai_compiled|human_authored|current_deterministic|real_static)\b"
-    r"|[\"']?(?:arm|candidate|baseline|profile|provider|model|deployment_id|workspace_id|tenant_id|project_id|resource_ids?|run_id|retrieval_metadata)[\"']?\s*[:=]"
+    rf"|[\"']?(?:{_IDENTITY_FIELD_PATTERN})[\"']?\s*[:=]"
 )
 
 
@@ -484,8 +501,10 @@ def validate_gate_a_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     _string(evaluator.get("evaluator_id"), "manifest.evaluator_policy.evaluator_id")
     _string(evaluator.get("evaluator_version"), "manifest.evaluator_policy.evaluator_version")
     forbidden = _list(evaluator.get("forbidden_identity_fields"), "manifest.evaluator_policy.forbidden_identity_fields")
-    if not forbidden or not all(isinstance(item, str) and item for item in forbidden):
-        raise EvalManifestError("forbidden_identity_fields must be non-empty")
+    if set(forbidden) != FORBIDDEN_IDENTITY_FIELDS or len(forbidden) != len(FORBIDDEN_IDENTITY_FIELDS):
+        raise EvalManifestError(
+            f"forbidden_identity_fields must be exactly {sorted(FORBIDDEN_IDENTITY_FIELDS)}"
+        )
 
     return {
         "schema_version": GATE_A_MANIFEST_SCHEMA_VERSION,

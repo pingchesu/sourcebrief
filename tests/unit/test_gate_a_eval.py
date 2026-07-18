@@ -446,6 +446,11 @@ def test_gate_a_manifest_fails_closed_on_split_control_timeline_and_owner_drift(
     with pytest.raises(EvalManifestError, match="task_class"):
         validate_gate_a_manifest(wrong_task_class)
 
+    incomplete_identity_policy = deepcopy(manifest)
+    incomplete_identity_policy["evaluator_policy"]["forbidden_identity_fields"] = ["arm"]
+    with pytest.raises(EvalManifestError, match="forbidden_identity_fields"):
+        validate_gate_a_manifest(incomplete_identity_policy)
+
 
 def test_gate_a_approval_rejects_stale_digest_revision_and_owner_identity() -> None:
     manifest = valid_manifest()
