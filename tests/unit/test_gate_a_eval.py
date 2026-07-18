@@ -568,6 +568,8 @@ def test_recursive_pairwise_sanitizer_preserves_evidence_and_removes_all_identit
         '{"provider":"openai"}',
         "deployment_id=prod-compiler",
         "resource_ids=secret-resource",
+        r'{\"deployment_id\":\"prod\",\"resource_ids\":[\"r1\"]}',
+        r'{"\u0064eployment_id":"prod"}',
     ):
         with pytest.raises(EvalManifestError, match="identity metadata"):
             sanitize_pairwise_context(

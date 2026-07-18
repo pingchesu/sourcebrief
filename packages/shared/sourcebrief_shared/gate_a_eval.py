@@ -654,7 +654,15 @@ def compiler_input(
 
 def _blinded_string(value: Any, context: str) -> str:
     result = _string(value, context)
-    if _BLINDED_IDENTITY_RE.search(result):
+    normalized = result
+    for _ in range(3):
+        normalized = re.sub(
+            r"\\u([0-9a-fA-F]{4})",
+            lambda match: chr(int(match.group(1), 16)),
+            normalized,
+        )
+        normalized = normalized.replace(r'\"', '"').replace(r"\'", "'").replace(r"\\", "\\")
+    if _BLINDED_IDENTITY_RE.search(normalized):
         raise EvalManifestError(f"{context} contains candidate/provider/profile identity metadata")
     return result
 
