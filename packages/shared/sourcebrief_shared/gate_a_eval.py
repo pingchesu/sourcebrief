@@ -84,7 +84,7 @@ _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _BLINDED_IDENTITY_RE = re.compile(
     r"(?i)\b(?:ai_compiled|human_authored|current_deterministic|real_static)\b"
-    r"|(?:candidate|baseline|profile|provider|model|workspace_id|tenant_id|project_id|resource_id|run_id|retrieval_metadata)\s*[:=]"
+    r"|[\"']?(?:arm|candidate|baseline|profile|provider|model|deployment_id|workspace_id|tenant_id|project_id|resource_ids?|run_id|retrieval_metadata)[\"']?\s*[:=]"
 )
 
 
@@ -238,7 +238,8 @@ def _task(value: Any, context: str, *, control: bool = False) -> dict[str, Any]:
         expected_keys |= {"control_type", "expected_behavior"}
     _exact_keys(task, expected_keys, context)
     _string(task.get("id"), f"{context}.id")
-    _string(task.get("task_class"), f"{context}.task_class")
+    if _string(task.get("task_class"), f"{context}.task_class") != "repository-maintenance":
+        raise EvalManifestError(f"{context}.task_class must be 'repository-maintenance'")
     _string(task.get("prompt"), f"{context}.prompt")
     for key in ("allowed_paths", "forbidden_paths"):
         values = _list(task.get(key), f"{context}.{key}")
@@ -822,8 +823,8 @@ def _validate_receipt_manifest(
         raise EvalManifestError("report.receipt_manifest must include task_results, latency_cost, and failure_reasons indexes")
     if by_kind["task_results"]["record_count"] != 72:
         raise EvalManifestError("report.receipt_manifest task_results must contain 72 held-out/control records")
-    if by_kind["latency_cost"]["record_count"] < 1:
-        raise EvalManifestError("report.receipt_manifest latency_cost index must not be empty")
+    if by_kind["latency_cost"]["record_count"] < int(NORMATIVE_THRESHOLDS["compile_repetitions"]):
+        raise EvalManifestError("report.receipt_manifest latency_cost index must cover all three compile repetitions")
     raw_bundle = _digest(receipt.get("raw_bundle_sha256"), "report.receipt_manifest.raw_bundle_sha256")
     if raw_bundle != report.get("raw_receipts_sha256"):
         raise EvalManifestError("report.receipt_manifest raw bundle hash does not match report")
@@ -947,6 +948,14 @@ def validate_gate_a_report(
     )
     controls_passed = sum(bool(item["passed"]) for item in arms["ai_compiled"]["control_results"])
     exact_support_ok = all(bool(item["exact_support"]) for item in ai_results if item["success"])
+    support_metrics_ok = all(
+        all(
+            float(item[metric]) == 1.0
+            for metric in ("required_resource_recall", "facet_coverage", "claim_support_precision", "citation_correctness")
+        )
+        for item in ai_results
+        if item["success"]
+    )
 
     compile_receipts = _list(report.get("ai_compile_receipts"), "report.ai_compile_receipts")
     compile_ok = len(compile_receipts) == int(NORMATIVE_THRESHOLDS["compile_repetitions"])
@@ -985,6 +994,8 @@ def validate_gate_a_report(
         failures.append("negative/security controls")
     if not exact_support_ok:
         failures.append("exact support")
+    if not support_metrics_ok:
+        failures.append("complete resource/facet/claim/citation support")
     if lane_metrics["ai_compiled"]["abstention_rate"] > 0 and success_counts["ai_compiled"] < int(NORMATIVE_THRESHOLDS["ai_task_success_min"]):
         failures.append("abstention gaming")
     if not compile_ok:

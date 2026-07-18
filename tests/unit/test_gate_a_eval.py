@@ -438,6 +438,14 @@ def test_gate_a_manifest_fails_closed_on_split_control_timeline_and_owner_drift(
     with pytest.raises(EvalManifestError, match="compiler_inputs"):
         validate_gate_a_manifest(arm_contract_bypass)
 
+    wrong_task_class = deepcopy(manifest)
+    for split in wrong_task_class["splits"].values():
+        for task in split:
+            task["task_class"] = "documentation-copyedit"
+            task["content_sha256"] = sha256_digest({key: value for key, value in task.items() if key != "content_sha256"})
+    with pytest.raises(EvalManifestError, match="task_class"):
+        validate_gate_a_manifest(wrong_task_class)
+
 
 def test_gate_a_approval_rejects_stale_digest_revision_and_owner_identity() -> None:
     manifest = valid_manifest()
@@ -556,6 +564,15 @@ def test_recursive_pairwise_sanitizer_preserves_evidence_and_removes_all_identit
     }
     with pytest.raises(EvalManifestError, match="identity metadata|confidence"):
         sanitize_pairwise_context(scalar_identity)
+    for leaked_text in (
+        '{"provider":"openai"}',
+        "deployment_id=prod-compiler",
+        "resource_ids=secret-resource",
+    ):
+        with pytest.raises(EvalManifestError, match="identity metadata"):
+            sanitize_pairwise_context(
+                {"answer": {"text": leaked_text, "outcome": "supported", "confidence": "high"}}
+            )
     serialized = json.dumps(sanitized)
     assert "secret-resource" not in serialized
     assert "candidate profile degraded" not in serialized
@@ -646,6 +663,36 @@ def test_gate_a_report_computes_pass_and_rejects_lies_missing_rows_and_budget_fa
     with pytest.raises(EvalManifestError, match="receipt_manifest|evaluator"):
         validate_gate_a_report(
             wrong_receipt_provenance,
+            manifest=manifest,
+            approval=approval,
+            approval_key=APPROVAL_KEY,
+        )
+
+    incomplete_latency_index = deepcopy(report)
+    next(
+        item
+        for item in incomplete_latency_index["receipt_manifest"]["indexes"]
+        if item["kind"] == "latency_cost"
+    )["record_count"] = 1
+    with pytest.raises(EvalManifestError, match="latency_cost"):
+        validate_gate_a_report(
+            incomplete_latency_index,
+            manifest=manifest,
+            approval=approval,
+            approval_key=APPROVAL_KEY,
+        )
+
+    unsupported_success = deepcopy(report)
+    ai_arm = next(arm for arm in unsupported_success["arms"] if arm["arm_key"] == "ai_compiled")
+    for row in ai_arm["task_results"]:
+        if row["success"]:
+            row["required_resource_recall"] = 0.0
+            row["facet_coverage"] = 0.0
+            row["claim_support_precision"] = 0.0
+            row["citation_correctness"] = 0.0
+    with pytest.raises(EvalManifestError, match="resource/facet/claim/citation support"):
+        validate_gate_a_report(
+            unsupported_success,
             manifest=manifest,
             approval=approval,
             approval_key=APPROVAL_KEY,

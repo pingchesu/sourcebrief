@@ -50,7 +50,7 @@ Validate a completed report:
 
 ## Contract enforced
 
-- exact 4/12/6 development/held-out/control split;
+- exact 4/12/6 development/held-out/control split, all fixed to the `repository-maintenance` task class;
 - exact four promotion arms from ADR-0002, including fixed pack source, retrieval backend, and `source-and-development-only` compiler inputs;
 - one declared direct-tools/no-SourceBrief diagnostic baseline;
 - immutable pack-before-held-out rule for every arm;
@@ -63,10 +63,10 @@ Validate a completed report:
 - recursive allowlist construction for pairwise evaluator context;
 - strict JSON/object schemas, duplicate-key rejection, scalar type checks, and identity-value scanning, so unknown manifest/task fields or nested/scalar candidate metadata cannot cross the compiler/evaluator boundary;
 - exact report rows for every held-out task/control in every arm;
-- separate resource recall, facet coverage, claim support, citation correctness, and abstention metrics;
+- separate resource recall, facet coverage, claim support, citation correctness, and abstention metrics; every successful AI task requires complete support across all four evidence lanes;
 - no PASS for a partial corpus, missing provenance, unsupported successful task, selective abstention below the task-success floor, missing controls, or exceeded review/cost/latency/retry budget.
 - baseline regression is derived by task ID from the better automated arm instead of trusting a candidate-supplied flag; non-finite JSON/numbers and out-of-window cycle reports fail closed.
-- the receipt manifest binds candidate/source/pack/provider/model/prompt/compiler/evaluator identities plus randomized-arm, task-result, latency/cost, failure-reason, and raw-bundle indexes.
+- the receipt manifest binds candidate/source/pack/provider/model/prompt/compiler/evaluator identities plus randomized-arm, task-result, latency/cost, failure-reason, and raw-bundle indexes; latency/cost evidence must cover all three clean compile repetitions.
 
 ## What remains a human/product gate
 
