@@ -17,6 +17,28 @@ GATE_A_APPROVAL_SCHEMA_VERSION = "sourcebrief.gate-a-approval.v1"
 GATE_A_REPORT_SCHEMA_VERSION = "sourcebrief.gate-a-report.v1"
 
 ARM_KEYS = {"current_deterministic", "real_static", "human_authored", "ai_compiled"}
+NORMATIVE_ARMS = {
+    "current_deterministic": {
+        "retrieval_backend": "development-default",
+        "pack_source": "deterministic-adapter",
+        "compiler_inputs": "source-and-development-only",
+    },
+    "real_static": {
+        "retrieval_backend": "real-static",
+        "pack_source": "deterministic-adapter",
+        "compiler_inputs": "source-and-development-only",
+    },
+    "human_authored": {
+        "retrieval_backend": "real-static",
+        "pack_source": "human-authored",
+        "compiler_inputs": "source-and-development-only",
+    },
+    "ai_compiled": {
+        "retrieval_backend": "real-static",
+        "pack_source": "ai-compiled",
+        "compiler_inputs": "source-and-development-only",
+    },
+}
 AUTOMATED_ARM_KEYS = {"current_deterministic", "real_static"}
 OWNER_ROLES = {
     "product",
@@ -60,6 +82,10 @@ NORMATIVE_THRESHOLDS: dict[str, int | float | bool] = {
 
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+_BLINDED_IDENTITY_RE = re.compile(
+    r"(?i)\b(?:ai_compiled|human_authored|current_deterministic|real_static)\b"
+    r"|(?:candidate|baseline|profile|provider|model|workspace_id|tenant_id|project_id|resource_id|run_id|retrieval_metadata)\s*[:=]"
+)
 
 
 def _exact_keys(value: dict[str, Any], expected: set[str], context: str) -> None:
@@ -75,8 +101,20 @@ def load_gate_a_json_file(path: str | Path) -> dict[str, Any]:
     def reject_constant(value: str) -> None:
         raise EvalManifestError(f"non-finite JSON number is forbidden: {value}")
 
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise EvalManifestError(f"duplicate JSON object key is forbidden: {key}")
+            result[key] = value
+        return result
+
     try:
-        raw = json.loads(Path(path).read_text(encoding="utf-8"), parse_constant=reject_constant)
+        raw = json.loads(
+            Path(path).read_text(encoding="utf-8"),
+            parse_constant=reject_constant,
+            object_pairs_hook=reject_duplicate_keys,
+        )
     except json.JSONDecodeError as exc:
         raise EvalManifestError(f"invalid JSON in {path}: {exc}") from exc
     if not isinstance(raw, dict):
@@ -352,9 +390,15 @@ def validate_gate_a_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         )
         key = _string(arm.get("key"), f"manifest.arms[{index}].key")
         arm_keys.add(key)
+        expected_arm = NORMATIVE_ARMS.get(key)
+        if expected_arm is None:
+            raise EvalManifestError(f"manifest.arms[{index}].key is unsupported")
         retrievals[key] = _string(arm.get("retrieval_backend"), f"manifest.arms[{index}].retrieval_backend")
         for field in ("pack_source", "compiler_inputs"):
             _string(arm.get(field), f"manifest.arms[{index}].{field}")
+        for field, expected in expected_arm.items():
+            if arm.get(field) != expected:
+                raise EvalManifestError(f"manifest arm {key}.{field} must be {expected!r}")
         if not _boolean(arm.get("immutable_pack_before_heldout"), f"manifest.arms[{index}].immutable_pack_before_heldout"):
             raise EvalManifestError("every arm must freeze one immutable pack before held-out reveal")
     if arm_keys != ARM_KEYS:
@@ -607,14 +651,21 @@ def compiler_input(
     }
 
 
+def _blinded_string(value: Any, context: str) -> str:
+    result = _string(value, context)
+    if _BLINDED_IDENTITY_RE.search(result):
+        raise EvalManifestError(f"{context} contains candidate/provider/profile identity metadata")
+    return result
+
+
 def _safe_citation(value: Any) -> dict[str, Any]:
     item = _object(value, "pairwise citation")
     result: dict[str, Any] = {}
-    for key in ("label", "path", "heading", "content", "content_hash"):
+    for key in ("label", "path", "heading", "content"):
         if key in item:
-            if not isinstance(item[key], str):
-                raise EvalManifestError(f"pairwise citation.{key} must be a string scalar")
-            result[key] = item[key]
+            result[key] = _blinded_string(item[key], f"pairwise citation.{key}")
+    if "content_hash" in item:
+        result["content_hash"] = _digest(item["content_hash"], "pairwise citation.content_hash")
     for key in ("line_start", "line_end"):
         if key in item:
             result[key] = _integer(item[key], f"pairwise citation.{key}", 1)
@@ -624,11 +675,11 @@ def _safe_citation(value: Any) -> dict[str, Any]:
 def _safe_symbol(value: Any) -> dict[str, Any]:
     item = _object(value, "pairwise code symbol")
     result: dict[str, Any] = {}
-    for key in ("name", "kind", "path", "signature", "content_hash"):
+    for key in ("name", "kind", "path", "signature"):
         if key in item:
-            if not isinstance(item[key], str):
-                raise EvalManifestError(f"pairwise code symbol.{key} must be a string scalar")
-            result[key] = item[key]
+            result[key] = _blinded_string(item[key], f"pairwise code symbol.{key}")
+    if "content_hash" in item:
+        result["content_hash"] = _digest(item["content_hash"], "pairwise code symbol.content_hash")
     for key in ("line_start", "line_end"):
         if key in item:
             result[key] = _integer(item[key], f"pairwise code symbol.{key}", 1)
@@ -640,17 +691,20 @@ def sanitize_pairwise_context(raw: dict[str, Any]) -> dict[str, Any]:
     source = _object(raw, "pairwise context")
     result: dict[str, Any] = {}
     if "context" in source:
-        result["context"] = _string(source["context"], "pairwise context.context")
+        result["context"] = _blinded_string(source["context"], "pairwise context.context")
     if "answer" in source:
         answer_raw = _object(source["answer"], "pairwise answer")
         answer: dict[str, Any] = {}
         for key in ("text", "outcome"):
             if key in answer_raw:
-                answer[key] = _string(answer_raw[key], f"pairwise answer.{key}")
+                answer[key] = _blinded_string(answer_raw[key], f"pairwise answer.{key}")
         if "confidence" in answer_raw:
             confidence = answer_raw["confidence"]
             if isinstance(confidence, str):
-                answer["confidence"] = _string(confidence, "pairwise answer.confidence")
+                normalized = _blinded_string(confidence, "pairwise answer.confidence").lower()
+                if normalized not in {"low", "medium", "high"}:
+                    raise EvalManifestError("pairwise answer.confidence string must be low, medium, or high")
+                answer["confidence"] = normalized
             elif isinstance(confidence, int | float) and not isinstance(confidence, bool):
                 answer["confidence"] = _number(confidence, "pairwise answer.confidence", 0, 1)
             else:

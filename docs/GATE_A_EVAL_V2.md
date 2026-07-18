@@ -51,7 +51,7 @@ Validate a completed report:
 ## Contract enforced
 
 - exact 4/12/6 development/held-out/control split;
-- exact four promotion arms from ADR-0002;
+- exact four promotion arms from ADR-0002, including fixed pack source, retrieval backend, and `source-and-development-only` compiler inputs;
 - one declared direct-tools/no-SourceBrief diagnostic baseline;
 - immutable pack-before-held-out rule for every arm;
 - strict normative thresholds, budgets, cycle count, and stop clock;
@@ -61,7 +61,7 @@ Validate a completed report:
 - detached content-addressed approval bound to manifest digest/revision and D0, with a server-held HMAC attestation key, immutable approval-event ID, actor, signers, comment, time, and payload hash;
 - named owner roles, with provider/compiler ownership separated from Eval/QA authority;
 - recursive allowlist construction for pairwise evaluator context;
-- strict object schemas and scalar-only evaluator fields, so unknown manifest/task fields or nested identity metadata cannot cross the compiler/evaluator boundary;
+- strict JSON/object schemas, duplicate-key rejection, scalar type checks, and identity-value scanning, so unknown manifest/task fields or nested/scalar candidate metadata cannot cross the compiler/evaluator boundary;
 - exact report rows for every held-out task/control in every arm;
 - separate resource recall, facet coverage, claim support, citation correctness, and abstention metrics;
 - no PASS for a partial corpus, missing provenance, unsupported successful task, selective abstention below the task-success floor, missing controls, or exceeded review/cost/latency/retry budget.

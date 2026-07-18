@@ -14,6 +14,7 @@ from sourcebrief_shared.gate_a_eval import (
     GATE_A_MANIFEST_SCHEMA_VERSION,
     GATE_A_REPORT_SCHEMA_VERSION,
     compiler_input,
+    load_gate_a_json_file,
     sanitize_pairwise_context,
     sign_gate_a_approval,
     validate_gate_a_approval,
@@ -431,6 +432,12 @@ def test_gate_a_manifest_fails_closed_on_split_control_timeline_and_owner_drift(
     with pytest.raises(EvalManifestError, match="unknown fields|hidden_payload"):
         validate_gate_a_manifest(smuggled_task)
 
+    arm_contract_bypass = deepcopy(manifest)
+    for arm in arm_contract_bypass["arms"]:
+        arm["compiler_inputs"] = "source-development-heldout-controls"
+    with pytest.raises(EvalManifestError, match="compiler_inputs"):
+        validate_gate_a_manifest(arm_contract_bypass)
+
 
 def test_gate_a_approval_rejects_stale_digest_revision_and_owner_identity() -> None:
     manifest = valid_manifest()
@@ -539,9 +546,31 @@ def test_recursive_pairwise_sanitizer_preserves_evidence_and_removes_all_identit
     nested_citation = {"citations": [{"content": {"provider": "candidate"}}]}
     with pytest.raises(EvalManifestError, match="citation.content|scalar|string"):
         sanitize_pairwise_context(nested_citation)
+
+    scalar_identity = {
+        "answer": {
+            "text": "supported answer",
+            "outcome": "supported",
+            "confidence": "ai_compiled provider=openai",
+        }
+    }
+    with pytest.raises(EvalManifestError, match="identity metadata|confidence"):
+        sanitize_pairwise_context(scalar_identity)
     serialized = json.dumps(sanitized)
     assert "secret-resource" not in serialized
     assert "candidate profile degraded" not in serialized
+
+
+def test_gate_a_json_loader_rejects_duplicate_keys_and_non_finite_numbers(tmp_path: Path) -> None:
+    duplicate = tmp_path / "duplicate.json"
+    duplicate.write_text('{"candidate_tuning_authorized": false, "candidate_tuning_authorized": true}', encoding="utf-8")
+    with pytest.raises(EvalManifestError, match="duplicate JSON object key"):
+        load_gate_a_json_file(duplicate)
+
+    non_finite = tmp_path / "nan.json"
+    non_finite.write_text('{"ai_cost_usd": NaN}', encoding="utf-8")
+    with pytest.raises(EvalManifestError, match="non-finite JSON number"):
+        load_gate_a_json_file(non_finite)
 
 
 def test_gate_a_report_computes_pass_and_rejects_lies_missing_rows_and_budget_failures() -> None:
