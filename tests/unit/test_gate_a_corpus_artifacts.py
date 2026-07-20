@@ -53,6 +53,7 @@ def _assert_digest(value: Any) -> None:
 
 
 def _validate_index(payload: dict[str, Any]) -> None:
+    assert type(payload) is dict
     assert set(payload) == {
         "blockers",
         "bundle_sha256",
@@ -72,12 +73,17 @@ def _validate_index(payload: dict[str, Any]) -> None:
     assert payload["schema_version"] == "sourcebrief.gate-a-task-digest-index.v1"
     assert payload["classification"] == "pre-d0-draft-not-sealed"
     assert payload["d0_ready"] is False
+    assert type(payload["blockers"]) is list
+    assert all(type(value) is str for value in payload["blockers"])
     assert payload["blockers"] == EXPECTED_BLOCKERS
+    assert type(payload["counts"]) is dict
     assert payload["counts"] == EXPECTED_COUNTS
+    assert all(type(value) is int for value in payload["counts"].values())
     _assert_digest(payload["bundle_sha256"])
     _assert_digest(payload["compiler_preview_sha256"])
 
     source = payload["source"]
+    assert type(source) is dict
     assert set(source) == {
         "contains_restricted_data",
         "kind",
@@ -94,30 +100,40 @@ def _validate_index(payload: dict[str, Any]) -> None:
     assert source["contains_restricted_data"] is False
 
     green = payload["green_baseline"]
+    assert type(green) is dict
     assert set(green) == {"all_commands_green", "receipt_sha256"}
     assert green["all_commands_green"] is True
     _assert_digest(green["receipt_sha256"])
     red = payload["red_baseline"]
+    assert type(red) is dict
     assert set(red) == {"all_tasks_red", "receipt_sha256"}
     assert red["all_tasks_red"] is True
     _assert_digest(red["receipt_sha256"])
 
     similarity = payload["similarity"]
+    assert type(similarity) is dict
     assert set(similarity) == {"dev_held_max_5gram_jaccard", "held_held_max_5gram_jaccard"}
     assert all(type(value) in {int, float} and 0 <= value <= 1 for value in similarity.values())
 
     split_digests = payload["split_content_sha256"]
+    assert type(split_digests) is dict
     assert set(split_digests) == set(EXPECTED_COUNTS)
+    assert all(type(values) is list for values in split_digests.values())
     assert {split: len(values) for split, values in split_digests.items()} == EXPECTED_COUNTS
     content_values = [value for values in split_digests.values() for value in values]
+    assert all(type(value) is str for value in content_values)
     assert len(content_values) == len(set(content_values)) == 22
     assert all(SHA256_RE.fullmatch(value) for value in content_values)
 
     expected_task_splits = {"development", "held_out"}
     test_digests = payload["sealed_test_sha256"]
     quality = payload["sealed_test_quality"]
+    assert type(test_digests) is dict
+    assert type(quality) is dict
     assert set(test_digests) == expected_task_splits
     assert set(quality) == expected_task_splits
+    assert all(type(values) is list for values in test_digests.values())
+    assert all(type(values) is list for values in quality.values())
     expected_test_counts = {
         "development": EXPECTED_COUNTS["development"],
         "held_out": EXPECTED_COUNTS["held_out"],
@@ -125,10 +141,12 @@ def _validate_index(payload: dict[str, Any]) -> None:
     assert {split: len(values) for split, values in test_digests.items()} == expected_test_counts
     assert {split: len(values) for split, values in quality.items()} == expected_test_counts
     test_values = [value for values in test_digests.values() for value in values]
+    assert all(type(value) is str for value in test_values)
     assert len(test_values) == len(set(test_values)) == 16
     assert all(SHA256_RE.fullmatch(value) for value in test_values)
     for entries in quality.values():
         for entry in entries:
+            assert type(entry) is dict
             assert set(entry) == {"assertions", "raises_oracles", "test_functions"}
             assert type(entry["assertions"]) is int and entry["assertions"] >= 0
             assert type(entry["raises_oracles"]) is int and entry["raises_oracles"] >= 0
@@ -175,6 +193,12 @@ def test_schema_rejects_nested_plaintext_and_malformed_digest_collections() -> N
     incomplete["split_content_sha256"]["controls"].pop()
     with pytest.raises(AssertionError):
         _validate_index(incomplete)
+
+    object_collection = copy.deepcopy(payload)
+    digest = object_collection["sealed_test_sha256"]["held_out"][0]
+    object_collection["sealed_test_sha256"]["held_out"] = {digest: {"hidden_test": "plaintext"}}
+    with pytest.raises(AssertionError):
+        _validate_index(object_collection)
 
 
 def test_queuekeeper_readme_matches_machine_commitment() -> None:
