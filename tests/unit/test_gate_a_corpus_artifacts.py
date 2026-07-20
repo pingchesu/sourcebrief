@@ -52,6 +52,23 @@ def _assert_digest(value: Any) -> None:
     assert SHA256_RE.fullmatch(value)
 
 
+def _walk_paths(value: Any, path: tuple[Any, ...] = ()):
+    yield path, value
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield from _walk_paths(child, (*path, key))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from _walk_paths(child, (*path, index))
+
+
+def _at_path(value: Any, path: tuple[Any, ...]) -> Any:
+    current = value
+    for part in path:
+        current = current[part]
+    return current
+
+
 def _validate_index(payload: dict[str, Any]) -> None:
     assert type(payload) is dict
     assert set(payload) == {
@@ -199,6 +216,27 @@ def test_schema_rejects_nested_plaintext_and_malformed_digest_collections() -> N
     object_collection["sealed_test_sha256"]["held_out"] = {digest: {"hidden_test": "plaintext"}}
     with pytest.raises(AssertionError):
         _validate_index(object_collection)
+
+
+def test_schema_rejects_plaintext_injection_at_every_container_boundary() -> None:
+    payload = _load_index()
+    for path, value in _walk_paths(payload):
+        if isinstance(value, dict):
+            mutated = copy.deepcopy(payload)
+            _at_path(mutated, path)["__leak__"] = {"prompt": "plaintext"}
+            with pytest.raises(AssertionError):
+                _validate_index(mutated)
+        elif isinstance(value, list):
+            appended = copy.deepcopy(payload)
+            _at_path(appended, path).append({"hidden_test": "plaintext"})
+            with pytest.raises(AssertionError):
+                _validate_index(appended)
+
+            replaced = copy.deepcopy(payload)
+            parent = _at_path(replaced, path[:-1])
+            parent[path[-1]] = {"sha256:" + "0" * 64: {"hidden_test": "plaintext"}}
+            with pytest.raises(AssertionError):
+                _validate_index(replaced)
 
 
 def test_queuekeeper_readme_matches_machine_commitment() -> None:
