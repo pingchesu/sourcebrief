@@ -3,9 +3,9 @@
     "named human owners and protected approval event are not yet supplied",
     "final held-out, control, and grader content must be independently re-authored on the isolated QA host because this draft received LLM-assisted review"
   ],
-  "bundle_sha256": "sha256:525394176a91f9a6addee4060b5e3d87b369de7871e730206779f3060806a3dd",
+  "bundle_sha256": "sha256:e39631d44423b912fc25b80a18c3f1be8442e484c0ac20afeea11505717819a5",
   "classification": "pre-d0-draft-not-sealed",
-  "compiler_preview_sha256": "sha256:170e3e4b2c04cf118066072475c1ee203f6699dbbcf83007f7a0e394b7717a00",
+  "compiler_preview_sha256": "sha256:b91aa8a5db5832985826b8fee3ce4f5b921eeacc473c0aea23bb98f61480a807",
   "counts": {
     "controls": 6,
     "development": 4,
@@ -14,11 +14,11 @@
   "d0_ready": false,
   "green_baseline": {
     "all_commands_green": true,
-    "receipt_sha256": "sha256:e7706b6eccd34a051ba032e667f1a91d20d29888a30c017387caba2059456e0c"
+    "receipt_sha256": "sha256:cc602c772ba215ba7db157e0a3b2ce0ab674e80fe702381dc85e587fc239554a"
   },
   "red_baseline": {
     "all_tasks_red": true,
-    "receipt_sha256": "sha256:ebfc6c1c30bf6f0db59ad73ec96ea7892291b6f48bb76a13939cf24ca61c4697"
+    "receipt_sha256": "sha256:7361ba7f9e84df3323c0a167240a8bfe9b1db90be0fbda4c95104a5a7e9e1f7d"
   },
   "schema_version": "sourcebrief.gate-a-task-digest-index.v1",
   "sealed_test_quality": {
@@ -138,8 +138,8 @@
     "kind": "git",
     "license_spdx": "MIT",
     "repository_url": "https://github.com/pingchesu/queuekeeper",
-    "snapshot_commit": "16967177fab13de0396a0eb61024d8167204b004",
-    "snapshot_tree_sha256": "sha256:ab5a4198f9a09a064f2782ffb5a6c50ea1f2461171207f7da5c866da994d0406"
+    "snapshot_commit": "b366986fded2db350899ee56c7f4e0a416644317",
+    "snapshot_tree_sha256": "sha256:af19cf1263cddc037c754c5e39cbc8374009baf89094ba8a307e715a2687b549"
   },
   "split_content_sha256": {
     "controls": [

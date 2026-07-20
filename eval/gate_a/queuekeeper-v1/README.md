@@ -10,8 +10,8 @@ Parent Gate A experiment: [#346](https://github.com/pingchesu/sourcebrief/issues
 The public source repository is frozen at:
 
 - Repository: <https://github.com/pingchesu/queuekeeper>
-- Commit: `16967177fab13de0396a0eb61024d8167204b004`
-- Canonical tree digest: `sha256:ab5a4198f9a09a064f2782ffb5a6c50ea1f2461171207f7da5c866da994d0406`
+- Commit: `b366986fded2db350899ee56c7f4e0a416644317`
+- Canonical tree digest: `sha256:af19cf1263cddc037c754c5e39cbc8374009baf89094ba8a307e715a2687b549`
 - License: MIT
 
 ## What this slice proves
@@ -40,7 +40,7 @@ The public source repository is frozen at:
 ```bash
 git clone https://github.com/pingchesu/queuekeeper.git
 cd queuekeeper
-git checkout 16967177fab13de0396a0eb61024d8167204b004
+git checkout b366986fded2db350899ee56c7f4e0a416644317
 python3.11 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 make verify
