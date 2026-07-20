@@ -1,0 +1,174 @@
+{
+  "blockers": [
+    "named human owners and protected approval event are not yet supplied",
+    "final held-out, control, and grader content must be independently re-authored on the isolated QA host because this draft received LLM-assisted review"
+  ],
+  "bundle_sha256": "sha256:e39631d44423b912fc25b80a18c3f1be8442e484c0ac20afeea11505717819a5",
+  "classification": "pre-d0-draft-not-sealed",
+  "compiler_preview_sha256": "sha256:b91aa8a5db5832985826b8fee3ce4f5b921eeacc473c0aea23bb98f61480a807",
+  "counts": {
+    "controls": 6,
+    "development": 4,
+    "held_out": 12
+  },
+  "d0_ready": false,
+  "green_baseline": {
+    "all_commands_green": true,
+    "receipt_sha256": "sha256:cc602c772ba215ba7db157e0a3b2ce0ab674e80fe702381dc85e587fc239554a"
+  },
+  "red_baseline": {
+    "all_tasks_red": true,
+    "receipt_sha256": "sha256:7361ba7f9e84df3323c0a167240a8bfe9b1db90be0fbda4c95104a5a7e9e1f7d"
+  },
+  "schema_version": "sourcebrief.gate-a-task-digest-index.v1",
+  "sealed_test_quality": {
+    "development": [
+      {
+        "assertions": 10,
+        "raises_oracles": 1,
+        "test_functions": 4
+      },
+      {
+        "assertions": 11,
+        "raises_oracles": 0,
+        "test_functions": 5
+      },
+      {
+        "assertions": 18,
+        "raises_oracles": 0,
+        "test_functions": 3
+      },
+      {
+        "assertions": 16,
+        "raises_oracles": 1,
+        "test_functions": 5
+      }
+    ],
+    "held_out": [
+      {
+        "assertions": 7,
+        "raises_oracles": 6,
+        "test_functions": 6
+      },
+      {
+        "assertions": 19,
+        "raises_oracles": 2,
+        "test_functions": 5
+      },
+      {
+        "assertions": 17,
+        "raises_oracles": 2,
+        "test_functions": 5
+      },
+      {
+        "assertions": 9,
+        "raises_oracles": 0,
+        "test_functions": 4
+      },
+      {
+        "assertions": 7,
+        "raises_oracles": 2,
+        "test_functions": 3
+      },
+      {
+        "assertions": 19,
+        "raises_oracles": 1,
+        "test_functions": 5
+      },
+      {
+        "assertions": 2,
+        "raises_oracles": 2,
+        "test_functions": 3
+      },
+      {
+        "assertions": 21,
+        "raises_oracles": 0,
+        "test_functions": 4
+      },
+      {
+        "assertions": 9,
+        "raises_oracles": 0,
+        "test_functions": 4
+      },
+      {
+        "assertions": 12,
+        "raises_oracles": 2,
+        "test_functions": 4
+      },
+      {
+        "assertions": 22,
+        "raises_oracles": 0,
+        "test_functions": 5
+      },
+      {
+        "assertions": 16,
+        "raises_oracles": 2,
+        "test_functions": 6
+      }
+    ]
+  },
+  "sealed_test_sha256": {
+    "development": [
+      "sha256:3b2e3d0387494af8b5666fc399e123a54bb32d923457784e8d92b2d555a05806",
+      "sha256:bae94485299ed421196b60add1e929e889f76a57d896c698cc08fcbf7e4633ec",
+      "sha256:a5975d23959da9456b9358a7cf79e1e732b8040ab8ef84f120a11d212a475c43",
+      "sha256:2069dbfb194062f851e6db3128457b64ca03cea3b819bc4d5f1843e5ef0b1094"
+    ],
+    "held_out": [
+      "sha256:5be79bf793481497067ac2aec0a3f1df146ad89eb41c8e18cfa96f8ff44a97d6",
+      "sha256:1795f37b8e82c772ba9c63ace0bb303478474c301be2aef7bb8dc75a34da1f2d",
+      "sha256:cceb914a839c7d1b4ccc016ccf7b2ae1308b9394dcb6a1a7a7ef4c43ddaa96de",
+      "sha256:757f41f5d708b14a16d14deee27473a4f41787dfa7bd4805e974efc6e0c615a1",
+      "sha256:a26f38411e35ab2b9965536f0d6b7ba888fe1e947e787b6a48d86b5d2be28056",
+      "sha256:acc929a63c5fc1d4b3d45ce82b3466a527771026ece2067a3c2bd5616be98a99",
+      "sha256:e0fff25ac3f63f15b94999a232d48ba6ff9baacd6e88307d2640fcd7193c1048",
+      "sha256:01f982af34bfbe14aa41b1368e72186bc946044ff06a615c78a2a7761ce1c411",
+      "sha256:b733517d3bf3e2d2eeb5b1e8629d1ab647b91e2f8452fb069198c89f51ebe668",
+      "sha256:c03092609254f82066f7bb111fd54f77c21cae9d5167406147efe654ee238c77",
+      "sha256:327b9e8b4144a25aac5c101d578a3cd1a7273b9934c48e249c4b1ed4097d2a97",
+      "sha256:c1bfa9a2981926d35397dd38417d5c2175f04f678377d3673627b90f41a90e71"
+    ]
+  },
+  "similarity": {
+    "dev_held_max_5gram_jaccard": 0.0,
+    "held_held_max_5gram_jaccard": 0.0
+  },
+  "source": {
+    "contains_restricted_data": false,
+    "kind": "git",
+    "license_spdx": "MIT",
+    "repository_url": "https://github.com/pingchesu/queuekeeper",
+    "snapshot_commit": "b366986fded2db350899ee56c7f4e0a416644317",
+    "snapshot_tree_sha256": "sha256:af19cf1263cddc037c754c5e39cbc8374009baf89094ba8a307e715a2687b549"
+  },
+  "split_content_sha256": {
+    "controls": [
+      "sha256:4e5f230f11eb2970d4b42aed67bde15f1e803d1e1b5b582e96d81d6d85a4bfaf",
+      "sha256:d60d719fc7937afe704edda68114fc5ac298bf1dacfc7939b58fff341e03190c",
+      "sha256:31179b0e352a8c07fa25731b1b23bf9abbd0f6f8f2fc41764129a4f74a8e016d",
+      "sha256:9d5587ac904d2e101e48029cec6aa5ac4530e5ef45158689a21345693b360f73",
+      "sha256:24e8e9ccf7d207ded9f6374249e7b2d65da8d2b62acaed39eef066662e803440",
+      "sha256:a22268a1690d12d8649c7ac0d27b607afe263f6ef468703e5b4046c789a95624"
+    ],
+    "development": [
+      "sha256:64f2d8734b30179fd50d9a9369d32cf9098dfb777766b8a70001982f2ed9bc8d",
+      "sha256:ac4366df91671b20f97195fc67d9cd5d47034d673366690a415e474bbc8536f1",
+      "sha256:fe802691d46641496b61c45e56ffbeb8b63da8c5d246c37d55a5d70b994f77f3",
+      "sha256:b427db7dddc43207d164c792b21267e460bbfa83342a59ad317191639900b505"
+    ],
+    "held_out": [
+      "sha256:e7c4f4f110b8cd0361f1c46876d6b34729a0dfd77911bd033105f4e47a347b24",
+      "sha256:be23313e83dcc57a8dfc883fa1866552b9f2f012c346b78bd45e97128c74c042",
+      "sha256:fcb506732bcc352267cdec9bdf83a9d09c55969dcc8d6acf6a9b21bab0bb919f",
+      "sha256:3980804103f2af088260faa49a049281997f11e3ac866d6c69a10ef409a0d681",
+      "sha256:82abfb825ad6a72c7000d17067a54e27e33102cc6e4b38e87093a6bc3a8f4856",
+      "sha256:0628af1d6e1803910e500e8103e14ebcd2ec40000a35c35b717279fd27d74fab",
+      "sha256:76253d7770e41ad8ddbb6d1bd812c388dec1b13b26f67561cc210e584c1e8f70",
+      "sha256:691bbcde7258c2ff2ef81a208c3d8971a33e76119f1784cf83a204071114204d",
+      "sha256:944930f71c29439bfba39e562a5715b674ea1f5075c800248ffd74822a7fd18a",
+      "sha256:3c4aaf94ad48849b68935d858e6580ab00a146b3a77213b65820cb4f9d1f0a1c",
+      "sha256:87c6eca40c9e3b647ea0a4c93ee6dc9b10e43a2123beaedd78734a8f7a0bba45",
+      "sha256:9fc09e5c25e8c123247ae6bffe21982326c4b4d24480fa520f9623d04a81abae"
+    ]
+  }
+}
