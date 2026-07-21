@@ -14,7 +14,7 @@
   "d0_ready": false,
   "green_baseline": {
     "all_commands_green": true,
-    "receipt_sha256": "sha256:cc602c772ba215ba7db157e0a3b2ce0ab674e80fe702381dc85e587fc239554a"
+    "receipt_sha256": "sha256:8c08077d7be41628137742630b09d3c3367b6e9f5f9463c4b9140b4c292e8c7b"
   },
   "red_baseline": {
     "all_tasks_red": true,
