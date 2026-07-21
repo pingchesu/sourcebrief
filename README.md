@@ -21,7 +21,7 @@ A useful SourceBrief setup has three pieces:
 | **Human workbench** | Web UI for sources, indexing state, review, and cited questions. |
 | **Deterministic runtime adapter** | The currently shipped Agent Pack / Skill Export package shape: deterministic MCP/runtime guidance that teaches agents when to ask SourceBrief first. It is not AI-compiled project knowledge. |
 
-[Start here](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Recipes](docs/RECIPES.md) · [Agent Packs](docs/AGENT_PACKS.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Contribute](CONTRIBUTING.md)
+[Start here](docs/INSTALL_AND_USE.md) · [See the walkthrough](docs/WALKTHROUGH.md) · [Recipes](docs/RECIPES.md) · [Agent Packs](docs/AGENT_PACKS.md) · [Use it with agents](docs/AGENT_RUNTIME_USAGE.md) · [Acknowledgements](ACKNOWLEDGEMENTS.md) · [Contribute](CONTRIBUTING.md)
 
 ## Deterministic Adapter install model
 
@@ -324,6 +324,10 @@ Web UI / CLI / Agent client
 ```
 
 Read the full design in [Architecture](docs/ARCHITECTURE.md).
+
+## Acknowledgements
+
+SourceBrief is an independent project shaped by lessons from open-source knowledge-graph, retrieval, code-navigation, context-packaging, repo-agent, evaluation, and skill-improvement projects. We are grateful to their maintainers and contributors; see the full [Acknowledgements](ACKNOWLEDGEMENTS.md).
 
 ## Contributing
 
