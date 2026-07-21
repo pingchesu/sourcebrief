@@ -187,6 +187,7 @@ def _receipt(
             "cost_usd",
             "hidden_test_sha256",
             "command_sha256",
+            "trace_sha256",
             "diff_sha256",
             "stdout_sha256",
             "stderr_sha256",
@@ -210,6 +211,7 @@ def _receipt(
     for field in (
         "hidden_test_sha256",
         "command_sha256",
+        "trace_sha256",
         "diff_sha256",
         "stdout_sha256",
         "stderr_sha256",

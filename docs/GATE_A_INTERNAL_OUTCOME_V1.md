@@ -35,6 +35,7 @@ The envelope requires exactly:
 - 60 task receipts: five lanes × the same 12 held-out tasks;
 - 30 control receipts: five lanes × the same six controls;
 - a valid self-digest for every receipt;
+- verifier-owned CAS replay of hidden tests, command, raw model/tool trace, diff, stdout, stderr and receipt payload bytes;
 - success equal to hidden-test exit code zero.
 
 The validator recomputes all scores. The envelope contains no caller-supplied verdict or uplift.
