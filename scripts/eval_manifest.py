@@ -26,6 +26,9 @@ from sourcebrief_shared.gate_a_eval import (  # noqa: E402
     validate_gate_a_manifest,
     validate_gate_a_report,
 )
+from sourcebrief_shared.gate_a_internal_outcome import (  # noqa: E402
+    validate_internal_outcome,
+)
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -80,6 +83,16 @@ def cmd_validate_gate_a(args: argparse.Namespace) -> int:
 def cmd_validate_gate_a_internal_governance(args: argparse.Namespace) -> int:
     governance = load_gate_a_json_file(args.governance)
     summary = validate_gate_a_internal_governance(governance)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_validate_gate_a_internal_outcome(args: argparse.Namespace) -> int:
+    outcome = load_gate_a_json_file(args.outcome)
+    summary = validate_internal_outcome(
+        outcome,
+        key=Path(args.key_file).read_bytes(),
+    )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
@@ -139,6 +152,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     internal_governance.add_argument("governance")
     internal_governance.set_defaults(func=cmd_validate_gate_a_internal_governance)
+
+    internal_outcome = sub.add_parser(
+        "validate-gate-a-internal-outcome",
+        help="Validate a founder-controlled non-promotional internal outcome envelope.",
+    )
+    internal_outcome.add_argument("outcome")
+    internal_outcome.add_argument("--key-file", required=True)
+    internal_outcome.set_defaults(func=cmd_validate_gate_a_internal_outcome)
 
     gate_report = sub.add_parser("validate-gate-a-report", help="Validate a Gate A report against its frozen manifest/approval.")
     gate_report.add_argument("report")
