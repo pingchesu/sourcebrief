@@ -54,7 +54,8 @@ A FAIL sets `stop_investment=true`. It does not authorize broad rebuild work.
 ```bash
 python scripts/eval_manifest.py validate-gate-a-internal-outcome \
   /path/to/internal-outcome.private.json \
-  --key-file /path/to/internal-outcome.key
+  --key-file /path/to/internal-outcome.key \
+  --artifact-root /path/to/verifier-owned-cas
 ```
 
 The outcome, HMAC key, protected tasks, prompts, responses, diffs and hidden tests remain private evidence and must not be committed.

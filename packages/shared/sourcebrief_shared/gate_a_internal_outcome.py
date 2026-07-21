@@ -3,8 +3,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import math
+import os
 import re
+import stat
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from sourcebrief_shared.eval_manifest import EvalManifestError, canonical_json, sha256_digest
@@ -101,6 +104,39 @@ def _timestamp(value: Any, context: str) -> datetime:
     return parsed
 
 
+def _verify_cas_artifact(
+    artifact_root: str | Path, declared_digest: str, context: str
+) -> None:
+    hexadecimal = declared_digest.removeprefix("sha256:")
+    root = Path(artifact_root)
+    path = root / hexadecimal
+    try:
+        root_stat = root.stat()
+        file_stat = path.lstat()
+    except FileNotFoundError as exc:
+        raise EvalManifestError(f"{context} missing CAS artifact {declared_digest}") from exc
+    if not stat.S_ISDIR(root_stat.st_mode):
+        raise EvalManifestError("internal outcome artifact_root must be a directory")
+    if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
+        raise EvalManifestError(f"{context} CAS artifact must be a non-symlink regular file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise EvalManifestError(f"{context} CAS artifact could not be opened safely") from exc
+    hasher = hashlib.sha256()
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise EvalManifestError(f"{context} CAS artifact must remain a regular file")
+        while chunk := os.read(descriptor, 1024 * 1024):
+            hasher.update(chunk)
+    finally:
+        os.close(descriptor)
+    if hasher.hexdigest() != hexadecimal:
+        raise EvalManifestError(f"{context} CAS artifact digest mismatch")
+
+
 def _ids(value: Any, context: str, expected_count: int) -> list[str]:
     raw = _list(value, context)
     ids: list[str] = []
@@ -132,6 +168,7 @@ def _receipt(
     *,
     item_key: str,
     expected_ids: set[str],
+    cas_digests: dict[str, str],
 ) -> dict[str, Any]:
     receipt = _object(value, context)
     _exact(
@@ -172,8 +209,11 @@ def _receipt(
         "stdout_sha256",
         "stderr_sha256",
     ):
-        _digest(receipt.get(field), f"{context}.{field}")
+        cas_digests[f"{context}.{field}"] = _digest(
+            receipt.get(field), f"{context}.{field}"
+        )
     declared = _digest(receipt.get("receipt_sha256"), f"{context}.receipt_sha256")
+    cas_digests[f"{context}.receipt_sha256"] = declared
     if declared != sha256_digest(
         {key: item for key, item in receipt.items() if key != "receipt_sha256"}
     ):
@@ -181,7 +221,10 @@ def _receipt(
     return receipt
 
 
-def validate_internal_outcome(envelope: dict[str, Any], *, key: bytes) -> dict[str, Any]:
+def validate_internal_outcome(
+    envelope: dict[str, Any], *, key: bytes, artifact_root: str | Path
+) -> dict[str, Any]:
+    cas_digests: dict[str, str] = {}
     _exact(
         envelope,
         {
@@ -230,7 +273,9 @@ def validate_internal_outcome(envelope: dict[str, Any], *, key: bytes) -> dict[s
         "scorer_sha256",
         "task_bundle_sha256",
     ):
-        _digest(envelope.get(field), f"internal_outcome.{field}")
+        cas_digests[f"internal_outcome.{field}"] = _digest(
+            envelope.get(field), f"internal_outcome.{field}"
+        )
     for field in ("source_commit", "candidate_sourcebrief_commit"):
         commit = _string(envelope.get(field), f"internal_outcome.{field}")
         if not _COMMIT_RE.fullmatch(commit):
@@ -263,8 +308,10 @@ def validate_internal_outcome(envelope: dict[str, Any], *, key: bytes) -> dict[s
     )
     _string(runtime.get("provider"), "internal_outcome.runtime_envelope.provider")
     _string(runtime.get("model"), "internal_outcome.runtime_envelope.model")
-    _digest(runtime.get("prompt_sha256"), "internal_outcome.runtime_envelope.prompt_sha256")
-    _digest(
+    cas_digests["runtime_envelope.prompt_sha256"] = _digest(
+        runtime.get("prompt_sha256"), "internal_outcome.runtime_envelope.prompt_sha256"
+    )
+    cas_digests["runtime_envelope.sandbox_policy_sha256"] = _digest(
         runtime.get("sandbox_policy_sha256"),
         "internal_outcome.runtime_envelope.sandbox_policy_sha256",
     )
@@ -294,7 +341,9 @@ def validate_internal_outcome(envelope: dict[str, Any], *, key: bytes) -> dict[s
     if packs[DIRECT_BASELINE] is not None:
         raise EvalManifestError("direct-tools baseline must not receive a SourceBrief pack")
     for lane in LANES - {DIRECT_BASELINE}:
-        _digest(packs.get(lane), f"pack_sha256_by_lane.{lane}")
+        cas_digests[f"pack_sha256_by_lane.{lane}"] = _digest(
+            packs.get(lane), f"pack_sha256_by_lane.{lane}"
+        )
 
     compiler_receipts = _list(envelope.get("compiler_receipts"), "compiler_receipts")
     if len(compiler_receipts) != 3:
@@ -331,11 +380,17 @@ def validate_internal_outcome(envelope: dict[str, Any], *, key: bytes) -> dict[s
             raise EvalManifestError(f"{context} must finish after freeze and before run")
         if not _boolean(receipt.get("succeeded"), f"{context}.succeeded"):
             raise EvalManifestError(f"{context} must succeed")
-        compiler_prompt_digests.add(
-            _digest(receipt.get("prompt_sha256"), f"{context}.prompt_sha256")
+        prompt_digest = _digest(
+            receipt.get("prompt_sha256"), f"{context}.prompt_sha256"
         )
-        _digest(receipt.get("response_sha256"), f"{context}.response_sha256")
-        _digest(receipt.get("pack_sha256"), f"{context}.pack_sha256")
+        compiler_prompt_digests.add(prompt_digest)
+        cas_digests[f"{context}.prompt_sha256"] = prompt_digest
+        cas_digests[f"{context}.response_sha256"] = _digest(
+            receipt.get("response_sha256"), f"{context}.response_sha256"
+        )
+        cas_digests[f"{context}.pack_sha256"] = _digest(
+            receipt.get("pack_sha256"), f"{context}.pack_sha256"
+        )
         _number(receipt.get("duration_seconds"), f"{context}.duration_seconds")
         _number(receipt.get("cost_usd"), f"{context}.cost_usd")
     if attempts != {1, 2, 3}:
@@ -353,6 +408,7 @@ def validate_internal_outcome(envelope: dict[str, Any], *, key: bytes) -> dict[s
             f"task_receipts[{index}]",
             item_key="task_id",
             expected_ids=set(held_out),
+            cas_digests=cas_digests,
         )
         identity = (receipt["lane_key"], receipt["task_id"])
         if identity in task_by_key:
@@ -370,6 +426,7 @@ def validate_internal_outcome(envelope: dict[str, Any], *, key: bytes) -> dict[s
             f"control_receipts[{index}]",
             item_key="control_id",
             expected_ids=set(controls),
+            cas_digests=cas_digests,
         )
         identity = (receipt["lane_key"], receipt["control_id"])
         if identity in control_by_key:
@@ -378,6 +435,9 @@ def validate_internal_outcome(envelope: dict[str, Any], *, key: bytes) -> dict[s
     expected_control_keys = {(lane, control) for lane in LANES for control in controls}
     if set(control_by_key) != expected_control_keys or len(control_receipts) != 30:
         raise EvalManifestError("control receipts must provide exact 5x6 coverage")
+
+    for context, declared_digest in sorted(cas_digests.items()):
+        _verify_cas_artifact(artifact_root, declared_digest, context)
 
     expected_mac = sign_internal_outcome(envelope, key=key)
     declared_mac = _string(envelope.get("internal_outcome_mac"), "internal_outcome_mac")

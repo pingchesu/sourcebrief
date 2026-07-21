@@ -92,6 +92,7 @@ def cmd_validate_gate_a_internal_outcome(args: argparse.Namespace) -> int:
     summary = validate_internal_outcome(
         outcome,
         key=Path(args.key_file).read_bytes(),
+        artifact_root=Path(args.artifact_root),
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
@@ -159,6 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     internal_outcome.add_argument("outcome")
     internal_outcome.add_argument("--key-file", required=True)
+    internal_outcome.add_argument("--artifact-root", required=True)
     internal_outcome.set_defaults(func=cmd_validate_gate_a_internal_outcome)
 
     gate_report = sub.add_parser("validate-gate-a-report", help="Validate a Gate A report against its frozen manifest/approval.")
