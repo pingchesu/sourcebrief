@@ -109,14 +109,19 @@ def _verify_cas_artifact(
 ) -> None:
     hexadecimal = declared_digest.removeprefix("sha256:")
     root = Path(artifact_root)
+    try:
+        root_stat = root.lstat()
+    except FileNotFoundError as exc:
+        raise EvalManifestError("internal outcome artifact_root is missing") from exc
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise EvalManifestError(
+            "internal outcome artifact_root must be a non-symlink directory"
+        )
     path = root / hexadecimal
     try:
-        root_stat = root.stat()
         file_stat = path.lstat()
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, NotADirectoryError) as exc:
         raise EvalManifestError(f"{context} missing CAS artifact {declared_digest}") from exc
-    if not stat.S_ISDIR(root_stat.st_mode):
-        raise EvalManifestError("internal outcome artifact_root must be a directory")
     if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
         raise EvalManifestError(f"{context} CAS artifact must be a non-symlink regular file")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
@@ -315,8 +320,12 @@ def validate_internal_outcome(
         runtime.get("sandbox_policy_sha256"),
         "internal_outcome.runtime_envelope.sandbox_policy_sha256",
     )
-    if _boolean(runtime.get("network_egress"), "runtime_envelope.network_egress"):
-        raise EvalManifestError("internal experiment network egress must be disabled")
+    if _string(
+        runtime.get("network_egress"), "runtime_envelope.network_egress"
+    ) != "model_api_only_trace_enforced":
+        raise EvalManifestError(
+            "internal runtime permits only the model API; shell network activity must be rejected from retained traces"
+        )
     cost_budget = _number(runtime.get("cost_budget_usd"), "runtime_envelope.cost_budget_usd")
     latency_budget = _number(
         runtime.get("latency_budget_seconds"), "runtime_envelope.latency_budget_seconds"

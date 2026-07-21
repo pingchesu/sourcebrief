@@ -20,7 +20,7 @@ Before any compile or held-out execution, freeze and MAC-bind:
 - source commit/tree and candidate SourceBrief commit;
 - scorer and task-bundle digests;
 - provider, model, prompt and sandbox-policy digests;
-- network egress disabled;
+- model API only; retained shell traces reject any shell network activity;
 - cost, latency, retry and stop budgets;
 - uplift, AI-success and regression thresholds;
 - exactly 4 development IDs, 12 held-out IDs and 6 control IDs;

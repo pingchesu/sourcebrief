@@ -145,7 +145,7 @@ def valid_envelope(
             "model": "gpt-5.6-sol",
             "prompt_sha256": digest("runtime-prompt"),
             "sandbox_policy_sha256": digest("sandbox-policy"),
-            "network_egress": False,
+            "network_egress": "model_api_only_trace_enforced",
             "cost_budget_usd": 10,
             "latency_budget_seconds": 3600,
             "retry_budget": 1,
@@ -183,6 +183,13 @@ def test_internal_outcome_pass_is_non_promotional_and_baseline_relative(
     assert summary["d0_ready"] is False
     assert summary["promotion_authorized"] is False
     assert summary["stop_investment"] is False
+
+    bad_root = tmp_path / "not-a-directory"
+    bad_root.write_text("not a CAS", encoding="utf-8")
+    with pytest.raises(EvalManifestError, match="non-symlink directory"):
+        validate_internal_outcome(
+            valid_envelope(tmp_path), key=KEY, artifact_root=bad_root
+        )
 
 
 def test_internal_outcome_strong_direct_baseline_forces_fail_and_stop(
