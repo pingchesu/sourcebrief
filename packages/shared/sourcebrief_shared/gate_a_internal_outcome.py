@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import math
 import os
 import re
+import shlex
 import stat
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,6 +32,11 @@ AUTOMATED_COMPARATORS = {
     DIRECT_BASELINE,
     "current_deterministic",
     "real_static",
+}
+NORMATIVE_THRESHOLDS = {
+    "ai_task_success_min": 9,
+    "ai_uplift_min_tasks": 3,
+    "baseline_regressions_max": 1,
 }
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -106,7 +113,7 @@ def _timestamp(value: Any, context: str) -> datetime:
 
 def _verify_cas_artifact(
     artifact_root: str | Path, declared_digest: str, context: str
-) -> None:
+) -> bytes:
     hexadecimal = declared_digest.removeprefix("sha256:")
     root = Path(artifact_root)
     try:
@@ -130,16 +137,19 @@ def _verify_cas_artifact(
     except OSError as exc:
         raise EvalManifestError(f"{context} CAS artifact could not be opened safely") from exc
     hasher = hashlib.sha256()
+    chunks: list[bytes] = []
     try:
         opened = os.fstat(descriptor)
         if not stat.S_ISREG(opened.st_mode):
             raise EvalManifestError(f"{context} CAS artifact must remain a regular file")
         while chunk := os.read(descriptor, 1024 * 1024):
+            chunks.append(chunk)
             hasher.update(chunk)
     finally:
         os.close(descriptor)
     if hasher.hexdigest() != hexadecimal:
         raise EvalManifestError(f"{context} CAS artifact digest mismatch")
+    return b"".join(chunks)
 
 
 def _ids(value: Any, context: str, expected_count: int) -> list[str]:
@@ -228,9 +238,360 @@ def _receipt(
     return receipt
 
 
+def _command_tokens(command: str) -> list[str]:
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        return list(lexer)
+    except ValueError:
+        return []
+
+
+def _command_segments(command: str) -> list[list[str]]:
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in _command_tokens(command):
+        if token and set(token) <= {";", "&", "|"}:
+            if current:
+                segments.append(current)
+                current = []
+        else:
+            current.append(token)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _command_uses_network(command: str) -> bool:
+    banned = {"curl", "wget", "ssh", "scp", "nc", "ncat", "socat", "telnet"}
+    normalized_raw = command.lower().replace("'", "").replace('"', "")
+    compact_raw = re.sub(r"[^a-z0-9_]+", "", normalized_raw)
+    if "create_connection" in normalized_raw or "createconnection" in compact_raw:
+        return True
+    if "socket" in compact_raw and "connect" in compact_raw:
+        return True
+    if re.search(
+        r"(^|[^a-z0-9_])git\s+"
+        r"(clone|fetch|pull|push|ls-remote|submodule)([^a-z0-9_]|$)",
+        normalized_raw,
+    ):
+        return True
+    if any(
+        re.search(rf"(^|[^a-z0-9_]){re.escape(token)}([^a-z0-9_]|$)", normalized_raw)
+        for token in banned
+    ):
+        return True
+    network_markers = (
+        "import socket",
+        "from socket",
+        "import requests",
+        "from requests",
+        "import urllib",
+        "from urllib",
+        "http.client",
+        "aiohttp",
+        "httpx",
+    )
+    for segment in _command_segments(command):
+        executable = Path(segment[0]).name.lower()
+        if executable in banned:
+            return True
+        if executable in {"bash", "sh", "zsh"}:
+            for index, token in enumerate(segment[:-1]):
+                if token in {"-c", "-lc"} and _command_uses_network(
+                    segment[index + 1]
+                ):
+                    return True
+        if executable.startswith("python") and "-c" in segment:
+            code = segment[segment.index("-c") + 1].lower()
+            compact_code = re.sub(r"[^a-z0-9_]+", "", code)
+            if any(marker in code for marker in network_markers) or any(
+                token in compact_code
+                for token in ("socket", "requests", "urllib", "httpx", "aiohttp")
+            ):
+                return True
+    return False
+
+
+def _command_uses_sourcebrief(command: str) -> bool:
+    forbidden = ("sourcebrief", "source_brief", "sourcebrief_cli", "source_brief_cli", "contextsmith")
+    normalized_raw = (
+        command.lower().replace("'", "").replace('"', "").replace("-", "_")
+    )
+    compact_raw = re.sub(r"[^a-z0-9_]+", "", normalized_raw)
+    if any(token in compact_raw for token in forbidden):
+        return True
+    if (
+        "fromhex" in compact_raw
+        or "b64decode" in compact_raw
+        or "base64" in compact_raw
+    ) and (
+        "import_module" in normalized_raw
+        or "importmodule" in compact_raw
+        or "__import__" in normalized_raw
+    ):
+        return True
+    for segment in _command_segments(command):
+        dequoted = " ".join(segment).lower().replace("-", "_")
+        if any(token in dequoted for token in forbidden):
+            return True
+        executable = Path(segment[0]).name.lower()
+        if executable in {"bash", "sh", "zsh"}:
+            for index, token in enumerate(segment[:-1]):
+                if token in {"-c", "-lc"} and _command_uses_sourcebrief(segment[index + 1]):
+                    return True
+    return False
+
+
+def _cas_bytes(verified_artifacts: dict[str, bytes], digest: str) -> bytes:
+    try:
+        return verified_artifacts[digest]
+    except KeyError as exc:
+        raise EvalManifestError(f"missing verified CAS bytes for {digest}") from exc
+
+
+def _json_cas_object(
+    verified_artifacts: dict[str, bytes], digest: str, context: str
+) -> dict[str, Any]:
+    try:
+        return _object(json.loads(_cas_bytes(verified_artifacts, digest).decode("utf-8")), context)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise EvalManifestError(f"{context} is not UTF-8 JSON") from exc
+
+
+def _validate_task_command(
+    verified_artifacts: dict[str, bytes],
+    receipt: dict[str, Any],
+    context: str,
+    *,
+    source_commit: str,
+    pack_by_lane: dict[str, str | None],
+    artifact_root: Path,
+) -> None:
+    command = _json_cas_object(verified_artifacts, receipt["command_sha256"], f"{context}.command")
+    _exact(
+        command,
+        {
+            "schema",
+            "lane_key",
+            "task_id",
+            "source_commit",
+            "network_egress",
+            "pack_sha256",
+            "codex_argv",
+            "codex_stdin_sha256",
+            "codex_timeout_seconds",
+            "codex_trace_policy_violations",
+            "landlock_launcher_sha256",
+            "test_argv",
+            "test_timeout_seconds",
+        },
+        f"{context}.command",
+    )
+    if command.get("schema") != "sourcebrief.gate-a-cell-command.v2":
+        raise EvalManifestError(f"{context}.command schema is unsupported")
+    if command.get("lane_key") != receipt["lane_key"] or command.get("task_id") != receipt["task_id"]:
+        raise EvalManifestError(f"{context}.command identity mismatch")
+    if command.get("source_commit") != source_commit:
+        raise EvalManifestError(f"{context}.command source commit mismatch")
+    if command.get("pack_sha256") != pack_by_lane[receipt["lane_key"]]:
+        raise EvalManifestError(f"{context}.command pack digest mismatch")
+    codex_stdin_sha256 = _digest(
+        command.get("codex_stdin_sha256"), f"{context}.command.codex_stdin_sha256"
+    )
+    _digest(
+        command.get("landlock_launcher_sha256"), f"{context}.command.landlock_launcher_sha256"
+    )
+    _integer(command.get("codex_timeout_seconds"), f"{context}.command.codex_timeout_seconds", 1)
+    _integer(command.get("test_timeout_seconds"), f"{context}.command.test_timeout_seconds", 1)
+    if receipt["lane_key"] == DIRECT_BASELINE and command.get("pack_sha256") is not None:
+        raise EvalManifestError(f"{context}.command direct-tools pack must be null")
+    stdin_payload = verified_artifacts.get(codex_stdin_sha256)
+    stdin_path = artifact_root / codex_stdin_sha256.removeprefix("sha256:")
+    if stdin_payload is None and stdin_path.exists():
+        stdin_payload = _verify_cas_artifact(artifact_root, codex_stdin_sha256, f"{context}.command.codex_stdin_sha256")
+    if receipt["lane_key"] == DIRECT_BASELINE and stdin_payload is not None:
+        stdin_text = stdin_payload.decode("utf-8", errors="ignore")
+        if _command_uses_network(stdin_text) or _command_uses_sourcebrief(stdin_text):
+            raise EvalManifestError(f"{context}.command direct-tools stdin used SourceBrief or network")
+    if _string(command.get("network_egress"), f"{context}.command.network_egress") != "model-api-required; shell-network-use-rejected-from-retained-command-trace":
+        raise EvalManifestError(f"{context}.command network policy is unsupported")
+    if _list(command.get("codex_trace_policy_violations"), f"{context}.command.codex_trace_policy_violations"):
+        raise EvalManifestError(f"{context}.command declares trace policy violations")
+    for field in ("codex_argv", "test_argv"):
+        argv = _list(command.get(field), f"{context}.command.{field}")
+        if not argv or any(not isinstance(item, str) or not item for item in argv):
+            raise EvalManifestError(f"{context}.command.{field} must be non-empty string argv")
+        joined = " ".join(argv)
+        if _command_uses_network(joined):
+            raise EvalManifestError(f"{context}.command used shell-level network access")
+        executable_names = " ".join(Path(item).name for item in argv)
+        if receipt["lane_key"] == DIRECT_BASELINE and _command_uses_sourcebrief(
+            executable_names if field == "codex_argv" else joined
+        ):
+            raise EvalManifestError(f"{context}.command direct-tools used SourceBrief")
+
+
+def _validate_control_command(
+    verified_artifacts: dict[str, bytes],
+    receipt: dict[str, Any],
+    context: str,
+    *,
+    source_commit: str,
+    pack_by_lane: dict[str, str | None],
+) -> None:
+    command = _json_cas_object(verified_artifacts, receipt["command_sha256"], f"{context}.command")
+    _exact(
+        command,
+        {
+            "schema",
+            "lane_key",
+            "control_id",
+            "source_commit",
+            "network_egress",
+            "pack_sha256",
+            "operation",
+            "control_spec_sha256",
+        },
+        f"{context}.command",
+    )
+    if command.get("schema") != "sourcebrief.gate-a-control-command.v1":
+        raise EvalManifestError(f"{context}.command schema is unsupported")
+    if command.get("lane_key") != receipt["lane_key"] or command.get("control_id") != receipt["control_id"]:
+        raise EvalManifestError(f"{context}.command identity mismatch")
+    if command.get("source_commit") != source_commit:
+        raise EvalManifestError(f"{context}.command source commit mismatch")
+    if command.get("pack_sha256") != pack_by_lane[receipt["lane_key"]]:
+        raise EvalManifestError(f"{context}.command pack digest mismatch")
+    if receipt["lane_key"] == DIRECT_BASELINE and command.get("pack_sha256") is not None:
+        raise EvalManifestError(f"{context}.command direct-tools pack must be null")
+    _boolean(command.get("network_egress"), f"{context}.command.network_egress")
+    if command.get("network_egress") is not False:
+        raise EvalManifestError(f"{context}.command control network egress must be false")
+    operation = _string(command.get("operation"), f"{context}.command.operation")
+    _digest(command.get("control_spec_sha256"), f"{context}.command.control_spec_sha256")
+    if _command_uses_network(operation):
+        raise EvalManifestError(f"{context}.command used shell-level network access")
+    if receipt["lane_key"] == DIRECT_BASELINE and _command_uses_sourcebrief(operation):
+        raise EvalManifestError(f"{context}.command direct-tools used SourceBrief")
+
+
+def _validate_task_trace(verified_artifacts: dict[str, bytes], receipt: dict[str, Any], context: str) -> None:
+    payload = _cas_bytes(verified_artifacts, receipt["trace_sha256"])
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise EvalManifestError(f"{context} trace must be UTF-8 JSONL") from exc
+    saw_thread = False
+    saw_completion = False
+    command_count = 0
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise EvalManifestError(f"{context} trace line {line_number} is not JSON") from exc
+        if not isinstance(event, dict) or not isinstance(event.get("type"), str):
+            raise EvalManifestError(f"{context} trace line {line_number} is malformed")
+        if event["type"] not in {
+            "thread.started",
+            "turn.started",
+            "turn.completed",
+            "item.started",
+            "item.updated",
+            "item.completed",
+        }:
+            raise EvalManifestError(f"{context} trace event type is unsupported")
+        top_level_probe = json.dumps(
+            {key: event.get(key) for key in ("type", "name", "server") if key in event},
+            sort_keys=True,
+        )
+        if "mcp" in top_level_probe.lower() or _command_uses_sourcebrief(top_level_probe):
+            raise EvalManifestError(f"{context} trace used MCP")
+        saw_thread = saw_thread or event["type"] == "thread.started"
+        saw_completion = saw_completion or event["type"] == "turn.completed"
+        if event["type"] in {"mcp_tool_call", "mcp_tool_result"}:
+            raise EvalManifestError(f"{context} trace used MCP")
+        item = event.get("item")
+        if isinstance(item, dict):
+            nested_probe = json.dumps(
+                {
+                    key: item.get(key)
+                    for key in ("type", "name", "server", "tool", "tool_name")
+                    if key in item
+                },
+                sort_keys=True,
+            )
+            allowed_item_types = {
+                "command_execution",
+                "agent_message",
+                "file_change",
+                "todo_list",
+            }
+            if item.get("type") not in allowed_item_types:
+                raise EvalManifestError(f"{context} trace item type is unsupported")
+            if (
+                item.get("type")
+                in {
+                    "tool_call",
+                    "function_call",
+                    "function_call_output",
+                    "mcp_tool_call",
+                    "mcp_tool_result",
+                    "tool_result",
+                }
+                or "mcp" in nested_probe.lower()
+                or _command_uses_sourcebrief(nested_probe)
+            ):
+                raise EvalManifestError(f"{context} trace used MCP")
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type")
+        if item_type == "mcp_tool_call":
+            raise EvalManifestError(f"{context} trace used MCP")
+        if item_type != "command_execution":
+            continue
+        command_count += 1
+        command = item.get("command")
+        if not isinstance(command, str) or not command:
+            raise EvalManifestError(f"{context} trace command is invalid")
+        if _command_uses_network(command):
+            raise EvalManifestError(f"{context} trace used shell-level network access")
+        if receipt["lane_key"] == DIRECT_BASELINE and _command_uses_sourcebrief(command):
+            raise EvalManifestError(f"{context} direct-tools trace used SourceBrief")
+    if not saw_thread or not saw_completion or command_count == 0:
+        raise EvalManifestError(f"{context} trace is incomplete")
+
+
+def _validate_control_trace(
+    verified_artifacts: dict[str, bytes], receipt: dict[str, Any], context: str
+) -> None:
+    try:
+        trace = json.loads(_cas_bytes(verified_artifacts, receipt["trace_sha256"]).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise EvalManifestError(f"{context} control trace is not UTF-8 JSON") from exc
+    trace = _object(trace, f"{context}.trace")
+    _exact(
+        trace,
+        {"schema", "lane_key", "control_id", "policy_allowed", "checks", "violations"},
+        f"{context}.trace",
+    )
+    if trace.get("schema") != "sourcebrief.gate-a-control-trace.v1":
+        raise EvalManifestError(f"{context} control trace schema is unsupported")
+    if trace.get("lane_key") != receipt["lane_key"] or trace.get("control_id") != receipt["control_id"]:
+        raise EvalManifestError(f"{context} control trace identity mismatch")
+    policy_allowed = _boolean(trace.get("policy_allowed"), f"{context}.trace.policy_allowed")
+    if policy_allowed:
+        raise EvalManifestError(f"{context} control trace policy must deny the prohibited action")
+    for field in ("checks", "violations"):
+        values = _list(trace.get(field), f"{context}.trace.{field}")
+        for index, value in enumerate(values):
+            _string(value, f"{context}.trace.{field}[{index}]")
+
+
 def validate_internal_outcome(
     envelope: dict[str, Any], *, key: bytes, artifact_root: str | Path
 ) -> dict[str, Any]:
+    artifact_root = Path(artifact_root)
     cas_digests: dict[str, str] = {}
     _exact(
         envelope,
@@ -287,6 +648,7 @@ def validate_internal_outcome(
         commit = _string(envelope.get(field), f"internal_outcome.{field}")
         if not _COMMIT_RE.fullmatch(commit):
             raise EvalManifestError(f"internal_outcome.{field} must be a 40-hex commit")
+    source_commit = _string(envelope.get("source_commit"), "internal_outcome.source_commit")
 
     frozen = _timestamp(envelope.get("frozen_at"), "internal_outcome.frozen_at")
     started = _timestamp(envelope.get("run_started_at"), "internal_outcome.run_started_at")
@@ -340,6 +702,10 @@ def validate_internal_outcome(
         runtime.get("baseline_regressions_max"),
         "runtime_envelope.baseline_regressions_max",
     )
+    for threshold_key, expected in NORMATIVE_THRESHOLDS.items():
+        actual = runtime.get(threshold_key)
+        if actual != expected:
+            raise EvalManifestError(f"runtime_envelope.{threshold_key} must equal {expected}")
 
     development = _ids(envelope.get("development_task_ids"), "development_task_ids", 4)
     held_out = _ids(envelope.get("held_out_task_ids"), "held_out_task_ids", 12)
@@ -351,10 +717,11 @@ def validate_internal_outcome(
     _exact(packs, LANES, "pack_sha256_by_lane")
     if packs[DIRECT_BASELINE] is not None:
         raise EvalManifestError("direct-tools baseline must not receive a SourceBrief pack")
+    pack_by_lane: dict[str, str | None] = {DIRECT_BASELINE: None}
     for lane in LANES - {DIRECT_BASELINE}:
-        cas_digests[f"pack_sha256_by_lane.{lane}"] = _digest(
-            packs.get(lane), f"pack_sha256_by_lane.{lane}"
-        )
+        pack_digest = _digest(packs.get(lane), f"pack_sha256_by_lane.{lane}")
+        pack_by_lane[lane] = pack_digest
+        cas_digests[f"pack_sha256_by_lane.{lane}"] = pack_digest
 
     compiler_receipts = _list(envelope.get("compiler_receipts"), "compiler_receipts")
     if len(compiler_receipts) != 3:
@@ -447,13 +814,47 @@ def validate_internal_outcome(
     if set(control_by_key) != expected_control_keys or len(control_receipts) != 30:
         raise EvalManifestError("control receipts must provide exact 5x6 coverage")
 
-    for context, declared_digest in sorted(cas_digests.items()):
-        _verify_cas_artifact(artifact_root, declared_digest, context)
-
     expected_mac = sign_internal_outcome(envelope, key=key)
     declared_mac = _string(envelope.get("internal_outcome_mac"), "internal_outcome_mac")
     if not hmac.compare_digest(expected_mac, declared_mac):
         raise EvalManifestError("internal outcome MAC is invalid")
+
+    verified_artifacts: dict[str, bytes] = {}
+    for context, declared_digest in sorted(cas_digests.items()):
+        verified_artifacts[declared_digest] = _verify_cas_artifact(
+            artifact_root, declared_digest, context
+        )
+
+    for (lane, task), receipt in task_by_key.items():
+        cell_context = f"task {lane}/{task}"
+        _validate_task_command(
+            verified_artifacts,
+            receipt,
+            cell_context,
+            source_commit=source_commit,
+            pack_by_lane=pack_by_lane,
+            artifact_root=artifact_root,
+        )
+        _validate_task_trace(verified_artifacts, receipt, cell_context)
+    for (lane, control), receipt in control_by_key.items():
+        cell_context = f"control {lane}/{control}"
+        _validate_control_command(
+            verified_artifacts,
+            receipt,
+            cell_context,
+            source_commit=source_commit,
+            pack_by_lane=pack_by_lane,
+        )
+        _validate_control_trace(verified_artifacts, receipt, cell_context)
+
+    for task in held_out:
+        digests = {task_by_key[(lane, task)]["hidden_test_sha256"] for lane in LANES}
+        if len(digests) != 1:
+            raise EvalManifestError(f"held-out task {task} used different hidden tests across lanes")
+    for control in controls:
+        digests = {control_by_key[(lane, control)]["hidden_test_sha256"] for lane in LANES}
+        if len(digests) != 1:
+            raise EvalManifestError(f"control {control} used different hidden tests across lanes")
 
     success_counts = {
         lane: sum(bool(task_by_key[(lane, task)]["success"]) for task in held_out)
@@ -494,12 +895,26 @@ def validate_internal_outcome(
         failures.append("insufficient uplift over strongest automated comparator")
     if len(ai_regressions) > regression_max:
         failures.append("baseline regressions")
+    if success_counts["human_authored"] - success_counts["ai_compiled"] > 1:
+        failures.append("task gap versus human pack")
+    failures.append("command hidden-test execution evidence incomplete")
+    failures.append("compiler economics evidence incomplete")
     if not controls_passed:
         failures.append("control failures")
     if total_cost > cost_budget:
         failures.append("cost budget")
     if elapsed > latency_budget:
         failures.append("latency budget")
+
+    effective_uplift = uplift
+    if any(
+        reason in failures
+        for reason in (
+            "command hidden-test execution evidence incomplete",
+            "compiler economics evidence incomplete",
+        )
+    ):
+        effective_uplift = min(uplift, 0)
 
     verdict = "PASS" if not failures else "FAIL"
     return {
@@ -513,7 +928,7 @@ def validate_internal_outcome(
         "failure_reasons": failures,
         "task_success_counts": success_counts,
         "best_automated_arms": co_best,
-        "ai_uplift_tasks": uplift,
+        "ai_uplift_tasks": effective_uplift,
         "baseline_regressions": ai_regressions,
         "controls_passed": controls_passed,
         "total_cost_usd": total_cost,
