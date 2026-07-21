@@ -283,3 +283,24 @@ def test_internal_outcome_cli_is_non_promotional(tmp_path: Path) -> None:
     assert summary["authorization"] == "internal_signal_only"
     assert summary["d0_ready"] is False
     assert summary["promotion_authorized"] is False
+
+    key_path.unlink()
+    rejected = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "validate-gate-a-internal-outcome",
+            str(outcome_path),
+            "--key-file",
+            str(key_path),
+            "--artifact-root",
+            str(tmp_path),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert rejected.returncode == 2
+    assert "key file is unreadable" in rejected.stderr
+    assert "Traceback" not in rejected.stderr

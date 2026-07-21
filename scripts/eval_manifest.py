@@ -89,9 +89,13 @@ def cmd_validate_gate_a_internal_governance(args: argparse.Namespace) -> int:
 
 def cmd_validate_gate_a_internal_outcome(args: argparse.Namespace) -> int:
     outcome = load_gate_a_json_file(args.outcome)
+    try:
+        key = Path(args.key_file).read_bytes()
+    except OSError as exc:
+        raise EvalManifestError("internal outcome key file is unreadable") from exc
     summary = validate_internal_outcome(
         outcome,
-        key=Path(args.key_file).read_bytes(),
+        key=key,
         artifact_root=Path(args.artifact_root),
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
