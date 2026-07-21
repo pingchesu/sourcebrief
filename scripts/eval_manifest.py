@@ -20,9 +20,9 @@ from sourcebrief_shared.eval_manifest import (  # noqa: E402
     validate_manifest,
 )
 from sourcebrief_shared.gate_a_eval import (  # noqa: E402
-    compiler_input,
     load_gate_a_json_file,
     validate_gate_a_approval,
+    validate_gate_a_internal_governance,
     validate_gate_a_manifest,
     validate_gate_a_report,
 )
@@ -61,41 +61,26 @@ def cmd_validate_gate_a(args: argparse.Namespace) -> int:
     if args.approval:
         if not args.approval_key_file:
             raise EvalManifestError("--approval requires --approval-key-file")
-        summary.update(
-            validate_gate_a_approval(
-                manifest,
-                load_gate_a_json_file(args.approval),
-                approval_key=Path(args.approval_key_file).read_bytes(),
-            )
+        approval_summary = validate_gate_a_approval(
+            manifest,
+            load_gate_a_json_file(args.approval),
+            approval_key=Path(args.approval_key_file).read_bytes(),
         )
+        summary.update(approval_summary)
+        if args.require_d0 and not approval_summary["d0_ready"]:
+            raise EvalManifestError(
+                "local approval integrity is not independent D0 authority; external review service required"
+            )
     elif args.require_d0:
         raise EvalManifestError("--require-d0 requires --approval")
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
-def cmd_prepare_gate_a_compiler_input(args: argparse.Namespace) -> int:
-    manifest = load_gate_a_json_file(args.manifest)
-    approval = load_gate_a_json_file(args.approval)
-    prepared = compiler_input(
-        manifest,
-        approval=approval,
-        approval_key=Path(args.approval_key_file).read_bytes(),
-    )
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(prepared, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(
-        json.dumps(
-            {
-                "manifest_sha256": sha256_digest(manifest),
-                "compiler_input_sha256": sha256_digest(prepared),
-                "output": str(output),
-            },
-            indent=2,
-            sort_keys=True,
-        )
-    )
+def cmd_validate_gate_a_internal_governance(args: argparse.Namespace) -> int:
+    governance = load_gate_a_json_file(args.governance)
+    summary = validate_gate_a_internal_governance(governance)
+    print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
@@ -103,6 +88,7 @@ def cmd_validate_gate_a_report(args: argparse.Namespace) -> int:
     manifest = load_gate_a_json_file(args.manifest)
     approval = load_gate_a_json_file(args.approval)
     report = load_gate_a_json_file(args.report)
+    receipt_bundle = load_gate_a_json_file(args.receipt_bundle)
     print(
         json.dumps(
             validate_gate_a_report(
@@ -110,6 +96,9 @@ def cmd_validate_gate_a_report(args: argparse.Namespace) -> int:
                 manifest=manifest,
                 approval=approval,
                 approval_key=Path(args.approval_key_file).read_bytes(),
+                receipt_bundle=receipt_bundle,
+                verifier_key=Path(args.verifier_key_file).read_bytes(),
+                artifact_root=Path(args.artifact_root),
             ),
             indent=2,
             sort_keys=True,
@@ -144,18 +133,25 @@ def build_parser() -> argparse.ArgumentParser:
     gate_a.add_argument("--require-d0", action="store_true")
     gate_a.set_defaults(func=cmd_validate_gate_a)
 
-    compiler = sub.add_parser("prepare-gate-a-compiler-input", help="Emit source + development tasks only for the compiler.")
-    compiler.add_argument("manifest")
-    compiler.add_argument("--approval", required=True)
-    compiler.add_argument("--approval-key-file", required=True)
-    compiler.add_argument("--output", required=True)
-    compiler.set_defaults(func=cmd_prepare_gate_a_compiler_input)
+    internal_governance = sub.add_parser(
+        "validate-gate-a-internal-governance",
+        help="Validate a single-founder agent council as internal-signal-only governance.",
+    )
+    internal_governance.add_argument("governance")
+    internal_governance.set_defaults(func=cmd_validate_gate_a_internal_governance)
 
     gate_report = sub.add_parser("validate-gate-a-report", help="Validate a Gate A report against its frozen manifest/approval.")
     gate_report.add_argument("report")
     gate_report.add_argument("--manifest", required=True)
     gate_report.add_argument("--approval", required=True)
     gate_report.add_argument("--approval-key-file", required=True)
+    gate_report.add_argument("--receipt-bundle", required=True)
+    gate_report.add_argument("--verifier-key-file", required=True)
+    gate_report.add_argument(
+        "--artifact-root",
+        required=True,
+        help="Verifier-owned CAS directory containing files named by raw SHA-256 hex",
+    )
     gate_report.set_defaults(func=cmd_validate_gate_a_report)
     return parser
 
